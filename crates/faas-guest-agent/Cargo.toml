@@ -16,7 +16,7 @@ tokio = { version = "1", features = ["full"] }
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokio-vsock = "0.4"
+tokio-vsock = "0.7"
 
 [[bin]]
 name = "faas-guest-agent"
