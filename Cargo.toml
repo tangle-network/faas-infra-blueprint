@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "faas-lib",
+    "faas-bin",
+    "crates/faas-common",
+    "crates/faas-gateway",      # Kept as a library for API types
+    "crates/faas-orchestrator", # Kept as a library for state logic ideas
+    "crates/faas-executor",     # Renamed from faas-worker-agent
+    "faas-tester", "crates/faas-guest-agent",              # Add the new testing crate
+]
+
+# Define common dependencies for the workspace
+[workspace.dependencies]
+# Local Crates
+faas-common = { path = "crates/faas-common" }
+faas-blueprint-lib = { path = "faas-lib" }
+faas-blueprint-bin = { path = "faas-bin" }
+faas-gateway = { path = "crates/faas-gateway" }
+faas-orchestrator = { path = "crates/faas-orchestrator" }
+faas-executor = { path = "crates/faas-executor" }         # New name
+
+# Async Runtime & Utils
+tokio = { version = "1", features = ["full"] }
+dotenvy = "0.15"
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1"
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Web & API
+# actix-web = "4"
+axum = { version = "0.7", features = ["macros"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", features = ["json"] }
+
+# Logging & Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Docker Control
+bollard = "0.18"
+docktopus = { git = "https://github.com/tangle-network/docktopus", branch = "drew/config-overrides" }
+futures = "0.3"
+
+# gRPC (Keep for potential internal use within lib/bin, or future needs)
+tonic = "0.11"
+prost = "0.12"
+tonic-build = { version = "0.11", default-features = false, features = ["prost"] }
+
+# Blueprint SDK 
+blueprint-sdk = { version = "0.1.0-alpha.6", default-features = false }
+color-eyre = "0.6"
+tower = { version = "0.5", default-features = false }
+
+# Testing Utilities
+tempfile = "3.3"
+
+# Workspace package metadata (inherited by default)
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Drew Stone <drewstone329@gmail.com>"]     # Updated author
+license = "MIT OR Apache-2.0"
+homepage = "https://tangle.tools"
+repository = "https://github.com/tangle-network/faas"
+readme = "README.md"

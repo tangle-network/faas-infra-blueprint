@@ -1,0 +1,19 @@
+[package]
+name = "faas-common"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+async-trait = "0.1"
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

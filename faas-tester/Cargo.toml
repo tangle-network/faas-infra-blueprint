@@ -1,0 +1,40 @@
+[package]
+name = "faas-tester"
+version = "0.1.0"
+edition = "2021"
+publish = false      # This crate is only for testing
+
+[dependencies]
+# Workspace Crates
+faas-blueprint-lib = { workspace = true }
+faas-common = { workspace = true }
+faas-executor = { workspace = true }
+faas-orchestrator = { workspace = true }
+faas-gateway = { workspace = true }
+
+# Testing Dependencies
+tokio = { workspace = true }
+docktopus = { workspace = true }
+bollard = { workspace = true }
+async-trait = "0.1"
+
+# HTTP Client/Server for API tests
+axum = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+color-eyre = { workspace = true }
+tempfile = { workspace = true }
+
+[[test]]
+name = "execution_tests"
+path = "tests/execution_tests.rs"
+harness = true
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+harness = true

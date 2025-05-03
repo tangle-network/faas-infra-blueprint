@@ -1,0 +1,29 @@
+#!/bin/sh
+# Minimal init script for Firecracker FaaS Guest
+
+# Mount essential virtual filesystems
+mount -t proc proc /proc
+mount -t devtmpfs devtmpfs /dev
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /tmp
+
+# Optional: Create symbolic links if needed (e.g., /dev/fd)
+# ln -s /proc/self/fd /dev/fd
+
+# Optional: Load kernel modules if required (unlikely for minimal guest)
+# modprobe virtio_vsock
+
+# Start the FaaS Guest Agent
+# Assumes the agent binary is placed at /app/faas-guest-agent by Buildroot
+if [ -x /app/faas-guest-agent ]; then
+    echo "[INIT] Starting FaaS Guest Agent..."
+    /app/faas-guest-agent
+    AGENT_EXIT_CODE=$?
+    echo "[INIT] FaaS Guest Agent exited with code ${AGENT_EXIT_CODE}. Halting."
+else
+    echo "[INIT] ERROR: /app/faas-guest-agent not found or not executable! Halting."
+fi
+
+# Halt the system - BusyBox provides these
+# Try halt first, then poweroff as a fallback
+halt -f || poweroff -f 

@@ -1,0 +1,52 @@
+[package]
+name = "faas-orchestrator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[lib]
+name = "faas_orchestrator"
+path = "src/lib.rs"
+
+[dependencies]
+# Workspace Crates
+faas-common = { workspace = true }
+faas-executor = { workspace = true } # Depend on executor lib
+
+# External Crates
+tokio = { workspace = true, features = ["sync"] } # Added sync feature for potential Mutex later
+dotenvy = { workspace = true }
+uuid = { workspace = true }                       # Added uuid for request IDs
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# gRPC Client Dependencies (Keep if orchestrator lib needs to call worker)
+tonic = { workspace = true }
+prost = { workspace = true }
+
+# Data Structures
+# use std::collections::HashMap; - built-in
+
+# Add later for communication:
+# reqwest = { version = "0.11", features = ["json"] }
+
+# Add async-trait
+async-trait = "0.1"
+
+# Add thiserror
+thiserror = "1.0"
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[dev-dependencies]
+mockall = "0.12"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] } # Ensure test features
+color-eyre = { workspace = true }
+anyhow = { workspace = true }

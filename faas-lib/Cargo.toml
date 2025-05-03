@@ -1,0 +1,37 @@
+[package]
+name = "faas-blueprint-lib"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[lib]
+name = "faas_blueprint_lib"
+path = "src/lib.rs"
+
+[dependencies]
+faas-common = { workspace = true }
+faas-executor = { workspace = true }
+faas-orchestrator = { workspace = true }
+faas-gateway = { workspace = true }
+
+tokio = { workspace = true }
+bollard = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+futures = { workspace = true }
+blueprint-sdk = { workspace = true, features = ["std", "tangle", "macros"] }
+docktopus = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+color-eyre = { workspace = true }
+blueprint-sdk = { workspace = true, features = ["std", "tangle", "macros", "testing"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+faas-executor = { workspace = true }
+tracing-subscriber = { workspace = true }

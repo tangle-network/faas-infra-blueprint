@@ -1,0 +1,29 @@
+[package]
+name = "faas-gateway"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[lib]
+name = "faas_gateway"
+path = "src/lib.rs"
+
+[dependencies]
+faas-common = { workspace = true }
+faas-orchestrator = { path = "../faas-orchestrator" }
+
+# Web Framework
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# Async & Utils
+tokio = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
