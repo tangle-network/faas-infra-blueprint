@@ -1,84 +1,167 @@
-# <h1 align="center">Hello World Tangle Blueprint 🌐</h1>
+# FaaS Platform on Tangle
 
-## 📚 Overview
+## Overview
 
-This Tangle Blueprint provides a simple Hello World job.
-Blueprints are specifications for <abbr title="Actively Validated Services">AVS</abbr>s on the Tangle Network. An AVS is
-an off-chain service that runs arbitrary computations for a user-specified period of time.
+This project implements a Function-as-a-Service (FaaS) platform designed to run untrusted code securely within isolated environments, orchestrated via Tangle interactions (though primarily exposing an HTTP gateway currently). It leverages technologies like Firecracker for microVM isolation, providing a robust foundation for executing arbitrary functions triggered by external requests.
 
-Blueprints provide a useful abstraction, allowing developers to create reusable service infrastructures as if they were
-smart contracts. This enables developers to monetize their work and align long-term incentives with the success of their
-creations, benefiting proportionally to their Blueprint's usage.
+The platform is structured as a collection of Rust crates, enabling modular development and testing.
 
-For more details, please refer to the [project documentation](https://docs.tangle.tools/developers/blueprints/introduction).
+## Architecture & Packages
 
-## 🚀 Features
+The repository is organized into the following key crates:
 
-- Custom greeting messages
-- Default "Hello World!" messages
-- ...
+- **`faas-common`**: Contains shared data structures (e.g., `InvocationResult`, `InvokeRequest`), types, constants, and error definitions used across multiple crates.
+- **`faas-guest-agent`**: A small binary designed to run _inside_ the execution environment (specifically Firecracker microVMs). It listens for invocation details (command, payload) via vsock, executes the requested command, captures its stdout/stderr, and sends the `InvocationResult` back to the host executor. It is statically compiled against musl libc for portability.
+- **`faas-executor-firecracker`**: Implements the executor interface for running functions within Firecracker microVMs. It manages the lifecycle of microVMs (creation, starting, stopping, cleanup), interacts with the `faas-guest-agent` via vsock, and requires a pre-built Firecracker-compatible kernel and root filesystem containing the guest agent.
+- **(Planned) `faas-executor-docker`**: (Future implementation) Will implement the executor interface for running functions within Docker containers.
+- **`faas-orchestrator`**: The core component responsible for receiving function invocation requests. It selects the appropriate executor based on configuration or request details (currently defaults to Firecracker), manages the execution lifecycle via the chosen executor, handles timeouts/errors, and aggregates the results.
+- **`faas-gateway`**: Provides the public-facing HTTP API (built with Axum) for invoking functions. It receives user requests, forwards them to the `faas-orchestrator`, and returns the results as JSON responses.
+- **`faas-lib`**: Contains core library components, potentially shared logic used by the orchestrator or other parts of the system.
+- **`faas-bin`**: The main executable binary. It initializes and runs the necessary services, likely including the `faas-gateway` and the `faas-orchestrator` with configured executors. (Note: While potentially deployable as a Tangle Blueprint, the primary user interaction model currently described is via the HTTP gateway).
+- **`faas-tester`**: Holds integration tests and end-to-end tests for verifying the functionality of the gateway, orchestrator, and executors.
+- **`tools/firecracker-rootfs-builder`**: Contains scripts and configuration (using Buildroot via Docker) to build the minimal `rootfs.ext4` filesystem image required by the `faas-executor-firecracker`.
 
-## 📋 Prerequisites
+## Getting Started
 
-Before you can run this project, you will need to have the following software installed on your machine:
+### Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install)
-- [Forge](https://getfoundry.sh)
+1.  **Rust Toolchain:** Install Rust (latest stable recommended) via `rustup`.
+2.  **Docker:** Required for building the Firecracker rootfs using the provided script.
+3.  **(For Firecracker Executor):**
+    - `firecracker` binary accessible in your `PATH`.
+    - Firecracker-compatible kernel (`vmlinux.bin`).
+    - Build the root filesystem (see below).
 
-You will also need to install [cargo-tangle](https://crates.io/crates/cargo-tangle), our CLI tool for creating and
-deploying Tangle Blueprints:
+### Building
 
-To install the Tangle CLI, run the following command:
+1.  **Build Firecracker RootFS:**
+    ```bash
+    cd tools/firecracker-rootfs-builder
+    ./build_rootfs.sh
+    # Note the output path, e.g., tools/firecracker-rootfs-builder/output/rootfs.ext4
+    cd ../..
+    ```
+2.  **Build the Main Binary:**
+    ```bash
+    cargo build --release --package faas-bin
+    ```
 
-> Supported on Linux, MacOS, and Windows (WSL2)
+## Running the Service
 
-```bash
-cargo install cargo-tangle --git https://github.com/tangle-network/blueprint
-```
+To run the main FaaS service (which includes the gateway and orchestrator):
 
-## ⭐ Getting Started
+1.  **Set Environment Variables:** Configure the paths required by the Firecracker executor:
 
-Once `cargo-tangle` is installed, you can create a new project with the following command:
+    ```bash
+    # Path to the Firecracker binary
+    export FC_BINARY_PATH="/path/to/your/firecracker"
+    # Path to the compatible Linux kernel
+    export FC_KERNEL_PATH="/path/to/your/vmlinux.bin"
+    # Path to the rootfs built by the script
+    export FC_ROOTFS_PATH="/path/to/your/faas/tools/firecracker-rootfs-builder/output/rootfs.ext4"
 
-```sh
-cargo tangle blueprint create --name <project-name>
-```
+    # Optional: Configure gateway port, logging, etc.
+    # export FAAS_GATEWAY_PORT=8080
+    # export RUST_LOG=info
+    ```
 
-and follow the instructions to create a new project.
+2.  **Run the Binary:**
+    ```bash
+    ./target/release/faas-bin
+    ```
+    The service will start, and the HTTP gateway will listen on the configured port (default likely 8080 or 3000, check gateway code).
 
-## 🛠️ Development
+## User Interaction (HTTP Gateway API)
 
-Once you have created a new project, you can run the following command to start the project:
+Users interact with the deployed service primarily through the HTTP gateway.
 
-```sh
-cargo build
-```
+### Invoke Function
 
-to build the project, and
+- **Endpoint:** `POST /functions/{function_id}/invoke`
+- **Purpose:** Executes a command within an isolated environment. The `{function_id}` path parameter is currently used for logging/tracing but does not directly select pre-registered functions. The execution details are provided entirely within the request body.
+- **Request Body (JSON):**
 
-```sh
-cargo tangle blueprint deploy
-```
+  ```json
+  {
+    "image": "ignored-for-firecracker", // Currently unused by Firecracker, might be used for Docker later
+    "command": ["/path/to/executable", "arg1", "arg2"], // Command and arguments to run inside the guest
+    "env_vars": ["VAR1=value1", "VAR2=value2"], // Optional: Environment variables for the command
+    "payload": [
+      /* array of bytes (numbers 0-255) */
+    ] // Raw bytes to be piped to the command's stdin
+  }
+  ```
 
-to deploy the blueprint to the Tangle network.
+  _Note: Clients sending JSON should represent the raw `payload` bytes appropriately, e.g., as an array of numbers._
 
-## 📜 License
+- **Success Response (200 OK, JSON):** Returns the execution result.
 
-Licensed under either of
+  ```json
+  {
+    "stdout": "Output written to stdout by the command...",
+    "stderr": "Output written to stderr by the command...",
+    "error": null // Null if the command executed without internal errors reported by the agent
+  }
+  ```
 
-* Apache License, Version 2.0
-  ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-* MIT license
-  ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- **Execution Error Response (200 OK, JSON):** If the command ran but the _guest agent_ reported an execution failure (e.g., command not found, non-zero exit code interpreted as error).
 
-at your option.
+  ```json
+  {
+    "stdout": "...",
+    "stderr": "...",
+    "error": "Error message reported by guest agent or executor"
+  }
+  ```
 
-## 📬 Feedback and Contributions
+- **Gateway/Orchestrator Error Response (4xx/5xx, JSON):** If there's an issue processing the request _before or during_ orchestration (e.g., bad request format, orchestrator failure, timeout).
+  ```json
+  {
+    "error": "Specific error message (e.g., Bad Request: ..., Internal server error)"
+  }
+  ```
 
-We welcome feedback and contributions to improve this blueprint.
-Please open an issue or submit a pull request on our GitHub repository.
-Please let us know if you fork this blueprint and extend it too!
+### Job Execution Flow (Firecracker)
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.
+1.  Client sends `POST /functions/{id}/invoke` request to `faas-gateway`.
+2.  Gateway parses the request and calls `Orchestrator::schedule_execution`.
+3.  Orchestrator validates the request and selects the Firecracker executor.
+4.  `faas-executor-firecracker` sets up a new Firecracker microVM using the configured kernel (`FC_KERNEL_PATH`) and rootfs (`FC_ROOTFS_PATH`).
+5.  The microVM boots, and the `/init` script inside the rootfs starts the `faas-guest-agent`.
+6.  The guest agent establishes communication with the host executor via vsock.
+7.  The executor sends the `command`, `env_vars`, and `payload` to the guest agent via vsock.
+8.  The guest agent sets up the environment, executes the command, pipes the payload to its stdin, and captures its stdout and stderr.
+9.  Upon command completion, the guest agent packages the `stdout`, `stderr`, and any execution errors into an `InvocationResult` and sends it back to the host executor via vsock.
+10. The executor receives the result, signals the microVM to shut down, and cleans up resources.
+11. The executor returns the `InvocationResult` to the orchestrator.
+12. The orchestrator returns the result to the gateway.
+13. The gateway serializes the `InvocationResult` to JSON and sends the HTTP response to the client.
+
+## Configuration
+
+Key environment variables:
+
+- `FC_BINARY_PATH`: Absolute path to the `firecracker` executable.
+- `FC_KERNEL_PATH`: Absolute path to the `vmlinux.bin` kernel file.
+- `FC_ROOTFS_PATH`: Absolute path to the `rootfs.ext4` file.
+- `RUST_LOG`: Controls logging level (e.g., `info`, `debug`, `faas_gateway=debug,warn`).
+- `FAAS_GATEWAY_PORT`: Port for the HTTP gateway (default depends on implementation).
+
+## Testing
+
+- Run unit and integration tests: `cargo test`
+- Run executor-specific tests (require environment variables set and dependencies like Firecracker binary/kernel/rootfs available): `cargo test -- --ignored` (run within specific crates like `faas-tester` or workspace root).
+
+## License
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
