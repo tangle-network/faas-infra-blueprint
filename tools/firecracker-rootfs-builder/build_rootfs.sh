@@ -9,7 +9,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 PROJECT_ROOT=$(realpath "$SCRIPT_DIR/../..")
 
 # Buildroot configuration
-BUILDROOT_VERSION="${BUILDROOT_VERSION:-2025.02.1}"
+BUILDROOT_VERSION="2024.02.3"
 BUILDROOT_SRC_DIR="${SCRIPT_DIR}/buildroot-${BUILDROOT_VERSION}"
 BUILDROOT_DOWNLOAD_URL="https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.gz"
 BUILDROOT_TARBALL="${SCRIPT_DIR}/buildroot-${BUILDROOT_VERSION}.tar.gz"
@@ -94,10 +94,10 @@ build_docker_image() {
     info "Checking for Docker image ${DOCKER_IMAGE_TAG}..."
     # Always rebuild if Dockerfile is newer than the image
     if ! docker image inspect "${DOCKER_IMAGE_TAG}" &> /dev/null || [ "${DOCKERFILE_PATH}" -nt "$(docker image inspect -f '{{.Created}}' "${DOCKER_IMAGE_TAG}")" ]; then
-        info "Building Docker image ${DOCKER_IMAGE_TAG}..."
-        docker build --pull -t "${DOCKER_IMAGE_TAG}" \
+        info "Building Docker image ${DOCKER_IMAGE_TAG} (forcing --no-cache and --progress=plain for agent binary inclusion, context: PROJECT_ROOT)..."
+        docker build --pull --no-cache --progress=plain -t "${DOCKER_IMAGE_TAG}" \
             --build-arg BUILDROOT_VERSION="${BUILDROOT_VERSION}" \
-            -f "${DOCKERFILE_PATH}" "${SCRIPT_DIR}" || error "Docker image build failed"
+            -f "${DOCKERFILE_PATH}" "${PROJECT_ROOT}" || error "Docker image build failed"
         info "Docker image built."
     else
         info "Docker image found and up-to-date."
@@ -111,23 +111,32 @@ run_buildroot_in_docker() {
 
     mkdir -p "$OUTPUT_DIR"
 
-    # Run the container, mounting volumes, passing necessary env vars
-    info "Starting Docker container..."
-    docker run --rm --init \
-        --user "$(id -u):$(id -g)" \
-        -v "${BUILDROOT_SRC_DIR}:/build/buildroot-src:rw" \
-        -v "${PROJECT_ROOT}:/build/project-src:ro" \
-        -v "${OUTPUT_DIR}:/build/output:rw" \
-        -e "AGENT_BINARY_PATH=${AGENT_CONTAINER_BINARY_PATH}" \
-        -e "ROOTFS_IMAGE_NAME=${ROOTFS_IMAGE_NAME}" \
-        "${DOCKER_IMAGE_TAG}" || error "Buildroot process failed inside Docker container."
+    info "Preparing Docker run command..."
+    local docker_run_cmd="docker run --rm --init \
+        --user \"$(id -u):$(id -g)\" \
+        -v \"${OUTPUT_DIR}:/build/output:rw\" \
+        -e \"AGENT_CONTAINER_BINARY_PATH=${AGENT_CONTAINER_BINARY_PATH}\" \
+        -e \"ROOTFS_IMAGE_NAME=${ROOTFS_IMAGE_NAME}\" \
+        \"${DOCKER_IMAGE_TAG}\""
 
-    # Final image is now expected in $OUTPUT_DIR/images/
+    info "Executing Docker command:"
+    echo "$docker_run_cmd"
+
+    # Run the container, mounting ONLY the output directory
+    info "Starting Docker container (with output-only mount)..."
+    eval "$docker_run_cmd"
+    local docker_exit_code=$?
+
+    if [ $docker_exit_code -ne 0 ]; then
+        error "Docker container exited with error code: $docker_exit_code. Check container logs for details (e.g., docker logs <container_id_if_not_removed_by_--rm>)."
+    fi
+    info "Docker container finished with exit code: $docker_exit_code"
+
+    # Post-run checks remain the same
     local final_image_in_output="${OUTPUT_DIR}/images/${ROOTFS_IMAGE_NAME}"
     if [ ! -f "${final_image_in_output}" ]; then
          error "Final rootfs image not found in output/images/ after Docker run: ${final_image_in_output}"
     fi
-
     mv "${final_image_in_output}" "${ROOTFS_IMAGE_PATH}" || error "Failed to move final image to ${ROOTFS_IMAGE_PATH}"
 
     info "Build process finished successfully!"
