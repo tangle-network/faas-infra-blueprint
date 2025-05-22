@@ -67,8 +67,7 @@ To run the main FaaS service (which includes the gateway and orchestrator):
     # Path to the compatible Linux kernel
     FAAS_FC_KERNEL_PATH="/path/to/your/vmlinux.bin"
     # Path to the default rootfs built by the script
-    FAAS_DEFAULT_ROOTFS_PATH="/path/to/your/faas/tools/firecracker-rootfs-builder/output/rootfs.ext4"
-    # Alternatively, for tests or specific scenarios, you might use FAAS_FC_ROOTFS_PATH
+    FAAS_FC_ROOTFS_PATH="/path/to/your/faas/tools/firecracker-rootfs-builder/output/rootfs.ext4"
 
     # Docker Executor Configuration (if FAAS_EXECUTOR_TYPE="docker")
     # DOCKER_HOST="unix:///var/run/docker.sock" # Or your Docker daemon address
@@ -135,7 +134,7 @@ Users interact with the deployed service primarily through the HTTP gateway.
 1.  Client sends `POST /functions/{id}/invoke` request (with `SandboxConfig` JSON body) to `faas-gateway`.
 2.  Gateway parses the `SandboxConfig` and calls `Orchestrator::schedule_execution` with it.
 3.  Orchestrator validates the request and, if `FAAS_EXECUTOR_TYPE` is "firecracker", selects the `FirecrackerExecutor`.
-4.  `FirecrackerExecutor` sets up a new Firecracker microVM using the configured kernel (`FAAS_FC_KERNEL_PATH`) and rootfs (`FAAS_DEFAULT_ROOTFS_PATH` or `FAAS_FC_ROOTFS_PATH`).
+4.  `FirecrackerExecutor` sets up a new Firecracker microVM using the configured kernel (`FAAS_FC_KERNEL_PATH`) and rootfs (`FAAS_FC_ROOTFS_PATH`).
 5.  The microVM boots, and the `/init` script inside the rootfs starts the `faas-guest-agent`.
 6.  The guest agent establishes communication with the host executor via vsock.
 7.  The executor serializes the `SandboxConfig` to JSON and sends it to the guest agent via vsock.
@@ -158,8 +157,7 @@ Key environment variables (can be set in a `.env` file):
 
 - `FAAS_FC_BINARY_PATH`: Absolute path to the `firecracker` executable.
 - `FAAS_FC_KERNEL_PATH`: Absolute path to the `vmlinux.bin` kernel file.
-- `FAAS_DEFAULT_ROOTFS_PATH`: Absolute path to the default `rootfs.ext4` file to be used.
-- `FAAS_FC_ROOTFS_PATH`: (Primarily for tests or specific overrides) Absolute path to a `rootfs.ext4` file. If both are set, `FAAS_FC_ROOTFS_PATH` might be preferred by specific test configurations.
+- `FAAS_FC_ROOTFS_PATH`: Absolute path to the default `rootfs.ext4` file to be used.
 
 **For Docker Executor (`FAAS_EXECUTOR_TYPE="docker"`):**
 
@@ -212,7 +210,7 @@ Firecracker is built on KVM and requires a Linux kernel. Therefore, to develop o
     - **Project Files:**
       - Clone your project repository into the Linux VM.
       - Build the `faas-bin` and `tools/firecracker-rootfs-builder/build_rootfs.sh` within the VM.
-      - Set the environment variables (`FAAS_FC_BINARY_PATH`, `FAAS_FC_KERNEL_PATH`, `FAAS_DEFAULT_ROOTFS_PATH`) to point to the correct paths _within the Linux VM_.
+      - Set the environment variables (`FAAS_FC_BINARY_PATH`, `FAAS_FC_KERNEL_PATH`, `FAAS_FC_ROOTFS_PATH`) to point to the correct paths _within the Linux VM_.
 
 You can then run `faas-bin` or `cargo test` for Firecracker-related tests directly inside this Linux VM environment. Port forwarding can be set up in your VM software if you need to access the `faas-gateway` from your macOS host.
 

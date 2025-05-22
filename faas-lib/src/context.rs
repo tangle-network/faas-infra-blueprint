@@ -59,10 +59,10 @@ impl FaaSContext {
                         "FAAS_FC_KERNEL_PATH not set for Firecracker executor".to_string(),
                     )
                 })?;
-                default_firecracker_rootfs_path = env::var("FAAS_DEFAULT_ROOTFS_PATH")
+                default_firecracker_rootfs_path = env::var("FAAS_FC_ROOTFS_PATH")
                     .map_err(|_| {
                         BlueprintLibError::MissingEnvVar(
-                            "FAAS_DEFAULT_ROOTFS_PATH not set for Firecracker executor".to_string(),
+                            "FAAS_FC_ROOTFS_PATH not set for Firecracker executor".to_string(),
                         )
                     })?
                     .into();
