@@ -278,8 +278,8 @@ impl SandboxExecutor for FirecrackerExecutor {
                     info!(%instance_id, bytes_read=buffer.len(), "Successfully read response from vsock");
                 }
                 Ok(Err(e)) => {
-                    error!(%instance_id, error=%e, "Vsock read error");
-                    return Err(FcError::IO(e));
+                 error!(%instance_id, error=%e, "Vsock read error");
+                 return Err(FcError::IO(e));
                 }
                 Err(_) => {
                     error!(%instance_id, timeout=?read_timeout_duration, "Timeout reading response from vsock");
