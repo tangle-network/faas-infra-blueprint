@@ -12,6 +12,8 @@ faas-executor = { workspace = true }
 faas-orchestrator = { workspace = true }
 faas-gateway = { workspace = true }
 
+dotenvy = "0.15"
+
 # Testing Dependencies
 tokio = { workspace = true }
 docktopus = { workspace = true }

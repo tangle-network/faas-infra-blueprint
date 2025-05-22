@@ -270,11 +270,22 @@ impl SandboxExecutor for FirecrackerExecutor {
 
             info!(%instance_id, "Reading response from vsock...");
             let mut buffer = Vec::new();
-            if let Err(e) = reader.read_to_end(&mut buffer).await {
-                 error!(%instance_id, error=%e, "Vsock read error");
-                 return Err(FcError::IO(e));
+            // Timeout for reading the response from the guest
+            let read_timeout_duration = Duration::from_secs(60); // TODO: Make this configurable
+            match timeout(read_timeout_duration, reader.read_to_end(&mut buffer)).await {
+                Ok(Ok(_)) => {
+                    // Successfully read some bytes (or 0 if EOF)
+                    info!(%instance_id, bytes_read=buffer.len(), "Successfully read response from vsock");
+                }
+                Ok(Err(e)) => {
+                    error!(%instance_id, error=%e, "Vsock read error");
+                    return Err(FcError::IO(e));
+                }
+                Err(_) => {
+                    error!(%instance_id, timeout=?read_timeout_duration, "Timeout reading response from vsock");
+                    return Err(FcError::Instance("Timeout reading response from guest vsock".to_string()));
+                }
             }
-            info!(%instance_id, bytes_read=buffer.len(), "Successfully read response from vsock");
 
             let invocation_result: InvocationResult = serde_json::from_slice(&buffer)
                  .map_err(|e| FcError::Configuration(format!("Result deserialization failed: {}", e)))?;

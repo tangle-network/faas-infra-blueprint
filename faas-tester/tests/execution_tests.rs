@@ -1,7 +1,8 @@
-use color_eyre::eyre::{self, Result};
+use color_eyre::eyre::{self, Result, WrapErr};
 use docktopus::bollard::Docker;
 use docktopus::DockerBuilder;
-use faas_common::{ExecutionRequest, Executor, InvocationResult, SandboxConfig, SandboxExecutor};
+use dotenvy::dotenv;
+use faas_common::{InvocationResult, SandboxConfig, SandboxExecutor};
 use faas_executor::{firecracker::FirecrackerExecutor, DockerExecutor};
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
@@ -26,11 +27,27 @@ async fn get_docker_executor() -> Arc<DockerExecutor> {
 }
 
 // Helper for Firecracker tests (requires config)
-fn get_firecracker_executor() -> Option<Arc<FirecrackerExecutor>> {
-    let fc_bin = std::env::var("TEST_FC_BINARY_PATH").ok()?;
-    let kernel = std::env::var("TEST_FC_KERNEL_PATH").ok()?;
-    let executor = FirecrackerExecutor::new(fc_bin, kernel).ok()?;
-    Some(Arc::new(executor))
+fn get_firecracker_executor() -> Result<Arc<FirecrackerExecutor>> {
+    let fc_bin = std::env::var("FAAS_FC_BINARY_PATH")
+        .wrap_err("FAAS_FC_BINARY_PATH environment variable not set or path is invalid")?;
+    let kernel = std::env::var("FAAS_FC_KERNEL_PATH")
+        .wrap_err("FAAS_FC_KERNEL_PATH environment variable not set or path is invalid")?;
+
+    // Add a check to ensure the paths are not the placeholder
+    if fc_bin == "/path/to/your/firecracker" {
+        return Err(eyre::eyre!(
+            "FAAS_FC_BINARY_PATH is still the placeholder value. Please update .env"
+        ));
+    }
+
+    let executor =
+        FirecrackerExecutor::new(fc_bin.clone(), kernel.clone()).wrap_err_with(|| {
+            format!(
+                "Failed to create FirecrackerExecutor instance with bin: '{}', kernel: '{}'",
+                fc_bin, kernel
+            )
+        })?;
+    Ok(Arc::new(executor))
 }
 
 #[tokio::test]
@@ -43,11 +60,12 @@ async fn test_executor_execute_echo_success() -> Result<()> {
     let executor = DockerExecutor::new(docker_client);
 
     let msg = "Executor execute test success!";
-    let request = ExecutionRequest {
-        image: "alpine:latest".to_string(),
+    let request = SandboxConfig {
+        function_id: "tester-echo-exec".to_string(),
+        source: "alpine:latest".to_string(),
         command: vec!["echo".to_string(), msg.to_string()],
         env_vars: None,
-        function_id: "tester-echo-exec".to_string(),
+        payload: vec![],
     };
 
     // Call the trait method
@@ -76,15 +94,16 @@ async fn test_executor_execute_exit_error() -> Result<()> {
     let docker_client = get_test_docker_client().await?;
     let executor = DockerExecutor::new(docker_client);
 
-    let request = ExecutionRequest {
-        image: "alpine:latest".to_string(),
+    let request = SandboxConfig {
+        function_id: "tester-exit-error-exec".to_string(),
+        source: "alpine:latest".to_string(),
         command: vec![
             "sh".to_string(),
             "-c".to_string(),
             "echo 'stderr message' >&2; exit 55".to_string(),
         ],
         env_vars: None,
-        function_id: "tester-exit-error-exec".to_string(),
+        payload: vec![],
     };
 
     // Call the trait method - it should return Ok(InvocationResult { error: Some(...) })
@@ -118,11 +137,12 @@ async fn test_executor_execute_image_not_found() -> Result<()> {
     let docker_client = get_test_docker_client().await?;
     let executor = DockerExecutor::new(docker_client);
 
-    let request = ExecutionRequest {
-        image: "docker.io/library/this-image-does-not-exist-hopefully:latest".to_string(),
+    let request = SandboxConfig {
+        function_id: "tester-img-not-found-exec".to_string(),
+        source: "docker.io/library/this-image-does-not-exist-hopefully:latest".to_string(),
         command: vec!["echo".to_string(), "hello".to_string()],
         env_vars: None,
-        function_id: "tester-img-not-found-exec".to_string(),
+        payload: vec![],
     };
 
     // Call the trait method - it should return Err(FaasError::Executor(...))
@@ -173,44 +193,51 @@ async fn test_docker_executor_echo() {
 }
 
 #[tokio::test]
-#[ignore] // Requires Firecracker setup and Env Vars: TEST_FC_BINARY_PATH, TEST_FC_KERNEL_PATH, TEST_FC_ROOTFS_PATH
+#[ignore] // Requires Firecracker setup and Env Vars: FAAS_FC_BINARY_PATH, FAAS_FC_KERNEL_PATH, FAAS_FC_ROOTFS_PATH
 async fn test_firecracker_executor_echo() {
-    let executor = match get_firecracker_executor() {
-        Some(exec) => exec,
-        None => {
-            println!("Skipping Firecracker test: TEST_FC_BINARY_PATH or TEST_FC_KERNEL_PATH not set or executor creation failed.");
-            return;
-        }
-    };
-    let rootfs_path = match std::env::var("TEST_FC_ROOTFS_PATH") {
-        Ok(p) => p,
-        Err(_) => {
-            println!("Skipping Firecracker test: TEST_FC_ROOTFS_PATH not set.");
-            return;
-        }
-    };
+    dotenv().ok();
 
-    // Assuming rootfs contains guest agent that echoes args/payload
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .try_init();
+
+    let executor = get_firecracker_executor().expect(
+        "Failed to initialize Firecracker executor for test. \n
+Please ensure FAAS_FC_BINARY_PATH and FAAS_FC_KERNEL_PATH are set correctly in your .env file and point to valid files."
+    );
+
+    let rootfs_path = std::env::var("FAAS_FC_ROOTFS_PATH").expect(
+        "FAAS_FC_ROOTFS_PATH environment variable not set. Please set it in your .env file.",
+    );
+
+    let test_payload = b"Hello Firecracker Echo!".to_vec();
+
     let config = SandboxConfig {
         function_id: "fc-echo-test".to_string(),
         source: rootfs_path, // Path to the rootfs containing guest agent
-        // Command might be ignored by guest agent if it takes config via vsock
-        command: vec!["/app/faas-guest-agent".to_string()], // Or the command to run directly if agent isn't primary entrypoint
+        command: vec![],     // Command is ignored by guest agent receiving config via vsock
         env_vars: None,
-        payload: b"Hello Firecracker!".to_vec(),
+        payload: test_payload.clone(),
     };
 
-    let result = executor.execute(config).await.expect("Execution failed");
+    println!("Executing Firecracker test with config: {:?}", config);
+    let result = executor
+        .execute(config)
+        .await
+        .expect("Firecracker execution failed");
 
-    // Verification depends heavily on guest agent implementation
     println!("Firecracker Result: {:?}", result);
     assert!(
         result.error.is_none(),
         "Error was not None: {:?}",
         result.error
     );
-    // TODO: Assert based on actual expected output from guest agent via vsock
-    // assert_eq!(result.response.unwrap_or_default(), b"Hello Firecracker!");
+    // Assert that the response from the guest agent is the same as the payload sent
+    assert_eq!(
+        result.response.unwrap_or_default(),
+        test_payload,
+        "Payload and response do not match!"
+    );
 }
 
 // TODO: Add tests for error cases (non-zero exit, invalid source, etc.) for both executors

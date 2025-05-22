@@ -6355,6 +6355,7 @@ dependencies = [
  "bollard",
  "color-eyre",
  "docktopus",
+ "dotenvy",
  "faas-blueprint-lib",
  "faas-common",
  "faas-executor",

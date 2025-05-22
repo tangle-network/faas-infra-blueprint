@@ -46,108 +46,122 @@ async fn handle_connection(mut stream: VsockStream) -> Result<(), AgentError> {
     let config: SandboxConfig = serde_json::from_slice(&buffer)?;
     info!(config=?config, "Received sandbox config");
 
-    // 2. Execute command
-    info!(command=?config.command, "Executing command...");
-    let mut command = Command::new(&config.command[0]);
-    command.args(&config.command[1..]);
-    command.envs(
-        config
-            .env_vars
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|s| {
-                s.split_once('=')
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-            }),
-    );
-    command.stdin(Stdio::piped());
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
+    let result: InvocationResult;
 
-    let mut child = command
-        .spawn()
-        .map_err(|e| AgentError::CommandExec(format!("Failed to spawn command: {}", e)))?;
+    if config.command.is_empty() {
+        // Echo mode: If no command, echo payload
+        info!("No command specified, entering echo mode for payload.");
+        result = InvocationResult {
+            request_id: config.function_id,
+            response: Some(config.payload), // Echo the payload
+            logs: Some("Executed in echo mode.".to_string()),
+            error: None,
+        };
+    } else {
+        // 2. Execute command
+        info!(command=?config.command, "Executing command...");
+        let mut command = Command::new(&config.command[0]);
+        command.args(&config.command[1..]);
+        command.envs(
+            config
+                .env_vars
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|s| {
+                    s.split_once('=')
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                }),
+        );
+        command.stdin(Stdio::piped());
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
 
-    let stdin_opt = child.stdin.take();
-    let stdout_opt = child.stdout.take();
-    let stderr_opt = child.stderr.take();
+        let mut child = command
+            .spawn()
+            .map_err(|e| AgentError::CommandExec(format!("Failed to spawn command: {}", e)))?;
 
-    // Async IO Tasks
-    let stdin_handle = tokio::spawn(async move {
-        if let Some(mut stdin) = stdin_opt {
-            let payload = config.payload; // Move payload
-            match stdin.write_all(&payload).await {
-                Ok(_) => stdin.shutdown().await,
-                Err(e) => Err(e),
+        let stdin_opt = child.stdin.take();
+        let stdout_opt = child.stdout.take();
+        let stderr_opt = child.stderr.take();
+
+        // Async IO Tasks
+        // Pass only the payload needed for stdin_handle, not the whole config
+        let payload_for_stdin = config.payload.clone();
+        let stdin_handle = tokio::spawn(async move {
+            if let Some(mut stdin) = stdin_opt {
+                match stdin.write_all(&payload_for_stdin).await {
+                    Ok(_) => stdin.shutdown().await,
+                    Err(e) => Err(e),
+                }
+            } else {
+                Ok(())
             }
-        } else {
-            Ok(()) // No stdin to write to
+        });
+
+        let stdout_handle = tokio::spawn(async move {
+            if let Some(mut stdout) = stdout_opt {
+                let mut buf = Vec::new();
+                stdout.read_to_end(&mut buf).await.map(|_| buf)
+            } else {
+                Ok(Vec::new())
+            }
+        });
+
+        let stderr_handle = tokio::spawn(async move {
+            if let Some(mut stderr) = stderr_opt {
+                let mut buf = Vec::new();
+                stderr.read_to_end(&mut buf).await.map(|_| buf)
+            } else {
+                Ok(Vec::new())
+            }
+        });
+
+        // Wait for process completion and stdio tasks
+        let (status_res, stdin_res, stdout_res, stderr_res) =
+            tokio::join!(child.wait(), stdin_handle, stdout_handle, stderr_handle);
+
+        let status = status_res
+            .map_err(|e| AgentError::CommandExec(format!("Command wait failed: {}", e)))?;
+        info!(exit_code=?status.code(), "Command finished");
+
+        // Check task results
+        if let Err(e) = map_join_error(stdin_res, "Stdin")? {
+            error!(error = %e, "Error writing stdin or shutting down");
+            // Non-fatal for now, process already finished
         }
-    });
+        let stdout_data = map_join_error(stdout_res, "Stdout")??; // Inner ? handles IO error
+        let stderr_data = map_join_error(stderr_res, "Stderr")??; // Inner ? handles IO error
 
-    let stdout_handle = tokio::spawn(async move {
-        if let Some(mut stdout) = stdout_opt {
-            let mut buf = Vec::new();
-            stdout.read_to_end(&mut buf).await.map(|_| buf)
-        } else {
-            Ok(Vec::new())
-        }
-    });
+        // Combine logs
+        let mut combined_logs = Vec::new();
+        combined_logs.extend_from_slice(b"STDOUT:\n");
+        combined_logs.extend_from_slice(&stdout_data);
+        combined_logs.extend_from_slice(b"\nSTDERR:\n");
+        combined_logs.extend_from_slice(&stderr_data);
+        let logs_string = String::from_utf8_lossy(&combined_logs).to_string();
 
-    let stderr_handle = tokio::spawn(async move {
-        if let Some(mut stderr) = stderr_opt {
-            let mut buf = Vec::new();
-            stderr.read_to_end(&mut buf).await.map(|_| buf)
-        } else {
-            Ok(Vec::new())
-        }
-    });
-
-    // Wait for process completion and stdio tasks
-    let (status_res, stdin_res, stdout_res, stderr_res) =
-        tokio::join!(child.wait(), stdin_handle, stdout_handle, stderr_handle);
-
-    let status =
-        status_res.map_err(|e| AgentError::CommandExec(format!("Command wait failed: {}", e)))?;
-    info!(exit_code=?status.code(), "Command finished");
-
-    // Check task results
-    if let Err(e) = map_join_error(stdin_res, "Stdin")? {
-        error!(error = %e, "Error writing stdin or shutting down");
-        // Non-fatal for now, process already finished
+        // 3. Construct InvocationResult
+        result = InvocationResult {
+            request_id: config.function_id,
+            response: Some(stdout_data),
+            logs: Some(logs_string),
+            error: if status.success() {
+                None
+            } else {
+                // Include stderr in error message if process failed
+                Some(format!(
+                    "Command failed with status: {}. Stderr: {}",
+                    status,
+                    String::from_utf8_lossy(&stderr_data)
+                ))
+            },
+        };
     }
-    let stdout_data = map_join_error(stdout_res, "Stdout")??; // Inner ? handles IO error
-    let stderr_data = map_join_error(stderr_res, "Stderr")??; // Inner ? handles IO error
-
-    // Combine logs
-    let mut combined_logs = Vec::new();
-    combined_logs.extend_from_slice(b"STDOUT:\n");
-    combined_logs.extend_from_slice(&stdout_data);
-    combined_logs.extend_from_slice(b"\nSTDERR:\n");
-    combined_logs.extend_from_slice(&stderr_data);
-    let logs_string = String::from_utf8_lossy(&combined_logs).to_string();
-
-    // 3. Construct InvocationResult
-    let result = InvocationResult {
-        request_id: config.function_id,
-        response: Some(stdout_data),
-        logs: Some(logs_string),
-        error: if status.success() {
-            None
-        } else {
-            // Include stderr in error message if process failed
-            Some(format!(
-                "Command failed with status: {}. Stderr: {}",
-                status,
-                String::from_utf8_lossy(&stderr_data)
-            ))
-        },
-    };
 
     // 4. Send result back
     info!(result=?result, "Sending invocation result...");
     let result_json = serde_json::to_vec(&result)?;
-    stream.write_all(&result_json);
+    stream.write_all(&result_json).await?;
     stream.shutdown(Shutdown::Both)?;
 
     info!("Finished handling connection.");
