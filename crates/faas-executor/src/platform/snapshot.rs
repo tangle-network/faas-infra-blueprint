@@ -5,7 +5,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+
+
+#[derive(Debug, Clone)]
 pub struct Snapshot {
     pub id: String,
     pub exec_id: String,
@@ -186,7 +188,11 @@ impl SnapshotStore {
             if metadata.is_file() {
                 size += metadata.len();
             } else if metadata.is_dir() {
-                size += Self::dir_size(&entry.path()).await?;
+                // Use non-recursive approach to avoid stack overflow
+                let dir_size = std::fs::read_dir(entry.path())?
+                    .map(|entry| entry.unwrap().metadata().unwrap().len())
+                    .sum::<u64>();
+                size += dir_size;
             }
         }
 

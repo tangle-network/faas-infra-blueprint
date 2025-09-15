@@ -6331,6 +6331,7 @@ dependencies = [
  "color-eyre",
  "criterion",
  "docktopus",
+ "faas-blueprint-lib",
  "faas-common",
  "faas-executor",
  "faas-gateway",
@@ -6343,6 +6344,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "tracing-subscriber 0.3.19",
 ]
 
 [[package]]

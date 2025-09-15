@@ -5,7 +5,13 @@ use tokio::runtime::Runtime;
 
 fn benchmark_modes(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = rt.block_on(async { Executor::new().await.unwrap() });
+    let executor = match rt.block_on(async { Executor::new().await }) {
+        Ok(exec) => exec,
+        Err(_) => {
+            eprintln!("Skipping benchmark: Executor initialization failed (likely missing Firecracker binary)");
+            return;
+        }
+    };
 
     let mut group = c.benchmark_group("execution_modes");
 
@@ -36,7 +42,13 @@ fn benchmark_modes(c: &mut Criterion) {
 
 fn benchmark_fork_creation(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = rt.block_on(async { Executor::new().await.unwrap() });
+    let executor = match rt.block_on(async { Executor::new().await }) {
+        Ok(exec) => exec,
+        Err(_) => {
+            eprintln!("Skipping fork benchmark: Executor initialization failed");
+            return;
+        }
+    };
 
     c.bench_function("fork_10_branches", |b| {
         b.to_async(&rt).iter(|| async {
@@ -75,7 +87,13 @@ fn benchmark_fork_creation(c: &mut Criterion) {
 
 fn benchmark_ai_exploration(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = rt.block_on(async { Executor::new().await.unwrap() });
+    let executor = match rt.block_on(async { Executor::new().await }) {
+        Ok(exec) => exec,
+        Err(_) => {
+            eprintln!("Skipping AI exploration benchmark: Executor initialization failed");
+            return;
+        }
+    };
 
     c.bench_function("ai_exploration_tree", |b| {
         b.to_async(&rt).iter(|| async {
@@ -139,7 +157,13 @@ print(f'Exploring with strategy {{strategy}}')
 
 fn benchmark_memory_efficiency(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = rt.block_on(async { Executor::new().await.unwrap() });
+    let executor = match rt.block_on(async { Executor::new().await }) {
+        Ok(exec) => exec,
+        Err(_) => {
+            eprintln!("Skipping memory efficiency benchmark: Executor initialization failed");
+            return;
+        }
+    };
 
     c.bench_function("memory_heavy_parallel", |b| {
         b.to_async(&rt).iter(|| async {

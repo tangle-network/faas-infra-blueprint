@@ -1,4 +1,5 @@
 use anyhow::Result;
+use faas_common::SandboxExecutor;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, instrument};
@@ -52,7 +53,7 @@ impl Executor {
                         crate::executor::ContainerStrategy {
                             warm_pools: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
                             max_pool_size: 10,
-                            docker: Arc::new(crate::docktopus::DockerBuilder::new().await?.client().clone()),
+                            docker: crate::docktopus::DockerBuilder::new().await?.client().clone(),
                             build_cache_volumes: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
                             dependency_layers: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
                             gpu_pools: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
@@ -60,7 +61,7 @@ impl Executor {
                     )
                 ).await?
             ),
-            vm: Arc::new(crate::firecracker::FirecrackerExecutor::new().await?),
+            vm: Arc::new(crate::firecracker::FirecrackerExecutor::new("firecracker".to_string(), "/var/lib/faas/kernel".to_string())?),
             memory: Arc::new(MemoryPool::new()?),
             snapshots: Arc::new(SnapshotStore::new().await?),
             forks: Arc::new(ForkManager::new()?),
@@ -87,7 +88,8 @@ impl Executor {
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
             source: req.env,
-            input: req.code.into_bytes(),
+            command: vec!["sh".to_string(), "-c".to_string(), req.code],
+            payload: Vec::new(),
             env_vars: None,
         };
 
@@ -108,7 +110,8 @@ impl Executor {
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
             source: req.env,
-            input: req.code.into_bytes(),
+            command: vec!["sh".to_string(), "-c".to_string(), req.code],
+            payload: Vec::new(),
             env_vars: None,
         };
 
@@ -172,7 +175,8 @@ impl Executor {
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
             source: req.env,
-            input: req.code.into_bytes(),
+            command: vec!["sh".to_string(), "-c".to_string(), req.code],
+            payload: Vec::new(),
             env_vars: None,
         };
 

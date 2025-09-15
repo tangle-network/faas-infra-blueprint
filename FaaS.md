@@ -482,3 +482,208 @@ While the preceding sections describe a standalone FaaS microservice architectur
 - **Simplified Orchestration:** The Blueprint runner and the Tangle network replace the need for a complex, custom orchestrator service.
 - **Reduced Infrastructure:** Eliminates the need for separate Gateway and Orchestrator microservices and their associated networking/deployment complexity.
 - **Composability:** FaaS execution becomes another capability available to the Tangle ecosystem, usable within other Blueprints or dApps.
+
+# **AI Agent Integration & SDK Architecture**
+
+Our platform provides specialized SDK support for AI agent workflows and reasoning-time branching, enabling "Git for Compute" patterns and reversible execution environments.
+
+**Core AI Agent Capabilities:**
+
+- **Reversible Execution:** Every execution creates a snapshot that can be restored, enabling AI agents to explore multiple computational paths without irreversible consequences.
+- **Parallel Exploration Trees:** AI agents can branch execution at any point to test multiple solutions simultaneously using reasoning-time branching.
+- **Sub-250ms State Management:** Snapshot creation and restoration in under 250ms to match industry standards for AI agent responsiveness.
+- **Verified Reasoning:** Integration with TDX attestation to provide cryptographic proof of execution integrity for AI reasoning processes.
+
+**Multi-Language SDK Support:**
+
+**Python SDK (`faas-python-sdk`):**
+```python
+from faas_sdk import ExecutionPlatform, Mode
+
+# AI agent exploration pattern
+platform = ExecutionPlatform()
+
+# Create base reasoning state
+base_exec = platform.execute(
+    code="import reasoning_engine; state = setup_problem()",
+    mode=Mode.CHECKPOINTED
+)
+
+# Branch for parallel exploration
+branches = platform.branch_from(base_exec.snapshot, [
+    "strategy_a = explore_path_a(state)",
+    "strategy_b = explore_path_b(state)",
+    "strategy_c = explore_path_c(state)"
+])
+
+# Collect results and select best
+results = platform.collect_results(branches)
+best_result = ai_agent.select_optimal(results)
+```
+
+**JavaScript/TypeScript SDK (`faas-js-sdk`):**
+```typescript
+import { ExecutionPlatform, Mode } from '@faas/sdk';
+
+class AIAgent {
+  async exploreReasoningPaths(problem: Problem): Promise<Solution> {
+    const platform = new ExecutionPlatform();
+
+    // Setup base state
+    const baseState = await platform.execute({
+      code: `setupProblem(${JSON.stringify(problem)})`,
+      mode: Mode.Checkpointed
+    });
+
+    // Parallel exploration
+    const explorations = await Promise.all([
+      platform.branchFrom(baseState.snapshot, 'explorePathA()'),
+      platform.branchFrom(baseState.snapshot, 'explorePathB()'),
+      platform.branchFrom(baseState.snapshot, 'explorePathC()')
+    ]);
+
+    return this.selectBestSolution(explorations);
+  }
+}
+```
+
+**Rust SDK (`faas-rust-sdk`):**
+```rust
+use faas_sdk::{ExecutionPlatform, Mode, Request};
+
+pub struct AIAgent {
+    platform: ExecutionPlatform,
+}
+
+impl AIAgent {
+    pub async fn explore_reasoning_tree(&self, problem: &str) -> Result<Solution> {
+        // Create checkpointed base state
+        let base_req = Request {
+            code: format!("setup_problem('{}')", problem),
+            mode: Mode::Checkpointed,
+            ..Default::default()
+        };
+
+        let base_result = self.platform.execute(base_req).await?;
+        let snapshot = base_result.snapshot.unwrap();
+
+        // Parallel branch exploration
+        let branches = vec![
+            self.platform.branch_from(&snapshot, "explore_path_a()"),
+            self.platform.branch_from(&snapshot, "explore_path_b()"),
+            self.platform.branch_from(&snapshot, "explore_path_c()"),
+        ];
+
+        let results = futures::try_join_all(branches).await?;
+        Ok(self.select_optimal_solution(results))
+    }
+}
+```
+
+**Go SDK (`faas-go-sdk`):**
+```go
+package faas
+
+type AIAgent struct {
+    platform *ExecutionPlatform
+}
+
+func (a *AIAgent) ExploreReasoningPaths(problem string) (*Solution, error) {
+    // Create base reasoning state
+    baseReq := &Request{
+        Code: fmt.Sprintf("setupProblem('%s')", problem),
+        Mode: ModeCheckpointed,
+    }
+
+    baseResult, err := a.platform.Execute(baseReq)
+    if err != nil {
+        return nil, err
+    }
+
+    // Parallel exploration branches
+    var wg sync.WaitGroup
+    results := make([]*ExecutionResult, 3)
+
+    strategies := []string{
+        "explorePathA()",
+        "explorePathB()",
+        "explorePathC()",
+    }
+
+    for i, strategy := range strategies {
+        wg.Add(1)
+        go func(idx int, code string) {
+            defer wg.Done()
+            results[idx], _ = a.platform.BranchFrom(baseResult.Snapshot, code)
+        }(i, strategy)
+    }
+
+    wg.Wait()
+    return a.selectOptimalSolution(results), nil
+}
+```
+
+**Advanced AI Agent Features:**
+
+- **Reasoning Verification:** Built-in support for verifying AI reasoning steps using TDX attestation
+- **State Persistence:** Long-running agent states can be persisted and resumed across sessions
+- **Multi-Agent Coordination:** Agents can share snapshots and coordinate exploration through the platform
+- **Performance Monitoring:** Built-in metrics for reasoning step duration, branch exploration efficiency
+- **Resource Management:** Automatic scaling and resource allocation based on reasoning complexity
+
+**Platform Advantages:**
+
+- **Performance:** Sub-250ms snapshot creation and sub-100ms branch creation
+- **Security:** Hardware-level isolation with TDX attestation for verified reasoning
+- **Multi-Language:** Native SDKs for Rust, Python, JavaScript/TypeScript, and Go
+- **Open Architecture:** Self-hostable and open-source for maximum flexibility
+- **AI-Native:** Purpose-built for AI agent workflows and reasoning patterns
+
+**Integration Examples:**
+
+**LangChain Integration:**
+```python
+from langchain.agents import Agent
+from faas_sdk import ExecutionPlatform
+
+class FaaSLangChainAgent(Agent):
+    def __init__(self):
+        self.platform = ExecutionPlatform()
+        super().__init__()
+
+    def reasoning_step(self, problem):
+        # Create snapshot before reasoning
+        snapshot = self.platform.checkpoint()
+
+        # Try multiple reasoning approaches
+        approaches = self.platform.explore_parallel([
+            "chain_of_thought(problem)",
+            "tree_of_thought(problem)",
+            "reflection_reasoning(problem)"
+        ], base_snapshot=snapshot)
+
+        return self.select_best_approach(approaches)
+```
+
+**AutoGen Integration:**
+```python
+import autogen
+from faas_sdk import ExecutionPlatform
+
+class FaaSAutoGenAgent(autogen.Agent):
+    def __init__(self, name, platform_config):
+        self.platform = ExecutionPlatform(platform_config)
+        super().__init__(name)
+
+    async def generate_response(self, message):
+        # Branch execution for multiple response strategies
+        responses = await self.platform.explore_branches([
+            f"generate_analytical_response('{message}')",
+            f"generate_creative_response('{message}')",
+            f"generate_factual_response('{message}')"
+        ])
+
+        return self.synthesize_best_response(responses)
+```
+
+This AI agent integration provides a complete solution for modern AI development with industry-leading performance, security, and flexibility.
