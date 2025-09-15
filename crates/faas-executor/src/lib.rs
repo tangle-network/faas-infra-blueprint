@@ -24,6 +24,7 @@ pub use faas_common as common;
 pub mod firecracker;
 pub mod executor;
 pub mod environment_registry;
+pub mod platform;
 
 // --- Custom Error Type ---
 #[derive(Error, Debug)]
