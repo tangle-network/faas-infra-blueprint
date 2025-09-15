@@ -32,3 +32,4 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 firecracker-rs-sdk = { version = "0.1.0", features = ["_rt-tokio"] }
 serde_json = { workspace = true }
+sha2 = "0.10"

@@ -5,6 +5,13 @@ use std::time::{Duration, Instant};
 use tracing::{info, instrument};
 
 use super::{memory::MemoryPool, snapshot::SnapshotStore, fork::ForkManager};
+use crate::performance::{
+    ContainerPool, PoolConfig, CacheManager, CacheStrategy,
+    MetricsCollector, SnapshotOptimizer, OptimizationConfig,
+    PredictiveScaler,
+};
+use crate::performance::metrics_collector::MetricsConfig;
+use crate::performance::predictive_scaling::ScalingConfig;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Mode {
@@ -42,6 +49,12 @@ pub struct Executor {
     memory: Arc<MemoryPool>,
     snapshots: Arc<SnapshotStore>,
     forks: Arc<ForkManager>,
+    // Performance optimizations
+    container_pool: Arc<ContainerPool>,
+    cache_manager: Arc<CacheManager>,
+    metrics: Arc<MetricsCollector>,
+    snapshot_optimizer: Arc<SnapshotOptimizer>,
+    predictive_scaler: Arc<PredictiveScaler>,
 }
 
 impl Executor {
@@ -65,6 +78,12 @@ impl Executor {
             memory: Arc::new(MemoryPool::new()?),
             snapshots: Arc::new(SnapshotStore::new().await?),
             forks: Arc::new(ForkManager::new()?),
+            // Performance optimizations
+            container_pool: Arc::new(ContainerPool::new(PoolConfig::default())),
+            cache_manager: Arc::new(CacheManager::new(CacheStrategy::default()).await?),
+            metrics: Arc::new(MetricsCollector::new(MetricsConfig::default())),
+            snapshot_optimizer: Arc::new(SnapshotOptimizer::new(OptimizationConfig::default())),
+            predictive_scaler: Arc::new(PredictiveScaler::new(ScalingConfig::default())),
         })
     }
 

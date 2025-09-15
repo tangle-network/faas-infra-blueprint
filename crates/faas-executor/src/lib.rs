@@ -25,6 +25,7 @@ pub mod firecracker;
 pub mod executor;
 pub mod environment_registry;
 pub mod platform;
+pub mod performance;
 
 // --- Custom Error Type ---
 #[derive(Error, Debug)]
