@@ -1,8 +1,14 @@
 use blueprint_sdk::{
     contexts::tangle::TangleClientContext,
+    environments::BlueprintEnvironment,
     router::Router,
     runner::BlueprintRunner,
-    tangle::{consumer::TangleConsumer, producer::TangleProducer},
+    tangle::{
+        consumer::TangleConsumer,
+        producer::TangleProducer,
+        config::TangleConfig,
+        layer::TangleLayer,
+    },
 };
 use color_eyre::eyre;
 use faas_lib::context::FaaSContext; // Import the context from faas-lib

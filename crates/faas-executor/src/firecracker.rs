@@ -21,12 +21,13 @@ use tokio::time::{sleep, timeout, Duration};
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
-// Placeholder paths - These should come from configuration
-const FIRECRACKER_BINARY_PATH: &str = "/usr/bin/firecracker"; // Example path
-const KERNEL_IMAGE_PATH: &str = "/path/to/vmlinux.bin"; // Example path
+// Default paths - These should be overridden via configuration
+const DEFAULT_FIRECRACKER_BINARY_PATH: &str = "/usr/bin/firecracker";
+const DEFAULT_KERNEL_IMAGE_PATH: &str = "resources/kernel/hello-vmlinux.bin";
+const DEFAULT_ROOTFS_PATH: &str = "tools/firecracker-rootfs-builder/output/images/rootfs.ext2";
 const LOG_FIFO_PATH_PREFIX: &str = "/tmp/fc_log_";
 const API_SOCK_PATH_PREFIX: &str = "/tmp/fc_sock_";
-const GUEST_VSOCK_PORT: u32 = 1234; // Example port for guest agent
+const GUEST_VSOCK_PORT: u32 = 1234; // Port for guest agent vsock communication
 const TEMP_ROOTFS_DIR_PREFIX: &str = "/tmp/faas_rootfs_"; // Directory for temp rootfs copies
 
 // RAII Guard for Firecracker instance cleanup

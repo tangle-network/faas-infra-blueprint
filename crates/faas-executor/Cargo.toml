@@ -29,5 +29,6 @@ uuid = { workspace = true }
 # Add async-trait
 async-trait = "0.1"
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 firecracker-rs-sdk = { version = "0.1.0", features = ["_rt-tokio"] }
 serde_json = { workspace = true }

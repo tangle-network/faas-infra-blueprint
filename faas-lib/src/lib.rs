@@ -8,6 +8,7 @@ pub mod jobs;
 pub const EXECUTE_FUNCTION_JOB_ID: u64 = 0;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[cfg_attr(feature = "scale", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct FaaSExecutionOutput {
     pub request_id: String,
     pub stdout: Option<String>,
@@ -37,6 +38,7 @@ impl From<InvocationResult> for FaaSExecutionOutput {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "scale", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub enum ExecuteFunctionResult {
     Ok(FaaSExecutionOutput),
     Err(String),

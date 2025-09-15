@@ -22,6 +22,8 @@ pub use docktopus::bollard;
 pub use faas_common as common;
 
 pub mod firecracker;
+pub mod executor;
+pub mod environment_registry;
 
 // --- Custom Error Type ---
 #[derive(Error, Debug)]
@@ -282,3 +284,6 @@ async fn run_container_inner(
         error: error_message,
     })
 }
+
+// Re-export the unified executor
+pub use executor::{Executor, WarmContainer};

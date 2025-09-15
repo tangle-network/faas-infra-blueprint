@@ -83,6 +83,7 @@ impl Display for InvocationResult {
 
 /// Input arguments for the ExecuteFunction Tangle job.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "scale", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 pub struct ExecuteFunctionArgs {
     pub image: String,
     pub command: Vec<String>,

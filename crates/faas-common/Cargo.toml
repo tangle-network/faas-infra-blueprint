@@ -14,6 +14,10 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 async-trait = "0.1"
 thiserror = { workspace = true }
+parity-scale-codec = { workspace = true, optional = true }
+
+[features]
+scale = ["parity-scale-codec"]
 
 [dev-dependencies]
 serde_json = { workspace = true }

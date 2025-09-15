@@ -4,7 +4,6 @@ use blueprint_sdk::extract::Context;
 use blueprint_sdk::macros::debug_job;
 use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleResult};
 use faas_common::{ExecuteFunctionArgs, InvocationResult};
-use faas_orchestrator::Orchestrator;
 use tracing::{error, info, instrument};
 
 // --- Job Handler Implementation ---

@@ -13,7 +13,7 @@ name = "faas_blueprint_lib"
 path = "src/lib.rs"
 
 [dependencies]
-faas-common = { workspace = true }
+faas-common = { workspace = true, features = ["scale"] }
 faas-executor = { workspace = true }
 faas-orchestrator = { workspace = true }
 faas-gateway = { workspace = true }
@@ -27,11 +27,18 @@ futures = { workspace = true }
 blueprint-sdk = { workspace = true, features = ["std", "tangle", "macros"] }
 docktopus = { workspace = true }
 thiserror = { workspace = true }
+parity-scale-codec = { workspace = true, optional = true }
+
+[features]
+scale = ["parity-scale-codec", "faas-common/scale"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
 color-eyre = { workspace = true }
 blueprint-sdk = { workspace = true, features = ["std", "tangle", "macros", "testing"] }
+faas-blueprint-lib = { path = ".", features = ["scale"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 faas-executor = { workspace = true }
 tracing-subscriber = { workspace = true }
+parity-scale-codec = { version = "3.0", features = ["derive"] }
+serde_json = { workspace = true }

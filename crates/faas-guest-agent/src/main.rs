@@ -7,6 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::process::Command;
 use tokio::time::Duration;
+#[cfg(target_os = "linux")]
 use tokio_vsock::{VsockListener, VsockStream};
 use tracing::{error, info};
 use tracing_subscriber;
@@ -37,6 +38,7 @@ fn map_join_error<T>(
     res.map_err(|e| AgentError::JoinError(format!("{} task join error: {}", task_name, e)))
 }
 
+#[cfg(target_os = "linux")]
 async fn handle_connection(mut stream: VsockStream) -> Result<(), AgentError> {
     info!("Accepted vsock connection");
 
@@ -168,6 +170,7 @@ async fn handle_connection(mut stream: VsockStream) -> Result<(), AgentError> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -202,4 +205,10 @@ async fn main() {
             }
         }
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("The faas-guest-agent is only supported on Linux (requires vsock)");
+    std::process::exit(1);
 }
