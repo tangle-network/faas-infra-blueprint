@@ -1,595 +1,400 @@
 """
-FaaS Platform Python SDK
-Integration with Rust-based multi-mode execution platform
+FaaS SDK for Python
 """
 
 import os
-import json
 import time
-import asyncio
-import hashlib
-from typing import Optional, Dict, Any, List, Union, Callable, TypeVar, Generic
-from dataclasses import dataclass, asdict
-from enum import Enum
-from datetime import datetime
-import aiohttp
-import websockets
-from substrate import SubstrateInterface, Keypair
-from substrate.exceptions import SubstrateRequestException
-
-T = TypeVar('T')
-R = TypeVar('R')
-
-# Configuration
-DEFAULT_PLATFORM_URL = os.getenv('FAAS_PLATFORM_URL', 'http://localhost:8080/api/v1')
-DEFAULT_EXECUTOR_URL = os.getenv('FAAS_EXECUTOR_URL', 'http://localhost:8081')
-DEFAULT_TANGLE_URL = os.getenv('TANGLE_RPC_URL', 'ws://localhost:9944')
-
-
-class ExecutionMode(str, Enum):
-    """Execution modes matching Rust platform implementation"""
-    EPHEMERAL = 'ephemeral'
-    CACHED = 'cached'
-    CHECKPOINTED = 'checkpointed'
-    BRANCHED = 'branched'
-    PERSISTENT = 'persistent'
-
-
-@dataclass
-class ExecutionRequest:
-    """Request for code execution"""
-    id: str
-    code: str
-    mode: ExecutionMode
-    env: str
-    timeout: Optional[int] = None
-    checkpoint: Optional[str] = None
-    branch_from: Optional[str] = None
-
-
-@dataclass
-class ExecutionResponse:
-    """Response from code execution"""
-    request_id: str
-    exit_code: int
-    stdout: bytes
-    stderr: bytes
-    duration: float
-    snapshot: Optional[str] = None
-    cached: bool = False
-    memory_used: Optional[int] = None
+import requests
+from typing import Optional, Dict, List, Any
+from dataclasses import dataclass
 
 
 @dataclass
 class Snapshot:
-    """Execution snapshot with CRIU checkpoint"""
+    """VM/container snapshot"""
     id: str
-    parent_id: Optional[str]
-    mode: ExecutionMode
-    created_at: float
-    size: int
-    memory_pages: Optional[int]
-    checksum: str
-    metadata: Optional[Dict[str, Any]] = None
+    name: str
+    created_at: int
+    size_bytes: int
+    image: Optional[str] = None
+
+
+@dataclass
+class Instance:
+    """Running instance"""
+    id: str
+    status: str  # 'starting', 'running', 'paused', 'stopped'
+    created_at: int
+    cpu_cores: int
+    memory_mb: int
+    disk_gb: int
+    ssh_host: Optional[str] = None
+    ssh_port: Optional[int] = None
+    ssh_username: Optional[str] = None
+
+
+@dataclass
+class ExecResult:
+    """Command execution result"""
+    stdout: str
+    stderr: str
+    exit_code: int
 
 
 @dataclass
 class Branch:
-    """Execution branch for parallel operations"""
+    """Snapshot branch for parallel exploration"""
     id: str
-    snapshot_id: str
-    parent_branch: Optional[str]
-    created_at: float
-    divergence_point: str
-    metadata: Optional[Dict[str, Any]] = None
-
-
-@dataclass
-class ResourceLimits:
-    """Resource constraints for execution"""
-    cpu_cores: Optional[int] = None
-    memory_mb: Optional[int] = None
-    disk_mb: Optional[int] = None
-    network_mbps: Optional[int] = None
-
-
-class PlatformError(Exception):
-    """Platform-specific errors"""
-    def __init__(self, message: str, code: Optional[str] = None, details: Any = None):
-        super().__init__(message)
-        self.code = code
-        self.details = details
-
-
-class FaaSPlatformClient:
-    """
-    Main client for FaaS platform operations
-    Integrates with Rust-based execution system
-    """
-
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        platform_url: str = DEFAULT_PLATFORM_URL,
-        executor_url: str = DEFAULT_EXECUTOR_URL,
-        timeout: int = 30,
-        max_retries: int = 3
-    ):
-        self.api_key = api_key or os.getenv('FAAS_API_KEY', '')
-        if not self.api_key:
-            raise PlatformError('API key required. Set FAAS_API_KEY or pass api_key')
-
-        self.platform_url = platform_url
-        self.executor_url = executor_url
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self._session: Optional[aiohttp.ClientSession] = None
-
-    async def __aenter__(self):
-        """Async context manager entry"""
-        self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
-        )
-        return self
-
-    async def __aexit__(self, *args):
-        """Async context manager exit"""
-        if self._session:
-            await self._session.close()
-
-    async def _request(
-        self,
-        method: str,
-        url: str,
-        json_data: Optional[Dict] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """Make HTTP request with retry logic"""
-        if not self._session:
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout)
-            )
-
-        headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json',
-            **kwargs.get('headers', {})
-        }
-
-        for attempt in range(self.max_retries):
-            try:
-                async with self._session.request(
-                    method, url, json=json_data, headers=headers, **kwargs
-                ) as response:
-                    if response.status >= 500:
-                        if attempt < self.max_retries - 1:
-                            await asyncio.sleep(2 ** attempt)
-                            continue
-                        raise PlatformError(f'Server error: {response.status}')
-
-                    if not response.ok:
-                        error_data = await response.text()
-                        raise PlatformError(
-                            f'Request failed: {response.status}',
-                            code=str(response.status),
-                            details=error_data
-                        )
-
-                    return await response.json()
-
-            except asyncio.TimeoutError:
-                raise PlatformError(f'Request timeout after {self.timeout}s', code='TIMEOUT')
-            except aiohttp.ClientError as e:
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                raise PlatformError(f'Network error: {e}')
-
-        raise PlatformError(f'Max retries ({self.max_retries}) exceeded')
-
-    # Core execution methods
-
-    async def execute(self, request: ExecutionRequest) -> ExecutionResponse:
-        """Execute code with specified mode"""
-        url = f'{self.executor_url}/execute'
-        data = asdict(request)
-
-        result = await self._request('POST', url, data)
-
-        return ExecutionResponse(
-            request_id=result['request_id'],
-            exit_code=result['exit_code'],
-            stdout=bytes(result['stdout']),
-            stderr=bytes(result['stderr']),
-            duration=result['duration'],
-            snapshot=result.get('snapshot'),
-            cached=result.get('cached', False),
-            memory_used=result.get('memory_used')
-        )
-
-    async def execute_ephemeral(self, code: str, env: str = 'alpine:latest') -> ExecutionResponse:
-        """Execute code in ephemeral mode"""
-        request = ExecutionRequest(
-            id=self._generate_id('ephemeral'),
-            code=code,
-            mode=ExecutionMode.EPHEMERAL,
-            env=env
-        )
-        return await self.execute(request)
-
-    async def execute_cached(self, code: str, env: str = 'alpine:latest') -> ExecutionResponse:
-        """Execute code with caching"""
-        request = ExecutionRequest(
-            id=self._generate_id('cached'),
-            code=code,
-            mode=ExecutionMode.CACHED,
-            env=env
-        )
-        return await self.execute(request)
-
-    async def execute_checkpointed(
-        self,
-        code: str,
-        env: str = 'alpine:latest',
-        checkpoint: Optional[str] = None
-    ) -> ExecutionResponse:
-        """Execute code with checkpoint/restore"""
-        request = ExecutionRequest(
-            id=self._generate_id('checkpoint'),
-            code=code,
-            mode=ExecutionMode.CHECKPOINTED,
-            env=env,
-            checkpoint=checkpoint
-        )
-        return await self.execute(request)
-
-    async def execute_branched(
-        self,
-        code: str,
-        branch_from: str,
-        env: str = 'alpine:latest'
-    ) -> ExecutionResponse:
-        """Execute code in branched mode"""
-        request = ExecutionRequest(
-            id=self._generate_id('branch'),
-            code=code,
-            mode=ExecutionMode.BRANCHED,
-            env=env,
-            branch_from=branch_from
-        )
-        return await self.execute(request)
-
-    # Snapshot operations
-
-    async def create_snapshot(self, execution_id: str) -> Snapshot:
-        """Create CRIU snapshot from execution"""
-        url = f'{self.platform_url}/snapshots'
-        result = await self._request('POST', url, {'execution_id': execution_id})
-
-        return Snapshot(**result)
-
-    async def restore_snapshot(self, snapshot_id: str) -> ExecutionResponse:
-        """Restore execution from snapshot"""
-        url = f'{self.platform_url}/snapshots/{snapshot_id}/restore'
-        result = await self._request('POST', url)
-
-        return ExecutionResponse(**result)
-
-    async def get_snapshot(self, snapshot_id: str) -> Snapshot:
-        """Get snapshot details"""
-        url = f'{self.platform_url}/snapshots/{snapshot_id}'
-        result = await self._request('GET', url)
-
-        return Snapshot(**result)
-
-    async def list_snapshots(
-        self,
-        mode: Optional[ExecutionMode] = None,
-        parent_id: Optional[str] = None
-    ) -> List[Snapshot]:
-        """List available snapshots"""
-        url = f'{self.platform_url}/snapshots'
-        params = {}
-        if mode:
-            params['mode'] = mode.value
-        if parent_id:
-            params['parent_id'] = parent_id
-
-        results = await self._request('GET', url, params=params)
-        return [Snapshot(**r) for r in results]
-
-    async def delete_snapshot(self, snapshot_id: str) -> None:
-        """Delete snapshot"""
-        url = f'{self.platform_url}/snapshots/{snapshot_id}'
-        await self._request('DELETE', url)
-
-    # Branch operations
-
-    async def create_branch(
-        self,
-        snapshot_id: str,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> Branch:
-        """Create execution branch for parallel operations"""
-        url = f'{self.platform_url}/branches'
-        data = {'snapshot_id': snapshot_id}
-        if metadata:
-            data['metadata'] = metadata
-
-        result = await self._request('POST', url, data)
-        return Branch(**result)
-
-    async def list_branches(self, snapshot_id: Optional[str] = None) -> List[Branch]:
-        """List execution branches"""
-        url = f'{self.platform_url}/branches'
-        params = {'snapshot_id': snapshot_id} if snapshot_id else {}
-
-        results = await self._request('GET', url, params=params)
-        return [Branch(**r) for r in results]
-
-    async def merge_branches(self, branch_ids: List[str]) -> Snapshot:
-        """Merge multiple execution branches"""
-        url = f'{self.platform_url}/branches/merge'
-        result = await self._request('POST', url, {'branch_ids': branch_ids})
-
-        return Snapshot(**result)
-
-    # Streaming execution
-
-    async def stream_execution(self, request: ExecutionRequest):
-        """Stream execution output via WebSocket"""
-        ws_url = self.executor_url.replace('http', 'ws') + '/stream'
-
-        async with websockets.connect(ws_url) as websocket:
-            # Send execution request
-            await websocket.send(json.dumps({
-                **asdict(request),
-                'api_key': self.api_key
-            }))
-
-            # Stream output
-            while True:
-                message = await websocket.recv()
-                data = json.loads(message)
-
-                if data['type'] == 'stdout':
-                    yield ('stdout', data['content'])
-                elif data['type'] == 'stderr':
-                    yield ('stderr', data['content'])
-                elif data['type'] == 'exit':
-                    yield ('exit', data['code'])
-                    break
-
-    # Parallel execution helpers
-
-    async def parallel_map(
-        self,
-        items: List[T],
-        fn: Callable[[T, Snapshot], R],
-        base_snapshot: Optional[str] = None
-    ) -> List[R]:
-        """Execute function on items in parallel using branches"""
-        # Create branches
-        if base_snapshot:
-            branches = await asyncio.gather(*[
-                self.create_branch(base_snapshot) for _ in items
-            ])
-            snapshots = [Snapshot(id=b.snapshot_id, **{}) for b in branches]
-        else:
-            snapshots = await asyncio.gather(*[
-                self.create_snapshot(self._generate_id('parallel'))
-                for _ in items
-            ])
-
-        try:
-            # Execute in parallel
-            results = await asyncio.gather(*[
-                fn(item, snapshot) for item, snapshot in zip(items, snapshots)
-            ])
-            return results
-        finally:
-            # Cleanup
-            await asyncio.gather(*[
-                self.delete_snapshot(s.id) for s in snapshots
-            ], return_exceptions=True)
-
-    async def race(self, executions: List[ExecutionRequest]) -> ExecutionResponse:
-        """Race multiple executions, return first to complete"""
-        tasks = [self.execute(req) for req in executions]
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-
-        # Cancel pending tasks
-        for task in pending:
-            task.cancel()
-
-        return done.pop().result()
-
-    # Metrics
-
-    async def get_metrics(self) -> Dict[str, Any]:
-        """Get platform performance metrics"""
-        url = f'{self.platform_url}/metrics'
-        return await self._request('GET', url)
-
-    # Helper methods
-
-    def _generate_id(self, prefix: str) -> str:
-        """Generate unique ID for requests"""
-        timestamp = int(time.time() * 1000)
-        random_suffix = hashlib.md5(os.urandom(16)).hexdigest()[:8]
-        return f'{prefix}-{timestamp}-{random_suffix}'
-
-    async def close(self):
-        """Close client connections"""
-        if self._session:
-            await self._session.close()
-
-
-class TangleJobClient:
-    """
-    Tangle network integration for job submission
-    Uses Polkadot/Substrate for blockchain job management
-    """
-
-    def __init__(
-        self,
-        node_url: str = DEFAULT_TANGLE_URL,
-        blueprint_id: int = 1,
-        keypair: Optional[Keypair] = None
-    ):
-        self.substrate = SubstrateInterface(url=node_url)
-        self.blueprint_id = blueprint_id
-        self.keypair = keypair
-
-    def submit_job(
-        self,
-        code: str,
-        mode: ExecutionMode = ExecutionMode.EPHEMERAL,
-        env: str = 'alpine:latest',
-        checkpoint_id: Optional[str] = None,
-        branch_from: Optional[str] = None,
-        max_gas: int = 1000000000000
-    ) -> Dict[str, Any]:
-        """Submit job to Tangle network"""
-        if not self.keypair:
-            raise PlatformError('Keypair required for job submission')
-
-        # Prepare job arguments
-        job_args = {
-            'execution_mode': mode.value,
-            'code': code.encode('utf-8').hex(),
-            'environment': env,
-            'resource_requirements': {
-                'cpu_cores': 1,
-                'memory_mb': 512,
-                'timeout_ms': 30000
-            },
-            'checkpoint_id': checkpoint_id,
-            'branch_from': branch_from
-        }
-
-        # Create and submit extrinsic
-        call = self.substrate.compose_call(
-            call_module='Jobs',
-            call_function='submit_job',
-            call_params={
-                'blueprint_id': self.blueprint_id,
-                'args': json.dumps(job_args).encode('utf-8').hex(),
-                'max_gas': max_gas
+    parent_snapshot_id: str
+    name: str
+    created_at: int
+
+
+class FaaSClient:
+    """FaaS platform client"""
+
+    def __init__(self, api_key: Optional[str] = None, endpoint: Optional[str] = None):
+        self.api_key = api_key or os.getenv('FAAS_API_KEY', 'dev-api-key')
+        self.endpoint = endpoint or os.getenv('FAAS_API_URL', 'http://localhost:8080')
+        self.headers = {'x-api-key': self.api_key}
+
+        self.snapshots = SnapshotManager(self)
+        self.instances = InstanceManager(self)
+        self.branches = BranchManager(self)
+
+    def execute(self, command: str, image: str = 'alpine:latest') -> ExecResult:
+        """Execute a command in ephemeral container"""
+        response = requests.post(
+            f'{self.endpoint}/api/v1/execute',
+            headers=self.headers,
+            json={
+                'image': image,
+                'command': command.split(),
+                'env_vars': None,
+                'payload': [],
             }
         )
+        response.raise_for_status()
+        data = response.json()
 
-        extrinsic = self.substrate.create_signed_extrinsic(
-            call=call,
-            keypair=self.keypair
+        return ExecResult(
+            stdout=bytes(data.get('response', [])).decode() if data.get('response') else '',
+            stderr=data.get('logs', ''),
+            exit_code=1 if data.get('error') else 0
         )
 
-        receipt = self.substrate.submit_extrinsic(extrinsic, wait_for_finalization=True)
+    def execute_advanced(self,
+                        command: str,
+                        image: str = 'alpine:latest',
+                        mode: str = 'ephemeral',
+                        checkpoint_id: Optional[str] = None,
+                        branch_from: Optional[str] = None,
+                        timeout: Optional[int] = None) -> ExecResult:
+        """Execute with advanced options"""
+        response = requests.post(
+            f'{self.endpoint}/api/v1/execute/advanced',
+            headers=self.headers,
+            json={
+                'image': image,
+                'command': command.split(),
+                'env_vars': None,
+                'payload': [],
+                'mode': mode,
+                'checkpoint_id': checkpoint_id,
+                'branch_from': branch_from,
+                'timeout_secs': timeout,
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
 
-        if not receipt.is_success:
-            raise PlatformError(f'Job submission failed: {receipt.error_message}')
+        return ExecResult(
+            stdout=bytes(data.get('response', [])).decode() if data.get('response') else '',
+            stderr=data.get('logs', ''),
+            exit_code=1 if data.get('error') else 0
+        )
 
-        # Extract job ID from events
-        job_id = None
-        for event in receipt.triggered_events:
-            if event.value['event']['module_id'] == 'Jobs' and \
-               event.value['event']['event_id'] == 'JobSubmitted':
-                job_id = event.value['event']['attributes'][1]
-                break
 
-        return {
-            'job_id': job_id,
-            'block_hash': receipt.block_hash,
-            'extrinsic_hash': receipt.extrinsic_hash
-        }
+class SnapshotManager:
+    """Manages snapshots"""
 
-    async def wait_for_job(self, job_id: int, timeout: int = 60) -> Dict[str, Any]:
-        """Wait for job completion"""
-        start_time = time.time()
+    def __init__(self, client: FaaSClient):
+        self._client = client
 
-        while time.time() - start_time < timeout:
-            result = self.substrate.query(
-                module='Jobs',
-                storage_function='Jobs',
-                params=[job_id]
+    def create(self,
+               name: str,
+               image_id: Optional[str] = None,
+               container_id: Optional[str] = None,
+               vcpus: int = 1,
+               memory: int = 1024,
+               disk_size: int = 10240) -> Snapshot:
+        """Create a new snapshot"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/snapshots',
+            headers=self._client.headers,
+            json={
+                'container_id': container_id or f'new_{int(time.time())}',
+                'name': name,
+                'description': f'vcpus:{vcpus} memory:{memory}',
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        return Snapshot(
+            id=data['snapshot_id'],
+            name=name,
+            created_at=int(time.time()),
+            size_bytes=0,
+            image=image_id
+        )
+
+    def list(self) -> List[Snapshot]:
+        """List all snapshots"""
+        response = requests.get(
+            f'{self._client.endpoint}/api/v1/snapshots',
+            headers=self._client.headers
+        )
+        response.raise_for_status()
+
+        return [Snapshot(**snap) for snap in response.json()]
+
+    def restore(self, snapshot_id: str) -> str:
+        """Restore a snapshot"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/snapshots/{snapshot_id}/restore',
+            headers=self._client.headers
+        )
+        response.raise_for_status()
+        return response.json()['container_id']
+
+
+class InstanceManager:
+    """Manages instances"""
+
+    def __init__(self, client: FaaSClient):
+        self._client = client
+
+    def start(self,
+              snapshot_id: Optional[str] = None,
+              image: str = 'alpine:latest',
+              cpu_cores: int = 1,
+              memory_mb: int = 1024,
+              disk_gb: int = 10,
+              enable_ssh: bool = False) -> 'InstanceProxy':
+        """Start a new instance"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/instances',
+            headers=self._client.headers,
+            json={
+                'snapshot_id': snapshot_id,
+                'image': image,
+                'cpu_cores': cpu_cores,
+                'memory_mb': memory_mb,
+                'disk_gb': disk_gb,
+                'enable_ssh': enable_ssh,
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        instance = Instance(
+            id=data['instance_id'],
+            status='starting',
+            created_at=int(time.time()),
+            cpu_cores=cpu_cores,
+            memory_mb=memory_mb,
+            disk_gb=disk_gb
+        )
+
+        return InstanceProxy(instance, self._client)
+
+    def get(self, instance_id: str) -> Instance:
+        """Get instance info"""
+        response = requests.get(
+            f'{self._client.endpoint}/api/v1/instances/{instance_id}/info',
+            headers=self._client.headers
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        return Instance(
+            id=data['id'],
+            status=data['status'],
+            created_at=data['created_at'],
+            cpu_cores=data['resources']['cpu_cores'],
+            memory_mb=data['resources']['memory_mb'],
+            disk_gb=data['resources']['disk_gb'],
+            ssh_host=data.get('ssh_host'),
+            ssh_port=data.get('ssh_port'),
+            ssh_username=data.get('ssh_username')
+        )
+
+    def list(self) -> List[Instance]:
+        """List all instances"""
+        response = requests.get(
+            f'{self._client.endpoint}/api/v1/instances',
+            headers=self._client.headers
+        )
+        response.raise_for_status()
+
+        return [
+            Instance(
+                id=data['id'],
+                status=data['status'],
+                created_at=data['created_at'],
+                cpu_cores=data['resources']['cpu_cores'],
+                memory_mb=data['resources']['memory_mb'],
+                disk_gb=data['resources']['disk_gb']
             )
-
-            if result and result.value['status'] == 'Completed':
-                return {
-                    'job_id': job_id,
-                    'exit_code': result.value['result']['exit_code'],
-                    'stdout': bytes.fromhex(result.value['result']['stdout']),
-                    'stderr': bytes.fromhex(result.value['result']['stderr']),
-                    'execution_time_ms': result.value['result']['execution_time_ms'],
-                    'snapshot_id': result.value['result'].get('snapshot_id')
-                }
-
-            await asyncio.sleep(1)
-
-        raise PlatformError(f'Job {job_id} timeout after {timeout}s')
+            for data in response.json()
+        ]
 
 
-class FluentExecutor:
-    """Fluent API for chaining operations"""
+class BranchManager:
+    """Manages branches"""
 
-    def __init__(self, client: FaaSPlatformClient):
-        self.client = client
-        self.operations: List[Callable] = []
-        self.current_snapshot: Optional[str] = None
+    def __init__(self, client: FaaSClient):
+        self._client = client
 
-    def from_env(self, env: str) -> 'FluentExecutor':
-        """Start from environment"""
-        async def op():
-            result = await self.client.execute_cached('', env)
-            self.current_snapshot = result.snapshot
+    def create(self, parent_snapshot_id: str, name: str) -> Branch:
+        """Create a branch from a snapshot"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/branches',
+            headers=self._client.headers,
+            json={
+                'parent_snapshot_id': parent_snapshot_id,
+                'branch_name': name,
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
 
-        self.operations.append(op)
-        return self
+        return Branch(
+            id=data['branch_id'],
+            parent_snapshot_id=parent_snapshot_id,
+            name=name,
+            created_at=int(time.time())
+        )
 
-    def exec(self, code: str) -> 'FluentExecutor':
-        """Execute code"""
-        async def op():
-            result = await self.client.execute_checkpointed(
-                code, checkpoint=self.current_snapshot
-            )
-            self.current_snapshot = result.snapshot
-
-        self.operations.append(op)
-        return self
-
-    def branch(self) -> 'FluentExecutor':
-        """Create branch"""
-        async def op():
-            if not self.current_snapshot:
-                raise PlatformError('No snapshot to branch from')
-            branch = await self.client.create_branch(self.current_snapshot)
-            self.current_snapshot = branch.snapshot_id
-
-        self.operations.append(op)
-        return self
-
-    async def run(self) -> Optional[ExecutionResponse]:
-        """Execute all operations"""
-        last_result = None
-        for op in self.operations:
-            last_result = await op()
-        return last_result
-
-    async def snapshot(self) -> str:
-        """Get final snapshot"""
-        await self.run()
-        if not self.current_snapshot:
-            raise PlatformError('No snapshot created')
-        return self.current_snapshot
+    def merge(self, branch_ids: List[str], strategy: str = 'latest') -> str:
+        """Merge branches"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/branches/merge',
+            headers=self._client.headers,
+            json={
+                'branch_ids': branch_ids,
+                'merge_strategy': strategy,
+            }
+        )
+        response.raise_for_status()
+        return response.json()['merged_id']
 
 
-# Convenience functions
+class InstanceProxy:
+    """Proxy for instance operations"""
 
-def create_client(**kwargs) -> FaaSPlatformClient:
-    """Create platform client"""
-    return FaaSPlatformClient(**kwargs)
+    def __init__(self, instance: Instance, client: FaaSClient):
+        self._instance = instance
+        self._client = client
 
+    @property
+    def id(self) -> str:
+        return self._instance.id
 
-def fluent(client: FaaSPlatformClient) -> FluentExecutor:
-    """Create fluent executor"""
-    return FluentExecutor(client)
+    @property
+    def status(self) -> str:
+        return self._instance.status
+
+    def exec(self, command: str) -> ExecResult:
+        """Execute a command on the instance"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/execute/advanced',
+            headers=self._client.headers,
+            json={
+                'image': 'use-instance',
+                'command': command.split(),
+                'env_vars': None,
+                'payload': [],
+                'mode': 'persistent',
+                'checkpoint_id': self._instance.id,
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        return ExecResult(
+            stdout=bytes(data.get('response', [])).decode() if data.get('response') else '',
+            stderr=data.get('logs', ''),
+            exit_code=1 if data.get('error') else 0
+        )
+
+    def snapshot(self, name: Optional[str] = None) -> Snapshot:
+        """Create a snapshot of this instance"""
+        snapshot_name = name or f'snapshot-{self._instance.id}-{int(time.time())}'
+
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/snapshots',
+            headers=self._client.headers,
+            json={
+                'container_id': self._instance.id,
+                'name': snapshot_name,
+                'description': 'Instance snapshot',
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        return Snapshot(
+            id=data['snapshot_id'],
+            name=snapshot_name,
+            created_at=int(time.time()),
+            size_bytes=0
+        )
+
+    def stop(self) -> None:
+        """Stop this instance"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/instances/{self._instance.id}/stop',
+            headers=self._client.headers
+        )
+        response.raise_for_status()
+        self._instance.status = 'stopped'
+
+    def pause(self) -> str:
+        """Pause this instance (with checkpoint)"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/instances/{self._instance.id}/pause',
+            headers=self._client.headers
+        )
+        response.raise_for_status()
+        self._instance.status = 'paused'
+        return response.json()['checkpoint_id']
+
+    def expose_port(self, port: int, protocol: str = 'http', subdomain: Optional[str] = None) -> str:
+        """Expose a port"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/ports/expose',
+            headers=self._client.headers,
+            json={
+                'instance_id': self._instance.id,
+                'internal_port': port,
+                'protocol': protocol,
+                'subdomain': subdomain,
+            }
+        )
+        response.raise_for_status()
+        return response.json()['public_url']
+
+    def upload_files(self, target_path: str, files_data: bytes) -> None:
+        """Upload files to the instance"""
+        response = requests.post(
+            f'{self._client.endpoint}/api/v1/files/upload',
+            headers=self._client.headers,
+            json={
+                'instance_id': self._instance.id,
+                'target_path': target_path,
+                'files_data': list(files_data),
+            }
+        )
+        response.raise_for_status()
