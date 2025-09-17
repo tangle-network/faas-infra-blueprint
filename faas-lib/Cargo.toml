@@ -18,7 +18,7 @@ faas-executor = { workspace = true }
 faas-orchestrator = { workspace = true }
 faas-gateway = { workspace = true }
 
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["net"] }
 bollard = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -28,6 +28,9 @@ blueprint-sdk = { workspace = true, features = ["std", "tangle", "macros"] }
 docktopus = { workspace = true }
 thiserror = { workspace = true }
 parity-scale-codec = { workspace = true, optional = true }
+axum = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+rand = "0.8"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
