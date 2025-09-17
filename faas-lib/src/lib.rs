@@ -2,6 +2,7 @@ use faas_common::InvocationResult;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod api_routes;
 pub mod api_server;
 pub mod context;
 pub mod jobs;

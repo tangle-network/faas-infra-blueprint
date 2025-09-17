@@ -10,8 +10,8 @@ use blueprint_sdk::{
 };
 use color_eyre::eyre;
 use faas_lib::api_server::{ApiBackgroundService, ApiServerConfig, ApiKeyPermissions};
-use faas_lib::context::FaaSContext; // Import the context from faas-lib
-use faas_lib::jobs::{EXECUTE_FUNCTION_JOB_ID, execute_function_job};
+use faas_lib::context::FaaSContext;
+use faas_lib::jobs::*; // Import all jobs
 use std::collections::HashMap;
 use tracing::info;
 
@@ -40,12 +40,27 @@ async fn main() -> eyre::Result<()> {
     let producer = TangleProducer::finalized_blocks(env.tangle_client()).await?;
     let consumer = TangleConsumer::new(client.rpc_client.clone(), signer);
 
-    // Build the router
+    // Build the router with all jobs
     let router = Router::new()
-        .route(
-            EXECUTE_FUNCTION_JOB_ID,
-            execute_function_job.layer(TangleLayer), // Apply TangleLayer
-        )
+        // Basic execution
+        .route(EXECUTE_FUNCTION_JOB_ID, execute_function_job.layer(TangleLayer))
+        // Advanced execution with modes
+        .route(EXECUTE_ADVANCED_JOB_ID, execute_advanced_job.layer(TangleLayer))
+        // Snapshot management
+        .route(CREATE_SNAPSHOT_JOB_ID, create_snapshot_job.layer(TangleLayer))
+        .route(RESTORE_SNAPSHOT_JOB_ID, restore_snapshot_job.layer(TangleLayer))
+        // Branching
+        .route(CREATE_BRANCH_JOB_ID, create_branch_job.layer(TangleLayer))
+        .route(MERGE_BRANCHES_JOB_ID, merge_branches_job.layer(TangleLayer))
+        // Instance management
+        .route(START_INSTANCE_JOB_ID, start_instance_job.layer(TangleLayer))
+        .route(STOP_INSTANCE_JOB_ID, stop_instance_job.layer(TangleLayer))
+        .route(PAUSE_INSTANCE_JOB_ID, pause_instance_job.layer(TangleLayer))
+        .route(RESUME_INSTANCE_JOB_ID, resume_instance_job.layer(TangleLayer))
+        // Port management
+        .route(EXPOSE_PORT_JOB_ID, expose_port_job.layer(TangleLayer))
+        // File operations
+        .route(UPLOAD_FILES_JOB_ID, upload_files_job.layer(TangleLayer))
         .with_context(context); // Pass the initialized FaaSContext
 
     // Configure API server

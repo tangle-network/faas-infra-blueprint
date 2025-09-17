@@ -73,6 +73,10 @@ pub struct ExecuteRequest {
     pub command: Vec<String>,
     pub env_vars: Option<Vec<String>>,
     pub payload: Vec<u8>,
+    pub mode: Option<String>, // "ephemeral", "cached", "checkpointed", "branched", "persistent"
+    pub checkpoint_id: Option<String>,
+    pub branch_from: Option<String>,
+    pub timeout_secs: Option<u64>,
 }
 
 /// Execute function response
@@ -141,19 +145,10 @@ impl ApiBackgroundService {
             request_counts: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        let app = Router::new()
-            // Core execution endpoints (mirrors Tangle jobs)
-            .route("/api/v1/execute", post(execute_function_handler))
-
-            // Instance management (for SDK compatibility)
-            .route("/api/v1/instances", post(create_instance_handler))
-            .route("/api/v1/instances/:id", get(get_instance_handler))
-            .route("/api/v1/instances/:id/stop", post(stop_instance_handler))
-
-            // Health check
-            .route("/health", get(health_handler))
-
-            .with_state(state);
+        // Use the comprehensive router from api_routes
+        let app = crate::api_routes::build_api_router(state)
+            // Add the basic execute endpoint for backward compatibility
+            .route("/api/v1/execute", post(execute_function_handler));
 
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr).await?;
