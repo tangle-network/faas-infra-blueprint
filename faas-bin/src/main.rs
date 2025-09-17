@@ -4,15 +4,13 @@ use blueprint_sdk::{
     router::Router,
     runner::BlueprintRunner,
     tangle::{
-        consumer::TangleConsumer,
+        config::TangleConfig, consumer::TangleConsumer, layer::TangleLayer,
         producer::TangleProducer,
-        config::TangleConfig,
-        layer::TangleLayer,
     },
 };
 use color_eyre::eyre;
 use faas_lib::context::FaaSContext; // Import the context from faas-lib
-use faas_lib::jobs::{execute_function_job, EXECUTE_FUNCTION_JOB_ID};
+use faas_lib::jobs::{EXECUTE_FUNCTION_JOB_ID, execute_function_job};
 use tracing::info;
 
 // --- Main Blueprint Setup ---

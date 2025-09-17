@@ -46,7 +46,6 @@ thiserror = "1.0"
 tonic-build = { workspace = true }
 
 [dev-dependencies]
-mockall = "0.12"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] } # Ensure test features
 color-eyre = { workspace = true }
 anyhow = { workspace = true }

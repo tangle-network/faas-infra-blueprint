@@ -54,19 +54,19 @@ pub struct EnvironmentLayer {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheMount {
-    pub source: String,        // Volume or bind mount source
-    pub target: String,        // Mount point in container
+    pub source: String, // Volume or bind mount source
+    pub target: String, // Mount point in container
     pub cache_type: CacheType,
-    pub shared: bool,          // Can be shared across containers
-    pub persistent: bool,      // Survives container removal
+    pub shared: bool,     // Can be shared across containers
+    pub persistent: bool, // Survives container removal
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CacheType {
-    DependencyCache,     // npm, cargo, go modules
-    BuildArtifacts,      // .o files, incremental compilation
-    SourceCache,         // git repositories
-    DataCache,           // Datasets, models
+    DependencyCache, // npm, cargo, go modules
+    BuildArtifacts,  // .o files, incremental compilation
+    SourceCache,     // git repositories
+    DataCache,       // Datasets, models
     Custom(String),
 }
 
@@ -127,9 +127,9 @@ pub struct CacheStrategy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CacheStrategyType {
-    Aggressive,      // Cache everything, long TTL
-    Balanced,        // Smart caching based on usage
-    Conservative,    // Minimal caching, short TTL
+    Aggressive,   // Cache everything, long TTL
+    Balanced,     // Smart caching based on usage
+    Conservative, // Minimal caching, short TTL
     Custom(String),
 }
 
@@ -153,8 +153,8 @@ pub struct CpuSettings {
     pub cpu_shares: u64,
     pub cpu_quota: i64,
     pub cpu_period: u64,
-    pub cpuset_cpus: Option<String>,  // CPU affinity
-    pub numa_node: Option<u32>,       // NUMA node preference
+    pub cpuset_cpus: Option<String>, // CPU affinity
+    pub numa_node: Option<u32>,      // NUMA node preference
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,17 +205,21 @@ impl EnvironmentRegistry {
     }
 
     /// Get optimal environment for a workload
-    pub fn get_optimal_environment(&self, requirements: &WorkloadRequirements) -> Option<&EnvironmentTemplate> {
-        self.environments.values()
+    pub fn get_optimal_environment(
+        &self,
+        requirements: &WorkloadRequirements,
+    ) -> Option<&EnvironmentTemplate> {
+        self.environments
+            .values()
             .filter(|env| self.meets_requirements(env, requirements))
             .min_by_key(|env| self.calculate_cost(env, requirements))
     }
 
     /// Check if environment meets workload requirements
     fn meets_requirements(&self, env: &EnvironmentTemplate, req: &WorkloadRequirements) -> bool {
-        env.resource_requirements.min_cpu_cores <= req.cpu_cores &&
-        env.resource_requirements.min_memory_gb <= req.memory_gb &&
-        (!req.gpu_required || env.performance_hints.gpu_required)
+        env.resource_requirements.min_cpu_cores <= req.cpu_cores
+            && env.resource_requirements.min_memory_gb <= req.memory_gb
+            && (!req.gpu_required || env.performance_hints.gpu_required)
     }
 
     /// Calculate cost score for environment selection
@@ -290,7 +294,8 @@ impl EnvironmentRegistry {
             id: "rust-blockchain-v1".to_string(),
             base_image: "rust:latest".to_string(),
             display_name: "Rust Blockchain Development".to_string(),
-            description: "Optimized for Solana, Ethereum, and distributed systems development".to_string(),
+            description: "Optimized for Solana, Ethereum, and distributed systems development"
+                .to_string(),
             layers: vec![
                 EnvironmentLayer {
                     name: "base-toolchain".to_string(),
@@ -301,15 +306,13 @@ impl EnvironmentRegistry {
                     ],
                     provides: vec!["rust-toolchain".to_string()],
                     requires: vec![],
-                    cache_mounts: vec![
-                        CacheMount {
-                            source: "cargo-registry".to_string(),
-                            target: "/usr/local/cargo/registry".to_string(),
-                            cache_type: CacheType::DependencyCache,
-                            shared: true,
-                            persistent: true,
-                        },
-                    ],
+                    cache_mounts: vec![CacheMount {
+                        source: "cargo-registry".to_string(),
+                        target: "/usr/local/cargo/registry".to_string(),
+                        cache_type: CacheType::DependencyCache,
+                        shared: true,
+                        persistent: true,
+                    }],
                     env_vars: HashMap::from([
                         ("RUSTC_WRAPPER".to_string(), "sccache".to_string()),
                         ("CARGO_INCREMENTAL".to_string(), "1".to_string()),
@@ -404,28 +407,26 @@ impl EnvironmentRegistry {
             id: "python-ai".to_string(),
             base_image: "python:3-alpine".to_string(),
             display_name: "Python AI/ML Development".to_string(),
-            description: "Python environment optimized for AI, ML, and data science workloads".to_string(),
-            layers: vec![
-                EnvironmentLayer {
-                    name: "python-cache".to_string(),
-                    cache_key: "python-3.11-cache".to_string(),
-                    build_commands: vec![],
-                    provides: vec!["python".to_string()],
-                    requires: vec![],
-                    cache_mounts: vec![
-                        CacheMount {
-                            source: "pip-cache".to_string(),
-                            target: "/root/.cache/pip".to_string(),
-                            cache_type: CacheType::DependencyCache,
-                            shared: true,
-                            persistent: true,
-                        },
-                    ],
-                    env_vars: HashMap::from([
-                        ("PIP_CACHE_DIR".to_string(), "/root/.cache/pip".to_string()),
-                    ]),
-                },
-            ],
+            description: "Python environment optimized for AI, ML, and data science workloads"
+                .to_string(),
+            layers: vec![EnvironmentLayer {
+                name: "python-cache".to_string(),
+                cache_key: "python-3.11-cache".to_string(),
+                build_commands: vec![],
+                provides: vec!["python".to_string()],
+                requires: vec![],
+                cache_mounts: vec![CacheMount {
+                    source: "pip-cache".to_string(),
+                    target: "/root/.cache/pip".to_string(),
+                    cache_type: CacheType::DependencyCache,
+                    shared: true,
+                    persistent: true,
+                }],
+                env_vars: HashMap::from([(
+                    "PIP_CACHE_DIR".to_string(),
+                    "/root/.cache/pip".to_string(),
+                )]),
+            }],
             performance_hints: PerformanceHints {
                 cpu_intensive: true,
                 memory_intensive: true,
@@ -461,36 +462,36 @@ impl EnvironmentRegistry {
             id: "golang-distributed".to_string(),
             base_image: "golang:1.21-alpine".to_string(),
             display_name: "Go Distributed Systems".to_string(),
-            description: "Optimized for building distributed systems and blockchain applications in Go".to_string(),
-            layers: vec![
-                EnvironmentLayer {
-                    name: "go-modules".to_string(),
-                    cache_key: "go-1.21-modules".to_string(),
-                    build_commands: vec![],
-                    provides: vec!["go".to_string()],
-                    requires: vec![],
-                    cache_mounts: vec![
-                        CacheMount {
-                            source: "go-modules".to_string(),
-                            target: "/go/pkg/mod".to_string(),
-                            cache_type: CacheType::DependencyCache,
-                            shared: true,
-                            persistent: true,
-                        },
-                        CacheMount {
-                            source: "go-build-cache".to_string(),
-                            target: "/root/.cache/go-build".to_string(),
-                            cache_type: CacheType::BuildArtifacts,
-                            shared: true,
-                            persistent: true,
-                        },
-                    ],
-                    env_vars: HashMap::from([
-                        ("GOCACHE".to_string(), "/root/.cache/go-build".to_string()),
-                        ("GO111MODULE".to_string(), "on".to_string()),
-                    ]),
-                },
-            ],
+            description:
+                "Optimized for building distributed systems and blockchain applications in Go"
+                    .to_string(),
+            layers: vec![EnvironmentLayer {
+                name: "go-modules".to_string(),
+                cache_key: "go-1.21-modules".to_string(),
+                build_commands: vec![],
+                provides: vec!["go".to_string()],
+                requires: vec![],
+                cache_mounts: vec![
+                    CacheMount {
+                        source: "go-modules".to_string(),
+                        target: "/go/pkg/mod".to_string(),
+                        cache_type: CacheType::DependencyCache,
+                        shared: true,
+                        persistent: true,
+                    },
+                    CacheMount {
+                        source: "go-build-cache".to_string(),
+                        target: "/root/.cache/go-build".to_string(),
+                        cache_type: CacheType::BuildArtifacts,
+                        shared: true,
+                        persistent: true,
+                    },
+                ],
+                env_vars: HashMap::from([
+                    ("GOCACHE".to_string(), "/root/.cache/go-build".to_string()),
+                    ("GO111MODULE".to_string(), "on".to_string()),
+                ]),
+            }],
             performance_hints: PerformanceHints {
                 cpu_intensive: true,
                 memory_intensive: false,
@@ -518,9 +519,7 @@ impl EnvironmentRegistry {
                 deduplication: true,
                 distributed: true,
             },
-            features: HashMap::from([
-                ("parallel_builds".to_string(), true),
-            ]),
+            features: HashMap::from([("parallel_builds".to_string(), true)]),
         });
 
         // Add more default environments...
@@ -546,7 +545,8 @@ impl ConfigurationManager {
     }
 
     pub async fn new(config_path: PathBuf) -> Result<Self> {
-        let registry = EnvironmentRegistry::load_from_file(config_path.clone()).await
+        let registry = EnvironmentRegistry::load_from_file(config_path.clone())
+            .await
             .unwrap_or_default();
 
         Ok(Self {
@@ -567,7 +567,9 @@ impl ConfigurationManager {
         let metadata = tokio::fs::metadata(&self.config_path).await?;
         if let Ok(modified) = metadata.modified() {
             // Reload if file has been updated
-            if let Ok(new_registry) = EnvironmentRegistry::load_from_file(self.config_path.clone()).await {
+            if let Ok(new_registry) =
+                EnvironmentRegistry::load_from_file(self.config_path.clone()).await
+            {
                 self.registry = new_registry;
                 self.last_updated = std::time::Instant::now();
                 return Ok(true);

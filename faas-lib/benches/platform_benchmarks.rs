@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use faas_executor::platform::{Executor, Mode, Request};
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -8,7 +8,9 @@ fn benchmark_modes(c: &mut Criterion) {
     let executor = match rt.block_on(async { Executor::new().await }) {
         Ok(exec) => exec,
         Err(_) => {
-            eprintln!("Skipping benchmark: Executor initialization failed (likely missing Firecracker binary)");
+            eprintln!(
+                "Skipping benchmark: Executor initialization failed (likely missing Firecracker binary)"
+            );
             return;
         }
     };
@@ -109,7 +111,8 @@ state = {'exploration_data': np.random.rand(100).tolist()}
 with open('/tmp/state.json', 'w') as f:
     json.dump(state, f)
 print('Setup complete')
-                    "#.to_string(),
+                    "#
+                .to_string(),
                 mode: Mode::Checkpointed,
                 env: "python:3-alpine".to_string(),
                 timeout: Duration::from_secs(60),
@@ -125,7 +128,8 @@ print('Setup complete')
                 for i in 0..5 {
                     let explore_req = Request {
                         id: format!("explore-{}", i),
-                        code: format!(r#"
+                        code: format!(
+                            r#"
                             python -c "
 import json
 with open('/tmp/state.json', 'r') as f:
@@ -134,7 +138,9 @@ with open('/tmp/state.json', 'r') as f:
 # Simulate different exploration strategies
 strategy = {}
 print(f'Exploring with strategy {{strategy}}')
-                            "#, i),
+                            "#,
+                            i
+                        ),
                         mode: Mode::Branched,
                         env: "python:3-alpine".to_string(),
                         timeout: Duration::from_secs(30),
@@ -176,7 +182,8 @@ import numpy as np
 # Create large array (100MB)
 data = np.random.rand(100 * 1024 * 1024 // 8)
 print(f'Created array of size: {data.nbytes} bytes')
-                    "#.to_string(),
+                    "#
+                .to_string(),
                 mode: Mode::Checkpointed,
                 env: "python:3-alpine".to_string(),
                 timeout: Duration::from_secs(60),
@@ -192,7 +199,10 @@ print(f'Created array of size: {data.nbytes} bytes')
                 for i in 0..10 {
                     let branch_req = Request {
                         id: format!("memory-branch-{}", i),
-                        code: format!("python -c \"print('Branch {} working with shared data')\"", i),
+                        code: format!(
+                            "python -c \"print('Branch {} working with shared data')\"",
+                            i
+                        ),
                         mode: Mode::Branched,
                         env: "python:3-alpine".to_string(),
                         timeout: Duration::from_secs(30),
@@ -247,7 +257,11 @@ mod integration_tests {
         let duration = start.elapsed();
 
         assert_eq!(result.exit_code, 0);
-        assert!(duration < Duration::from_millis(100), "Ephemeral too slow: {:?}", duration);
+        assert!(
+            duration < Duration::from_millis(100),
+            "Ephemeral too slow: {:?}",
+            duration
+        );
     }
 
     #[tokio::test]
@@ -269,7 +283,11 @@ mod integration_tests {
         let result = executor.run(req).await.unwrap();
         let checkpoint_duration = checkpoint_start.elapsed();
 
-        assert!(checkpoint_duration < Duration::from_millis(300), "Checkpoint too slow: {:?}", checkpoint_duration);
+        assert!(
+            checkpoint_duration < Duration::from_millis(300),
+            "Checkpoint too slow: {:?}",
+            checkpoint_duration
+        );
         assert!(result.snapshot.is_some());
 
         // Restore from checkpoint
@@ -287,7 +305,11 @@ mod integration_tests {
         let restore_result = executor.run(restore_req).await.unwrap();
         let restore_duration = restore_start.elapsed();
 
-        assert!(restore_duration < Duration::from_millis(350), "Restore too slow: {:?}", restore_duration);
+        assert!(
+            restore_duration < Duration::from_millis(350),
+            "Restore too slow: {:?}",
+            restore_duration
+        );
         assert_eq!(restore_result.exit_code, 0);
     }
 
@@ -324,7 +346,11 @@ mod integration_tests {
         let branch = executor.run(branch_req).await.unwrap();
         let branch_duration = branch_start.elapsed();
 
-        assert!(branch_duration < Duration::from_millis(100), "Branch too slow: {:?}", branch_duration);
+        assert!(
+            branch_duration < Duration::from_millis(100),
+            "Branch too slow: {:?}",
+            branch_duration
+        );
         assert_eq!(branch.exit_code, 0);
     }
 
@@ -352,7 +378,8 @@ with open('/tmp/agent_state.json', 'w') as f:
     json.dump(state, f)
 
 print('Agent initialized')
-                "#.to_string(),
+                "#
+            .to_string(),
             mode: Mode::Checkpointed,
             env: "python:3-alpine".to_string(),
             timeout: Duration::from_secs(60),
@@ -371,7 +398,8 @@ print('Agent initialized')
         for strategy in 0..5 {
             let explore_req = Request {
                 id: format!("explore-strategy-{}", strategy),
-                code: format!(r#"
+                code: format!(
+                    r#"
                     python -c "
 import json
 import random
@@ -388,7 +416,9 @@ with open('/tmp/agent_state.json', 'w') as f:
     json.dump(state, f)
 
 print(f'Explored with strategy {{strategy_id}}, confidence: {{state[\"confidence\"]}}')
-                    "#, strategy),
+                    "#,
+                    strategy
+                ),
                 mode: Mode::Branched,
                 env: "python:3-alpine".to_string(),
                 timeout: Duration::from_secs(30),
@@ -411,9 +441,15 @@ print(f'Explored with strategy {{strategy_id}}, confidence: {{state[\"confidence
         }
 
         // Should complete parallel exploration in reasonable time
-        assert!(exploration_duration < Duration::from_secs(10),
-            "Parallel exploration too slow: {:?}", exploration_duration);
+        assert!(
+            exploration_duration < Duration::from_secs(10),
+            "Parallel exploration too slow: {:?}",
+            exploration_duration
+        );
 
-        println!("AI agent workflow completed successfully in {:?}", exploration_duration);
+        println!(
+            "AI agent workflow completed successfully in {:?}",
+            exploration_duration
+        );
     }
 }

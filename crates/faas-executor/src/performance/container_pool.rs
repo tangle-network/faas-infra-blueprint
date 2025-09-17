@@ -1,9 +1,9 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 
 /// High-performance container pool with predictive warming and intelligent scaling
 #[derive(Clone)]
@@ -49,7 +49,7 @@ pub struct PoolConfig {
     pub cleanup_interval: Duration,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct PoolMetrics {
     pub total_requests: u64,
     pub cache_hits: u64,
@@ -111,12 +111,14 @@ impl ContainerPool {
         container.use_count += 1;
 
         let mut pools = self.pools.write().await;
-        let env_pool = pools.entry(container.environment.clone())
+        let env_pool = pools
+            .entry(container.environment.clone())
             .or_insert_with(|| EnvironmentPool::new(&self.config));
 
         // Only return to pool if under capacity and container is healthy
-        if env_pool.warm_containers.len() < env_pool.max_size &&
-           self.is_container_healthy(&container).await? {
+        if env_pool.warm_containers.len() < env_pool.max_size
+            && self.is_container_healthy(&container).await?
+        {
             env_pool.warm_containers.push_back(container);
         } else {
             // Destroy excess or unhealthy containers
@@ -129,7 +131,7 @@ impl ContainerPool {
     /// Predictively warm containers based on usage patterns
     pub async fn predictive_warm(&self, predictions: Vec<(String, u32)>) -> Result<()> {
         if !self.config.predictive_warming {
-            return Ok();
+            return Ok(());
         }
 
         let mut tasks = Vec::new();
@@ -137,7 +139,8 @@ impl ContainerPool {
         for (environment, count) in predictions {
             let pool = self.clone();
             tasks.push(tokio::spawn(async move {
-                pool.ensure_warm_containers(&environment, count as usize).await
+                pool.ensure_warm_containers(&environment, count as usize)
+                    .await
             }));
         }
 
@@ -150,7 +153,8 @@ impl ContainerPool {
     async fn ensure_warm_containers(&self, environment: &str, target_count: usize) -> Result<()> {
         let current_count = {
             let pools = self.pools.read().await;
-            pools.get(environment)
+            pools
+                .get(environment)
                 .map(|p| p.warm_containers.len())
                 .unwrap_or(0)
         };
@@ -171,12 +175,13 @@ impl ContainerPool {
 
             // Add to warm pool
             let mut pools = self.pools.write().await;
-            let env_pool = pools.entry(environment.to_string())
+            let env_pool = pools
+                .entry(environment.to_string())
                 .or_insert_with(|| EnvironmentPool::new(&self.config));
 
             for container in containers {
                 if env_pool.warm_containers.len() < env_pool.max_size {
-                    env_pool.warm_containers.push_back(container);
+                    env_pool.warm_containers.push_back(container?);
                 }
             }
         }
@@ -189,9 +194,9 @@ impl ContainerPool {
 
         if let Some(env_pool) = pools.get_mut(environment) {
             // Remove stale containers first
-            env_pool.warm_containers.retain(|c| {
-                c.created_at.elapsed() < self.config.max_idle_time
-            });
+            env_pool
+                .warm_containers
+                .retain(|c| c.created_at.elapsed() < self.config.max_idle_time);
 
             // Get the most recently used container (LIFO for better cache locality)
             if let Some(container) = env_pool.warm_containers.pop_back() {
@@ -243,9 +248,9 @@ impl ContainerPool {
         let age = container.created_at.elapsed();
         let idle_time = container.last_used.elapsed();
 
-        Ok(age < Duration::from_hours(1) &&
-           idle_time < self.config.max_idle_time &&
-           container.use_count < 1000) // Prevent infinite reuse
+        Ok(age < Duration::from_secs(3600)
+            && idle_time < self.config.max_idle_time
+            && container.use_count < 1000) // Prevent infinite reuse
     }
 
     async fn destroy_container(&self, container_id: &str) -> Result<()> {
@@ -263,16 +268,14 @@ impl ContainerPool {
         let mut metrics = self.metrics.write().await;
         metrics.total_requests += 1;
         metrics.cache_hits += 1;
-        metrics.avg_acquisition_time =
-            (metrics.avg_acquisition_time + acquisition_time) / 2;
+        metrics.avg_acquisition_time = (metrics.avg_acquisition_time + acquisition_time) / 2;
     }
 
     async fn record_cache_miss(&self, acquisition_time: Duration) {
         let mut metrics = self.metrics.write().await;
         metrics.total_requests += 1;
         metrics.cache_misses += 1;
-        metrics.avg_acquisition_time =
-            (metrics.avg_acquisition_time + acquisition_time) / 2;
+        metrics.avg_acquisition_time = (metrics.avg_acquisition_time + acquisition_time) / 2;
     }
 
     async fn run_cleanup_loop(&self) {
@@ -313,8 +316,9 @@ impl ContainerPool {
         }
 
         // Remove empty pools
-        pools.retain(|_, pool| !pool.warm_containers.is_empty() ||
-                              pool.last_used.elapsed() < Duration::from_secs(3600));
+        pools.retain(|_, pool| {
+            !pool.warm_containers.is_empty() || pool.last_used.elapsed() < Duration::from_secs(3600)
+        });
 
         if total_cleaned > 0 {
             tracing::info!("Cleaned up {} expired containers", total_cleaned);
@@ -325,7 +329,7 @@ impl ContainerPool {
 
     /// Get current pool metrics for monitoring
     pub async fn get_metrics(&self) -> PoolMetrics {
-        self.metrics.read().await.clone()
+        (*self.metrics.read().await).clone()
     }
 
     /// Get detailed pool status for debugging
@@ -334,14 +338,17 @@ impl ContainerPool {
         let mut status = HashMap::new();
 
         for (env_name, env_pool) in pools.iter() {
-            status.insert(env_name.clone(), PoolStatus {
-                warm_count: env_pool.warm_containers.len(),
-                max_size: env_pool.max_size,
-                min_size: env_pool.min_size,
-                hit_rate: env_pool.hit_rate,
-                avg_startup_time: env_pool.avg_startup_time,
-                last_used: env_pool.last_used,
-            });
+            status.insert(
+                env_name.clone(),
+                PoolStatus {
+                    warm_count: env_pool.warm_containers.len(),
+                    max_size: env_pool.max_size,
+                    min_size: env_pool.min_size,
+                    hit_rate: env_pool.hit_rate,
+                    avg_startup_time: env_pool.avg_startup_time,
+                    last_used: env_pool.last_used,
+                },
+            );
         }
 
         status
@@ -399,7 +406,9 @@ mod tests {
         pool.predictive_warm(vec![
             ("python:3".to_string(), 2),
             ("node:18".to_string(), 1),
-        ]).await.unwrap();
+        ])
+        .await
+        .unwrap();
 
         let status = pool.get_pool_status().await;
         assert_eq!(status.get("python:3").unwrap().warm_count, 2);

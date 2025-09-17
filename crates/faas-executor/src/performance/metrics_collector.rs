@@ -1,10 +1,10 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Production-grade metrics collection and analysis system
 pub struct MetricsCollector {
@@ -251,7 +251,9 @@ impl MetricsCollector {
         );
 
         // Update mode-specific metrics
-        let mode_metric = metrics.mode_metrics.entry(mode.to_string())
+        let mode_metric = metrics
+            .mode_metrics
+            .entry(mode.to_string())
             .or_insert_with(|| ModeMetrics {
                 executions: 0,
                 avg_time: Duration::ZERO,
@@ -260,13 +262,10 @@ impl MetricsCollector {
             });
 
         mode_metric.executions += 1;
-        mode_metric.avg_time = Self::update_average(
-            mode_metric.avg_time,
-            duration,
-            mode_metric.executions,
-        );
-        mode_metric.success_rate = mode_metric.executions as f64 /
-                                  (mode_metric.executions + if success { 0 } else { 1 }) as f64;
+        mode_metric.avg_time =
+            Self::update_average(mode_metric.avg_time, duration, mode_metric.executions);
+        mode_metric.success_rate = mode_metric.executions as f64
+            / (mode_metric.executions + if success { 0 } else { 1 }) as f64;
 
         // Add to execution history
         metrics.execution_history.push(ExecutionPoint {
@@ -278,7 +277,10 @@ impl MetricsCollector {
         });
 
         // Cleanup old history
-        Self::cleanup_history(&mut metrics.execution_history, self.config.history_retention);
+        Self::cleanup_history(
+            &mut metrics.execution_history,
+            self.config.history_retention,
+        );
 
         // Update health score
         metrics.health_score = self.calculate_health_score(&metrics).await;
@@ -315,10 +317,10 @@ impl MetricsCollector {
                         metrics.container_starts,
                     );
                 }
-            },
+            }
             ContainerEvent::Stopped => {
                 metrics.container_stops += 1;
-            },
+            }
         }
 
         Ok(())
@@ -345,7 +347,7 @@ impl MetricsCollector {
                 if let Some(size) = size_bytes {
                     metrics.snapshot_size_avg = (metrics.snapshot_size_avg + size) / 2;
                 }
-            },
+            }
             SnapshotOperation::Restore => {
                 metrics.snapshots_restored += 1;
                 metrics.avg_restore_time = Self::update_average(
@@ -353,7 +355,7 @@ impl MetricsCollector {
                     duration,
                     metrics.snapshots_restored,
                 );
-            },
+            }
         }
 
         Ok(())
@@ -372,11 +374,8 @@ impl MetricsCollector {
             metrics.parallel_branches += 1;
         }
 
-        metrics.avg_branch_time = Self::update_average(
-            metrics.avg_branch_time,
-            duration,
-            metrics.branches_created,
-        );
+        metrics.avg_branch_time =
+            Self::update_average(metrics.avg_branch_time, duration, metrics.branches_created);
 
         Ok(())
     }
@@ -385,37 +384,39 @@ impl MetricsCollector {
     pub async fn record_error(&self, error_type: &str) -> Result<()> {
         let mut metrics = self.metrics.write().await;
 
-        *metrics.error_counts.entry(error_type.to_string()).or_insert(0) += 1;
+        *metrics
+            .error_counts
+            .entry(error_type.to_string())
+            .or_insert(0) += 1;
 
         // Calculate error rate
         let total_errors: u64 = metrics.error_counts.values().sum();
         let error_rate = total_errors as f64 / metrics.total_executions.max(1) as f64;
-        metrics.error_rates.insert(error_type.to_string(), error_rate);
+        metrics
+            .error_rates
+            .insert(error_type.to_string(), error_rate);
 
         Ok(())
     }
 
     /// Record AI agent activity
-    pub async fn record_ai_agent_activity(
-        &self,
-        activity: AIAgentActivity,
-    ) -> Result<()> {
+    pub async fn record_ai_agent_activity(&self, activity: AIAgentActivity) -> Result<()> {
         let mut metrics = self.metrics.write().await;
 
         match activity {
             AIAgentActivity::SessionStarted => {
                 metrics.ai_agent_sessions += 1;
-            },
+            }
             AIAgentActivity::ReasoningTreeCreated { depth } => {
                 metrics.reasoning_trees_created += 1;
                 metrics.avg_exploration_depth =
                     (metrics.avg_exploration_depth + depth as f64) / 2.0;
-            },
+            }
             AIAgentActivity::ReasoningChainCompleted { successful } => {
                 if successful {
                     metrics.successful_reasoning_chains += 1;
                 }
-            },
+            }
         }
 
         Ok(())
@@ -450,10 +451,7 @@ impl MetricsCollector {
         }
     }
 
-    async fn collection_loop(
-        metrics: Arc<RwLock<PerformanceMetrics>>,
-        config: MetricsConfig,
-    ) {
+    async fn collection_loop(metrics: Arc<RwLock<PerformanceMetrics>>, config: MetricsConfig) {
         let mut interval = tokio::time::interval(config.collection_interval);
         let start_time = Instant::now();
 
@@ -528,8 +526,7 @@ impl MetricsCollector {
         if metrics.avg_execution_time > thresholds.max_execution_time {
             warn!(
                 "High average execution time: {:?} > {:?}",
-                metrics.avg_execution_time,
-                thresholds.max_execution_time
+                metrics.avg_execution_time, thresholds.max_execution_time
             );
         }
 
@@ -640,8 +637,10 @@ impl PrometheusExporter {
 impl MetricsExporter for PrometheusExporter {
     fn export(&self, metrics: &PerformanceMetrics) -> Result<()> {
         // Export metrics in Prometheus format
-        info!("Exporting {} metrics to Prometheus at {}",
-              metrics.total_executions, self.endpoint);
+        info!(
+            "Exporting {} metrics to Prometheus at {}",
+            metrics.total_executions, self.endpoint
+        );
         Ok(())
     }
 
@@ -682,29 +681,35 @@ mod tests {
         let collector = MetricsCollector::new(config);
 
         // Record some executions
-        collector.record_execution(
-            "ephemeral",
-            Duration::from_millis(100),
-            true,
-            ResourceSnapshot {
-                peak_memory_mb: 64,
-                cpu_time_ms: 50,
-                disk_reads_mb: 1,
-                disk_writes_mb: 0,
-            }
-        ).await.unwrap();
+        collector
+            .record_execution(
+                "ephemeral",
+                Duration::from_millis(100),
+                true,
+                ResourceSnapshot {
+                    peak_memory_mb: 64,
+                    cpu_time_ms: 50,
+                    disk_reads_mb: 1,
+                    disk_writes_mb: 0,
+                },
+            )
+            .await
+            .unwrap();
 
-        collector.record_execution(
-            "cached",
-            Duration::from_millis(50),
-            true,
-            ResourceSnapshot {
-                peak_memory_mb: 32,
-                cpu_time_ms: 25,
-                disk_reads_mb: 0,
-                disk_writes_mb: 0,
-            }
-        ).await.unwrap();
+        collector
+            .record_execution(
+                "cached",
+                Duration::from_millis(50),
+                true,
+                ResourceSnapshot {
+                    peak_memory_mb: 32,
+                    cpu_time_ms: 25,
+                    disk_reads_mb: 0,
+                    disk_writes_mb: 0,
+                },
+            )
+            .await
+            .unwrap();
 
         let metrics = collector.get_metrics().await;
         assert_eq!(metrics.total_executions, 2);
@@ -718,23 +723,29 @@ mod tests {
         let collector = MetricsCollector::new(config);
 
         // Record some activity
-        collector.record_execution(
-            "ephemeral",
-            Duration::from_millis(100),
-            true,
-            ResourceSnapshot {
-                peak_memory_mb: 64,
-                cpu_time_ms: 50,
-                disk_reads_mb: 1,
-                disk_writes_mb: 0,
-            }
-        ).await.unwrap();
+        collector
+            .record_execution(
+                "ephemeral",
+                Duration::from_millis(100),
+                true,
+                ResourceSnapshot {
+                    peak_memory_mb: 64,
+                    cpu_time_ms: 50,
+                    disk_reads_mb: 1,
+                    disk_writes_mb: 0,
+                },
+            )
+            .await
+            .unwrap();
 
-        collector.record_container_event(
-            ContainerEvent::Started,
-            Some(Duration::from_millis(50)),
-            true
-        ).await.unwrap();
+        collector
+            .record_container_event(
+                ContainerEvent::Started,
+                Some(Duration::from_millis(50)),
+                true,
+            )
+            .await
+            .unwrap();
 
         let summary = collector.get_performance_summary().await;
         assert_eq!(summary.success_rate, 1.0);

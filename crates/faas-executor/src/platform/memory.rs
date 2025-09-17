@@ -1,7 +1,7 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::HashMap;
 
 /// Memory pool with KSM deduplication and NUMA awareness
 pub struct MemoryPool {
@@ -52,7 +52,10 @@ impl MemoryPool {
 
     fn detect_numa_nodes() -> Vec<NumaNode> {
         // Simplified NUMA detection
-        vec![NumaNode { id: 0, available_mb: 16384 }]
+        vec![NumaNode {
+            id: 0,
+            available_mb: 16384,
+        }]
     }
 
     pub async fn allocate(&self, size_mb: u64) -> Result<Vec<u8>> {
@@ -74,7 +77,9 @@ impl MemoryPool {
             // Read KSM statistics
             if let Ok(shared) = std::fs::read_to_string("/sys/kernel/mm/ksm/pages_shared") {
                 if let Ok(sharing) = std::fs::read_to_string("/sys/kernel/mm/ksm/pages_sharing") {
-                    if let (Ok(shared_pages), Ok(sharing_pages)) = (shared.trim().parse::<f64>(), sharing.trim().parse::<f64>()) {
+                    if let (Ok(shared_pages), Ok(sharing_pages)) =
+                        (shared.trim().parse::<f64>(), sharing.trim().parse::<f64>())
+                    {
                         if sharing_pages > 0.0 {
                             return shared_pages / sharing_pages;
                         }

@@ -21,11 +21,16 @@ pub use docktopus;
 pub use docktopus::bollard;
 pub use faas_common as common;
 
-pub mod firecracker;
-pub mod executor;
+pub mod criu;
 pub mod environment_registry;
-pub mod platform;
+pub mod executor;
+pub mod firecracker;
 pub mod performance;
+pub mod platform;
+pub mod readiness;
+pub mod snapshot;
+pub mod ssh;
+pub mod sync;
 
 // --- Custom Error Type ---
 #[derive(Error, Debug)]
@@ -287,5 +292,5 @@ async fn run_container_inner(
     })
 }
 
-// Re-export the unified executor
+// Re-export the executor
 pub use executor::{Executor, WarmContainer};

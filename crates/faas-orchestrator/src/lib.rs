@@ -22,7 +22,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub use faas_common as common; // Keep this
-                               // pub use faas_common::Executor; // REMOVE this - trait is imported via use faas_common::Executor
+// pub use faas_common::Executor; // REMOVE this - trait is imported via use faas_common::Executor
 
 // Keep struct definitions as placeholders for future implementation
 
@@ -117,14 +117,14 @@ mod tests {
     use super::{Error as OrchestratorError, Orchestrator};
     use crate::common::SandboxExecutor;
     use faas_common::{FunctionDefinition, Language};
-    use faas_executor::docktopus::DockerBuilder;
     use faas_executor::DockerExecutor;
+    use faas_executor::docktopus::DockerBuilder;
     use std::error::Error as StdError;
     use std::sync::Arc;
 
     // Helper to create a real DockerExecutor instance for tests
-    async fn create_real_executor_arc(
-    ) -> Result<Arc<dyn SandboxExecutor + Send + Sync>, OrchestratorError> {
+    async fn create_docker_executor()
+    -> Result<Arc<dyn SandboxExecutor + Send + Sync>, OrchestratorError> {
         let docker_builder = DockerBuilder::new().await.map_err(|e| {
             OrchestratorError::SchedulingFailed(format!("Failed to create DockerBuilder: {}", e))
         })?;
@@ -135,7 +135,7 @@ mod tests {
     // Add a basic test for registration
     #[tokio::test]
     async fn test_register_and_get_function() -> Result<(), anyhow::Error> {
-        let executor = create_real_executor_arc().await?;
+        let executor = create_docker_executor().await?;
         let orchestrator = Orchestrator::new(executor);
 
         let func_id = "test-func-reg".to_string();
@@ -166,7 +166,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_schedule_execution_success() -> Result<(), anyhow::Error> {
-        let executor = create_real_executor_arc().await?;
+        let executor = create_docker_executor().await?;
         let orchestrator = Orchestrator::new(executor);
 
         let function_id = "test-echo-orch".to_string();
@@ -196,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_schedule_execution_executor_error() -> Result<(), anyhow::Error> {
-        let executor = create_real_executor_arc().await?;
+        let executor = create_docker_executor().await?;
         let orchestrator = Orchestrator::new(executor);
 
         let function_id = "test-error-orch".to_string();
@@ -229,7 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_orchestrator_schedule_image_not_found() -> Result<(), anyhow::Error> {
-        let executor = create_real_executor_arc().await?;
+        let executor = create_docker_executor().await?;
         let orchestrator = Orchestrator::new(executor);
 
         let function_id = "test-img-not-found-orch".to_string();

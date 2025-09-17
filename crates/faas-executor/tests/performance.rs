@@ -1,8 +1,10 @@
 use faas_executor::performance::{
-    ContainerPool, PoolConfig, CacheManager, CacheStrategy,
-    MetricsCollector, MetricsConfig, SnapshotOptimizer, OptimizationConfig,
-    PredictiveScaler, ScalingConfig, PerformanceMetrics
+    CacheManager, CacheStrategy, ContainerPool, MetricsCollector,
+    OptimizationConfig, PoolConfig, PredictiveScaler,
+    SnapshotOptimizer,
 };
+use faas_executor::performance::metrics_collector::MetricsConfig;
+use faas_executor::performance::predictive_scaling::ScalingConfig;
 use faas_executor::platform::{Executor, Mode, Request};
 use std::time::{Duration, Instant};
 use tokio;
@@ -27,8 +29,11 @@ async fn test_container_pool_performance_targets() {
     let container = pool.acquire("alpine:latest").await.unwrap();
     let cold_start_time = start.elapsed();
 
-    assert!(cold_start_time < Duration::from_millis(100),
-           "Cold start too slow: {:?}", cold_start_time);
+    assert!(
+        cold_start_time < Duration::from_millis(100),
+        "Cold start too slow: {:?}",
+        cold_start_time
+    );
 
     // Return container to pool
     pool.release(container).await.unwrap();
@@ -38,11 +43,16 @@ async fn test_container_pool_performance_targets() {
     let warm_container = pool.acquire("alpine:latest").await.unwrap();
     let warm_start_time = start.elapsed();
 
-    assert!(warm_start_time < Duration::from_millis(20),
-           "Warm start too slow: {:?}", warm_start_time);
+    assert!(
+        warm_start_time < Duration::from_millis(20),
+        "Warm start too slow: {:?}",
+        warm_start_time
+    );
 
-    println!("✅ Container pool performance: cold={:?}, warm={:?}",
-             cold_start_time, warm_start_time);
+    println!(
+        "✅ Container pool performance: cold={:?}, warm={:?}",
+        cold_start_time, warm_start_time
+    );
 }
 
 #[tokio::test]
@@ -96,12 +106,21 @@ async fn test_cache_performance_under_load() {
     let avg_put_time = total_put_time / num_concurrent;
     let avg_get_time = total_get_time / num_concurrent;
 
-    assert!(avg_put_time < Duration::from_millis(10),
-           "Cache put too slow: {:?}", avg_put_time);
-    assert!(avg_get_time < Duration::from_millis(5),
-           "Cache get too slow: {:?}", avg_get_time);
+    assert!(
+        avg_put_time < Duration::from_millis(10),
+        "Cache put too slow: {:?}",
+        avg_put_time
+    );
+    assert!(
+        avg_get_time < Duration::from_millis(5),
+        "Cache get too slow: {:?}",
+        avg_get_time
+    );
 
-    println!("✅ Cache performance: put={:?}, get={:?}", avg_put_time, avg_get_time);
+    println!(
+        "✅ Cache performance: put={:?}, get={:?}",
+        avg_put_time, avg_get_time
+    );
 }
 
 #[tokio::test]
@@ -126,8 +145,11 @@ async fn test_snapshot_optimization_targets() {
         .unwrap();
     let full_snapshot_time = start.elapsed();
 
-    assert!(full_snapshot_time < Duration::from_millis(250),
-           "Full snapshot too slow: {:?}", full_snapshot_time);
+    assert!(
+        full_snapshot_time < Duration::from_millis(250),
+        "Full snapshot too slow: {:?}",
+        full_snapshot_time
+    );
 
     // Test incremental snapshot
     let start = Instant::now();
@@ -137,8 +159,11 @@ async fn test_snapshot_optimization_targets() {
         .unwrap();
     let incremental_time = start.elapsed();
 
-    assert!(incremental_time < Duration::from_millis(150),
-           "Incremental snapshot too slow: {:?}", incremental_time);
+    assert!(
+        incremental_time < Duration::from_millis(150),
+        "Incremental snapshot too slow: {:?}",
+        incremental_time
+    );
 
     // Test snapshot restoration
     let start = Instant::now();
@@ -147,11 +172,16 @@ async fn test_snapshot_optimization_targets() {
         .await
         .unwrap();
 
-    assert!(restore_time < Duration::from_millis(200),
-           "Snapshot restore too slow: {:?}", restore_time);
+    assert!(
+        restore_time < Duration::from_millis(200),
+        "Snapshot restore too slow: {:?}",
+        restore_time
+    );
 
-    println!("✅ Snapshot performance: full={:?}, incremental={:?}, restore={:?}",
-             full_snapshot_time, incremental_time, restore_time);
+    println!(
+        "✅ Snapshot performance: full={:?}, incremental={:?}, restore={:?}",
+        full_snapshot_time, incremental_time, restore_time
+    );
 }
 
 #[tokio::test]
@@ -163,24 +193,30 @@ async fn test_metrics_collection_overhead() {
 
     // Simulate recording many operations
     for i in 0..num_operations {
-        metrics.record_execution(
-            "ephemeral",
-            Duration::from_millis(100),
-            true,
-            faas_executor::performance::metrics_collector::ResourceSnapshot {
-                peak_memory_mb: 64,
-                cpu_time_ms: 50,
-                disk_reads_mb: 1,
-                disk_writes_mb: 0,
-            }
-        ).await.unwrap();
+        metrics
+            .record_execution(
+                "ephemeral",
+                Duration::from_millis(100),
+                true,
+                faas_executor::performance::metrics_collector::ResourceSnapshot {
+                    peak_memory_mb: 64,
+                    cpu_time_ms: 50,
+                    disk_reads_mb: 1,
+                    disk_writes_mb: 0,
+                },
+            )
+            .await
+            .unwrap();
 
         if i % 100 == 0 {
-            metrics.record_container_event(
-                faas_executor::performance::metrics_collector::ContainerEvent::Started,
-                Some(Duration::from_millis(50)),
-                true
-            ).await.unwrap();
+            metrics
+                .record_container_event(
+                    faas_executor::performance::metrics_collector::ContainerEvent::Started,
+                    Some(Duration::from_millis(50)),
+                    true,
+                )
+                .await
+                .unwrap();
         }
     }
 
@@ -188,14 +224,20 @@ async fn test_metrics_collection_overhead() {
     let overhead_per_op = total_time / num_operations;
 
     // Metrics collection should have minimal overhead
-    assert!(overhead_per_op < Duration::from_micros(100),
-           "Metrics overhead too high: {:?} per operation", overhead_per_op);
+    assert!(
+        overhead_per_op < Duration::from_micros(100),
+        "Metrics overhead too high: {:?} per operation",
+        overhead_per_op
+    );
 
     let final_metrics = metrics.get_metrics().await;
     assert_eq!(final_metrics.total_executions, num_operations as u64);
     assert_eq!(final_metrics.successful_executions, num_operations as u64);
 
-    println!("✅ Metrics collection overhead: {:?} per operation", overhead_per_op);
+    println!(
+        "✅ Metrics collection overhead: {:?} per operation",
+        overhead_per_op
+    );
 }
 
 #[tokio::test]
@@ -216,18 +258,26 @@ async fn test_predictive_scaling_accuracy() {
     // Get predictions for all environments
     let predictions = scaler.get_all_predictions().await.unwrap();
 
-    assert!(!predictions.is_empty(), "Should have predictions for recorded environments");
+    assert!(
+        !predictions.is_empty(),
+        "Should have predictions for recorded environments"
+    );
 
     for prediction in predictions {
-        assert!(prediction.confidence > 0.5,
-               "Prediction confidence too low: {}", prediction.confidence);
-        assert!(prediction.recommended_instances > 0,
-               "Should recommend at least one instance");
+        assert!(
+            prediction.confidence > 0.5,
+            "Prediction confidence too low: {}",
+            prediction.confidence
+        );
+        assert!(
+            prediction.recommended_instances > 0,
+            "Should recommend at least one instance"
+        );
 
-        println!("✅ Prediction for {}: {} instances (confidence: {:.2})",
-                 prediction.environment,
-                 prediction.recommended_instances,
-                 prediction.confidence);
+        println!(
+            "✅ Prediction for {}: {} instances (confidence: {:.2})",
+            prediction.environment, prediction.recommended_instances, prediction.confidence
+        );
     }
 }
 
@@ -246,7 +296,11 @@ async fn test_end_to_end_platform_performance() {
     let test_cases = vec![
         ("ephemeral", Mode::Ephemeral, Duration::from_millis(100)),
         ("cached", Mode::Cached, Duration::from_millis(150)),
-        ("checkpointed", Mode::Checkpointed, Duration::from_millis(300)),
+        (
+            "checkpointed",
+            Mode::Checkpointed,
+            Duration::from_millis(300),
+        ),
     ];
 
     for (name, mode, target_time) in test_cases {
@@ -265,11 +319,18 @@ async fn test_end_to_end_platform_performance() {
         let execution_time = start.elapsed();
 
         assert_eq!(result.exit_code, 0, "Execution should succeed");
-        assert!(execution_time < target_time,
-               "{} mode too slow: {:?} > {:?}", name, execution_time, target_time);
+        assert!(
+            execution_time < target_time,
+            "{} mode too slow: {:?} > {:?}",
+            name,
+            execution_time,
+            target_time
+        );
 
-        println!("✅ {} mode performance: {:?} (target: {:?})",
-                 name, execution_time, target_time);
+        println!(
+            "✅ {} mode performance: {:?} (target: {:?})",
+            name, execution_time, target_time
+        );
     }
 }
 
@@ -314,17 +375,26 @@ async fn test_parallel_execution_scalability() {
     for (i, result) in results.iter().enumerate() {
         let (duration, exit_code) = result.as_ref().unwrap();
         assert_eq!(*exit_code, 0, "Request {} should succeed", i);
-        assert!(*duration < Duration::from_millis(200),
-               "Individual request {} too slow: {:?}", i, duration);
+        assert!(
+            *duration < Duration::from_millis(200),
+            "Individual request {} too slow: {:?}",
+            i,
+            duration
+        );
     }
 
     // Parallel execution should not be much slower than sequential
     let avg_time = total_time / concurrent_requests;
-    assert!(total_time < Duration::from_secs(3),
-           "Parallel execution too slow: {:?}", total_time);
+    assert!(
+        total_time < Duration::from_secs(3),
+        "Parallel execution too slow: {:?}",
+        total_time
+    );
 
-    println!("✅ Parallel execution: {} requests in {:?} (avg: {:?})",
-             concurrent_requests, total_time, avg_time);
+    println!(
+        "✅ Parallel execution: {} requests in {:?} (avg: {:?})",
+        concurrent_requests, total_time, avg_time
+    );
 }
 
 #[tokio::test]
@@ -355,8 +425,15 @@ async fn test_ai_agent_reasoning_patterns() {
     let setup_time = start.elapsed();
 
     assert_eq!(base_result.exit_code, 0);
-    assert!(base_result.snapshot.is_some(), "Should create snapshot for branching");
-    assert!(setup_time < Duration::from_millis(400), "Setup too slow: {:?}", setup_time);
+    assert!(
+        base_result.snapshot.is_some(),
+        "Should create snapshot for branching"
+    );
+    assert!(
+        setup_time < Duration::from_millis(400),
+        "Setup too slow: {:?}",
+        setup_time
+    );
 
     // 2. Create parallel exploration branches
     let branch_count = 5;
@@ -391,16 +468,25 @@ async fn test_ai_agent_reasoning_patterns() {
     for (i, result) in exploration_results.iter().enumerate() {
         let (duration, exit_code) = result.as_ref().unwrap();
         assert_eq!(*exit_code, 0, "Exploration {} should succeed", i);
-        assert!(*duration < Duration::from_millis(100),
-               "Branch {} too slow: {:?}", i, duration);
+        assert!(
+            *duration < Duration::from_millis(100),
+            "Branch {} too slow: {:?}",
+            i,
+            duration
+        );
     }
 
     // Parallel reasoning should complete quickly
-    assert!(total_exploration_time < Duration::from_millis(300),
-           "Parallel reasoning too slow: {:?}", total_exploration_time);
+    assert!(
+        total_exploration_time < Duration::from_millis(300),
+        "Parallel reasoning too slow: {:?}",
+        total_exploration_time
+    );
 
-    println!("✅ AI agent reasoning pattern: setup={:?}, {} parallel explorations in {:?}",
-             setup_time, branch_count, total_exploration_time);
+    println!(
+        "✅ AI agent reasoning pattern: setup={:?}, {} parallel explorations in {:?}",
+        setup_time, branch_count, total_exploration_time
+    );
 }
 
 #[tokio::test]
@@ -422,31 +508,44 @@ async fn test_performance_regression_detection() {
     // Simulate some operations
     for i in 0..100 {
         let execution_time = Duration::from_millis(50 + (i % 10) * 5); // 50-95ms
-        metrics.record_execution(
-            "ephemeral",
-            execution_time,
-            i % 20 != 0, // 95% success rate
-            faas_executor::performance::metrics_collector::ResourceSnapshot {
-                peak_memory_mb: 64,
-                cpu_time_ms: execution_time.as_millis() as u64 / 2,
-                disk_reads_mb: 1,
-                disk_writes_mb: 0,
-            }
-        ).await.unwrap();
+        metrics
+            .record_execution(
+                "ephemeral",
+                execution_time,
+                i % 20 != 0, // 95% success rate
+                faas_executor::performance::metrics_collector::ResourceSnapshot {
+                    peak_memory_mb: 64,
+                    cpu_time_ms: execution_time.as_millis() as u64 / 2,
+                    disk_reads_mb: 1,
+                    disk_writes_mb: 0,
+                },
+            )
+            .await
+            .unwrap();
     }
 
     let final_metrics = metrics.get_metrics().await;
-    let success_rate = final_metrics.successful_executions as f64 / final_metrics.total_executions as f64;
+    let success_rate =
+        final_metrics.successful_executions as f64 / final_metrics.total_executions as f64;
 
-    assert!(success_rate >= target_metrics.min_success_rate,
-           "Success rate regression detected: {:.2}% < {:.2}%",
-           success_rate * 100.0, target_metrics.min_success_rate * 100.0);
+    assert!(
+        success_rate >= target_metrics.min_success_rate,
+        "Success rate regression detected: {:.2}% < {:.2}%",
+        success_rate * 100.0,
+        target_metrics.min_success_rate * 100.0
+    );
 
-    assert!(final_metrics.avg_execution_time < Duration::from_millis(100),
-           "Execution time regression detected: {:?}", final_metrics.avg_execution_time);
+    assert!(
+        final_metrics.avg_execution_time < Duration::from_millis(100),
+        "Execution time regression detected: {:?}",
+        final_metrics.avg_execution_time
+    );
 
-    println!("✅ Performance regression check passed: {:.2}% success rate, {:?} avg execution",
-             success_rate * 100.0, final_metrics.avg_execution_time);
+    println!(
+        "✅ Performance regression check passed: {:.2}% success rate, {:?} avg execution",
+        success_rate * 100.0,
+        final_metrics.avg_execution_time
+    );
 }
 
 struct PerformanceTargets {
@@ -472,7 +571,10 @@ async fn test_stress_load_handling() {
     let stress_requests = 25; // High concurrent load
     let mut tasks = Vec::new();
 
-    println!("🔥 Starting stress test with {} concurrent requests", stress_requests);
+    println!(
+        "🔥 Starting stress test with {} concurrent requests",
+        stress_requests
+    );
 
     let start = Instant::now();
 
@@ -516,13 +618,24 @@ async fn test_stress_load_handling() {
     let success_rate = successes as f64 / stress_requests as f64;
 
     // Under stress, we should maintain reasonable performance
-    assert!(success_rate >= 0.8,
-           "Stress test failure rate too high: {}/{} failed",
-           failures, stress_requests);
+    assert!(
+        success_rate >= 0.8,
+        "Stress test failure rate too high: {}/{} failed",
+        failures,
+        stress_requests
+    );
 
-    assert!(total_time < Duration::from_secs(10),
-           "Stress test took too long: {:?}", total_time);
+    assert!(
+        total_time < Duration::from_secs(10),
+        "Stress test took too long: {:?}",
+        total_time
+    );
 
-    println!("✅ Stress test completed: {}/{} succeeded in {:?} ({:.1}% success rate)",
-             successes, stress_requests, total_time, success_rate * 100.0);
+    println!(
+        "✅ Stress test completed: {}/{} succeeded in {:?} ({:.1}% success rate)",
+        successes,
+        stress_requests,
+        total_time,
+        success_rate * 100.0
+    );
 }

@@ -33,3 +33,13 @@ anyhow = { workspace = true }
 firecracker-rs-sdk = { version = "0.1.0", features = ["_rt-tokio"] }
 serde_json = { workspace = true }
 sha2 = "0.10"
+base64 = "0.21"
+chrono = { workspace = true }
+ignore = "0.4"
+glob = "0.3"
+filetime = "0.2"
+tar = "0.4"
+rand = "0.8"
+ring = "0.17"
+ssh-key = { version = "0.6", features = ["ed25519", "rand_core"] }
+reqwest = { version = "0.11", features = ["json"] }

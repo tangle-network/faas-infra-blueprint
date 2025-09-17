@@ -4,14 +4,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, instrument};
 
-use super::{memory::MemoryPool, snapshot::SnapshotStore, fork::ForkManager};
-use crate::performance::{
-    ContainerPool, PoolConfig, CacheManager, CacheStrategy,
-    MetricsCollector, SnapshotOptimizer, OptimizationConfig,
-    PredictiveScaler,
-};
+use super::{fork::ForkManager, memory::MemoryPool, snapshot::SnapshotStore};
 use crate::performance::metrics_collector::MetricsConfig;
 use crate::performance::predictive_scaling::ScalingConfig;
+use crate::performance::{
+    CacheManager, CacheStrategy, ContainerPool, MetricsCollector, OptimizationConfig, PoolConfig,
+    PredictiveScaler, SnapshotOptimizer,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Mode {
@@ -43,6 +42,7 @@ pub struct Response {
     pub snapshot: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct Executor {
     container: Arc<crate::executor::Executor>,
     vm: Arc<crate::firecracker::FirecrackerExecutor>,
@@ -61,20 +61,33 @@ impl Executor {
     pub async fn new() -> Result<Self> {
         Ok(Self {
             container: Arc::new(
-                crate::executor::Executor::new(
-                    crate::executor::ExecutionStrategy::Container(
-                        crate::executor::ContainerStrategy {
-                            warm_pools: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-                            max_pool_size: 10,
-                            docker: crate::docktopus::DockerBuilder::new().await?.client().clone(),
-                            build_cache_volumes: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
-                            dependency_layers: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
-                            gpu_pools: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-                        }
-                    )
-                ).await?
+                crate::executor::Executor::new(crate::executor::ExecutionStrategy::Container(
+                    crate::executor::ContainerStrategy {
+                        warm_pools: Arc::new(tokio::sync::Mutex::new(
+                            std::collections::HashMap::new(),
+                        )),
+                        max_pool_size: 10,
+                        docker: crate::docktopus::DockerBuilder::new()
+                            .await?
+                            .client()
+                            .clone(),
+                        build_cache_volumes: Arc::new(tokio::sync::RwLock::new(
+                            std::collections::HashMap::new(),
+                        )),
+                        dependency_layers: Arc::new(tokio::sync::RwLock::new(
+                            std::collections::HashMap::new(),
+                        )),
+                        gpu_pools: Arc::new(tokio::sync::Mutex::new(
+                            std::collections::HashMap::new(),
+                        )),
+                    },
+                ))
+                .await?,
             ),
-            vm: Arc::new(crate::firecracker::FirecrackerExecutor::new("firecracker".to_string(), "/var/lib/faas/kernel".to_string())?),
+            vm: Arc::new(crate::firecracker::FirecrackerExecutor::new(
+                "firecracker".to_string(),
+                "/var/lib/faas/kernel".to_string(),
+            )?),
             memory: Arc::new(MemoryPool::new()?),
             snapshots: Arc::new(SnapshotStore::new().await?),
             forks: Arc::new(ForkManager::new()?),
@@ -176,7 +189,9 @@ impl Executor {
     }
 
     async fn run_branched(&self, req: Request) -> Result<Response> {
-        let parent = req.branch_from.ok_or_else(|| anyhow::anyhow!("branch_from required"))?;
+        let parent = req
+            .branch_from
+            .ok_or_else(|| anyhow::anyhow!("branch_from required"))?;
         let branches = self.forks.branch(&parent, 1).await?;
         let branch_id = branches.first().unwrap();
 
@@ -218,7 +233,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_modes() {
-        let exec = Executor::new().await.unwrap();
+        // Skip test if firecracker binary is not available
+        let exec = match Executor::new().await {
+            Ok(exec) => exec,
+            Err(e) if e.to_string().contains("Firecracker binary not found") => {
+                println!("Skipping test: Firecracker binary not available");
+                return;
+            }
+            Err(e) => panic!("Unexpected error: {}", e),
+        };
 
         let req = Request {
             id: "test".to_string(),

@@ -32,7 +32,11 @@ async fn test_ephemeral_mode_performance() {
     let duration = start.elapsed();
 
     assert_eq!(result.exit_code, 0);
-    assert!(duration < Duration::from_millis(100), "Ephemeral mode too slow: {:?}", duration);
+    assert!(
+        duration < Duration::from_millis(100),
+        "Ephemeral mode too slow: {:?}",
+        duration
+    );
     assert!(result.stdout.len() > 0);
     println!("✅ Ephemeral mode: {:?}", duration);
 }
@@ -62,7 +66,11 @@ async fn test_cached_mode_performance() {
     let duration = start.elapsed();
 
     assert_eq!(result.exit_code, 0);
-    assert!(duration < Duration::from_millis(200), "Cached mode too slow: {:?}", duration);
+    assert!(
+        duration < Duration::from_millis(200),
+        "Cached mode too slow: {:?}",
+        duration
+    );
     println!("✅ Cached mode: {:?}", duration);
 }
 
@@ -93,7 +101,11 @@ async fn test_checkpointed_mode_create_and_restore() {
 
     assert_eq!(create_result.exit_code, 0);
     assert!(create_result.snapshot.is_some());
-    assert!(create_duration < Duration::from_millis(300), "Checkpoint creation too slow: {:?}", create_duration);
+    assert!(
+        create_duration < Duration::from_millis(300),
+        "Checkpoint creation too slow: {:?}",
+        create_duration
+    );
     println!("✅ Checkpoint create: {:?}", create_duration);
 
     // Restore from checkpoint
@@ -112,7 +124,11 @@ async fn test_checkpointed_mode_create_and_restore() {
     let restore_duration = start.elapsed();
 
     assert_eq!(restore_result.exit_code, 0);
-    assert!(restore_duration < Duration::from_millis(350), "Checkpoint restore too slow: {:?}", restore_duration);
+    assert!(
+        restore_duration < Duration::from_millis(350),
+        "Checkpoint restore too slow: {:?}",
+        restore_duration
+    );
     println!("✅ Checkpoint restore: {:?}", restore_duration);
 }
 
@@ -167,7 +183,11 @@ async fn test_branched_mode_ai_agent_pattern() {
     }
 
     // Parallel branching should be fast
-    assert!(total_duration < Duration::from_millis(200), "Parallel branching too slow: {:?}", total_duration);
+    assert!(
+        total_duration < Duration::from_millis(200),
+        "Parallel branching too slow: {:?}",
+        total_duration
+    );
     println!("✅ Parallel branching (3 branches): {:?}", total_duration);
 }
 
@@ -197,7 +217,11 @@ async fn test_persistent_mode() {
 
     assert_eq!(result.exit_code, 0);
     // Persistent mode may be slower due to VM overhead
-    assert!(duration < Duration::from_secs(1), "Persistent mode too slow: {:?}", duration);
+    assert!(
+        duration < Duration::from_secs(1),
+        "Persistent mode too slow: {:?}",
+        duration
+    );
     println!("✅ Persistent mode: {:?}", duration);
 }
 
@@ -248,12 +272,21 @@ async fn test_concurrent_mixed_modes() {
 
     // Verify all executions succeeded
     for (i, result) in results.iter().enumerate() {
-        assert!(result.is_ok(), "Concurrent execution {} failed: {:?}", i, result);
+        assert!(
+            result.is_ok(),
+            "Concurrent execution {} failed: {:?}",
+            i,
+            result
+        );
         assert_eq!(result.as_ref().unwrap().exit_code, 0);
     }
 
     // Concurrent execution should scale well
-    assert!(total_duration < Duration::from_secs(2), "Concurrent execution too slow: {:?}", total_duration);
+    assert!(
+        total_duration < Duration::from_secs(2),
+        "Concurrent execution too slow: {:?}",
+        total_duration
+    );
     println!("✅ Concurrent mixed modes (4 tasks): {:?}", total_duration);
 }
 
@@ -293,7 +326,11 @@ async fn test_stress_ephemeral_burst() {
     }
 
     // Burst should complete reasonably fast
-    assert!(total_duration < Duration::from_secs(5), "Burst execution too slow: {:?}", total_duration);
+    assert!(
+        total_duration < Duration::from_secs(5),
+        "Burst execution too slow: {:?}",
+        total_duration
+    );
     println!("✅ Burst test (10 executions): {:?}", total_duration);
     println!("   Average per execution: {:?}", total_duration / 10);
 }

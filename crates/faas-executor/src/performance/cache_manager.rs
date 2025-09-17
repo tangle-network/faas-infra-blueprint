@@ -1,11 +1,11 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
 
 /// Multi-layer cache manager for maximum performance
 /// Implements L1 (memory) -> L2 (disk) -> L3 (distributed) hierarchy
@@ -62,7 +62,7 @@ struct CacheEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CacheMetadata {
+pub struct CacheMetadata {
     content_type: String,
     compression: Option<String>,
     dependencies: Vec<String>,
@@ -92,9 +92,9 @@ pub struct CacheMetrics {
 impl Default for CacheStrategy {
     fn default() -> Self {
         Self {
-            l1_max_size: 100 * 1024 * 1024, // 100MB
-            l1_ttl: Duration::from_secs(3600), // 1 hour
-            l2_max_size: 1024 * 1024 * 1024, // 1GB
+            l1_max_size: 100 * 1024 * 1024,     // 100MB
+            l1_ttl: Duration::from_secs(3600),  // 1 hour
+            l2_max_size: 1024 * 1024 * 1024,    // 1GB
             l2_ttl: Duration::from_secs(86400), // 24 hours
             eviction_policy: EvictionPolicy::Adaptive,
             compression: true,
@@ -109,7 +109,10 @@ impl CacheManager {
 
         Ok(Self {
             l1_cache: Arc::new(RwLock::new(MemoryCache::new(strategy.l1_max_size))),
-            l2_cache: Arc::new(RwLock::new(DiskCache::new(cache_dir, strategy.l2_max_size)?)),
+            l2_cache: Arc::new(RwLock::new(DiskCache::new(
+                cache_dir,
+                strategy.l2_max_size,
+            )?)),
             strategy,
             metrics: Arc::new(RwLock::new(CacheMetrics::default())),
         })
@@ -138,11 +141,17 @@ impl CacheManager {
     }
 
     /// Put data into cache with intelligent placement
-    pub async fn put(&self, key: &str, data: Vec<u8>, metadata: Option<CacheMetadata>) -> Result<()> {
+    pub async fn put(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        metadata: Option<CacheMetadata>,
+    ) -> Result<()> {
         let metadata = metadata.unwrap_or_else(|| self.generate_metadata(&data));
 
         // Always put in L1 for immediate access
-        self.put_to_l1_with_metadata(key, &data, metadata.clone()).await?;
+        self.put_to_l1_with_metadata(key, &data, metadata.clone())
+            .await?;
 
         // Also store in L2 for persistence (async)
         let l2_cache = self.l2_cache.clone();
@@ -173,7 +182,7 @@ impl CacheManager {
         Ok(())
     }
 
-    /// Batch get operation for improved performance
+    /// Batch get operation for better performance
     pub async fn get_batch(&self, keys: Vec<String>) -> Result<HashMap<String, Vec<u8>>> {
         let mut results = HashMap::new();
         let mut tasks = Vec::new();
@@ -181,9 +190,9 @@ impl CacheManager {
         // Process in parallel
         for key in keys {
             let cache = self.clone();
-            tasks.push(tokio::spawn(async move {
-                (key.clone(), cache.get(&key).await)
-            }));
+            tasks.push(tokio::spawn(
+                async move { (key.clone(), cache.get(&key).await) },
+            ));
         }
 
         let task_results = futures::future::join_all(tasks).await;
@@ -205,7 +214,11 @@ impl CacheManager {
             entry.last_accessed = Instant::now();
             entry.access_count += 1;
 
-            // Update frequency tracking
+            // Clone the data first
+            let data = entry.data.as_ref().clone();
+
+            // Update frequency tracking (drop mutable borrow of entry first)
+            drop(entry);
             *cache.frequency.entry(key.to_string()).or_insert(0) += 1;
 
             // Update LRU order
@@ -214,7 +227,7 @@ impl CacheManager {
             }
             cache.access_order.push(key.to_string());
 
-            return Ok(Some(entry.data.as_ref().clone()));
+            return Ok(Some(data));
         }
 
         Ok(None)
@@ -251,7 +264,12 @@ impl CacheManager {
         self.put_to_l1_with_metadata(key, data, metadata).await
     }
 
-    async fn put_to_l1_with_metadata(&self, key: &str, data: &[u8], metadata: CacheMetadata) -> Result<()> {
+    async fn put_to_l1_with_metadata(
+        &self,
+        key: &str,
+        data: &[u8],
+        metadata: CacheMetadata,
+    ) -> Result<()> {
         let mut cache = self.l1_cache.write().await;
 
         // Check if we need to evict first
@@ -279,22 +297,20 @@ impl CacheManager {
 
     async fn evict_from_l1(&self, cache: &mut MemoryCache) -> Result<()> {
         let key_to_evict = match self.strategy.eviction_policy {
-            EvictionPolicy::LRU => {
-                cache.access_order.first().cloned()
-            },
-            EvictionPolicy::LFU => {
-                cache.frequency.iter()
-                    .min_by_key(|(_, &freq)| freq)
-                    .map(|(key, _)| key.clone())
-            },
-            EvictionPolicy::FIFO => {
-                cache.entries.keys().next().cloned()
-            },
+            EvictionPolicy::LRU => cache.access_order.first().cloned(),
+            EvictionPolicy::LFU => cache
+                .frequency
+                .iter()
+                .min_by_key(|(_, &freq)| freq)
+                .map(|(key, _)| key.clone()),
+            EvictionPolicy::FIFO => cache.entries.keys().next().cloned(),
             EvictionPolicy::Adaptive => {
                 // Choose between LRU and LFU based on hit pattern
                 if cache.entries.len() > 100 {
                     // Use LFU for larger caches
-                    cache.frequency.iter()
+                    cache
+                        .frequency
+                        .iter()
                         .min_by_key(|(_, &freq)| freq)
                         .map(|(key, _)| key.clone())
                 } else {
@@ -374,7 +390,9 @@ impl CacheManager {
         {
             let mut l1 = self.l1_cache.write().await;
             let now = Instant::now();
-            let expired_keys: Vec<String> = l1.entries.iter()
+            let expired_keys: Vec<String> = l1
+                .entries
+                .iter()
                 .filter(|(_, entry)| now.duration_since(entry.created_at) > self.strategy.l1_ttl)
                 .map(|(key, _)| key.clone())
                 .collect();
@@ -394,9 +412,13 @@ impl CacheManager {
         {
             let mut l2 = self.l2_cache.write().await;
             let now = SystemTime::now();
-            let expired_keys: Vec<String> = l2.index.iter()
+            let expired_keys: Vec<String> = l2
+                .index
+                .iter()
                 .filter(|(_, entry)| {
-                    now.duration_since(entry.created_at).unwrap_or(Duration::ZERO) > self.strategy.l2_ttl
+                    now.duration_since(entry.created_at)
+                        .unwrap_or(Duration::ZERO)
+                        > self.strategy.l2_ttl
                 })
                 .map(|(key, _)| key.clone())
                 .collect();
@@ -474,7 +496,9 @@ impl DiskCache {
     }
 
     async fn evict_oldest(&mut self) -> Result<()> {
-        if let Some((key, entry)) = self.index.iter()
+        if let Some((key, entry)) = self
+            .index
+            .iter()
             .min_by_key(|(_, entry)| entry.last_accessed)
             .map(|(k, v)| (k.clone(), v.clone()))
         {
@@ -501,7 +525,10 @@ mod tests {
         let cache = CacheManager::new(CacheStrategy::default()).await.unwrap();
 
         let test_data = b"Hello, World!".to_vec();
-        cache.put("test_key", test_data.clone(), None).await.unwrap();
+        cache
+            .put("test_key", test_data.clone(), None)
+            .await
+            .unwrap();
 
         let retrieved = cache.get("test_key").await.unwrap();
         assert_eq!(retrieved, Some(test_data));

@@ -1,5 +1,5 @@
 use crate::context::FaaSContext;
-use crate::{JobError, EXECUTE_FUNCTION_JOB_ID};
+use crate::{EXECUTE_FUNCTION_JOB_ID, JobError};
 use blueprint_sdk::extract::Context;
 use blueprint_sdk::macros::debug_job;
 use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleResult};

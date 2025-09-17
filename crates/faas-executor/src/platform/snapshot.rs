@@ -1,11 +1,10 @@
+use crate::criu::{CheckpointResult, CriuConfig, CriuManager, RestoreResult};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-
-
 
 #[derive(Debug, Clone)]
 pub struct Snapshot {
@@ -25,14 +24,8 @@ pub enum Backend {
 
 pub struct SnapshotStore {
     snapshots: Arc<RwLock<HashMap<String, Snapshot>>>,
-    storage_path: PathBuf,
-    criu: CriuManager,
+    criu: Arc<CriuManager>,
     firecracker: FirecrackerSnapshots,
-}
-
-struct CriuManager {
-    bin_path: PathBuf,
-    work_dir: PathBuf,
 }
 
 struct FirecrackerSnapshots {
@@ -44,13 +37,18 @@ impl SnapshotStore {
         let storage_path = PathBuf::from("/var/lib/faas/snapshots");
         tokio::fs::create_dir_all(&storage_path).await?;
 
+        // Initialize real CRIU manager
+        let criu_config = CriuConfig {
+            images_directory: storage_path.join("criu/images"),
+            log_file: Some(storage_path.join("criu/logs")),
+            ..Default::default()
+        };
+
+        let criu = Arc::new(CriuManager::new(criu_config).await?);
+
         Ok(Self {
             snapshots: Arc::new(RwLock::new(HashMap::new())),
-            storage_path: storage_path.clone(),
-            criu: CriuManager {
-                bin_path: PathBuf::from("/usr/sbin/criu"),
-                work_dir: storage_path.join("criu"),
-            },
+            criu,
             firecracker: FirecrackerSnapshots {
                 snapshots_dir: storage_path.join("firecracker"),
             },
@@ -65,7 +63,10 @@ impl SnapshotStore {
 
         let snapshot = match backend {
             Backend::Criu => self.create_criu_snapshot(exec_id, &snapshot_id).await?,
-            Backend::Firecracker => self.create_firecracker_snapshot(exec_id, &snapshot_id).await?,
+            Backend::Firecracker => {
+                self.create_firecracker_snapshot(exec_id, &snapshot_id)
+                    .await?
+            }
         };
 
         let mut snapshots = self.snapshots.write().await;
@@ -76,7 +77,8 @@ impl SnapshotStore {
 
     pub async fn restore(&self, snapshot_id: &str) -> Result<String> {
         let snapshots = self.snapshots.read().await;
-        let snapshot = snapshots.get(snapshot_id)
+        let snapshot = snapshots
+            .get(snapshot_id)
             .ok_or_else(|| anyhow::anyhow!("Snapshot not found: {}", snapshot_id))?;
 
         let exec_id = match snapshot.backend {
@@ -88,64 +90,39 @@ impl SnapshotStore {
     }
 
     async fn create_criu_snapshot(&self, exec_id: &str, snapshot_id: &str) -> Result<Snapshot> {
-        let snapshot_dir = self.criu.work_dir.join(snapshot_id);
-        tokio::fs::create_dir_all(&snapshot_dir).await?;
+        // Parse exec_id as PID for CRIU
+        let pid: u32 = exec_id
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid PID format: {}", exec_id))?;
 
-        // Execute CRIU checkpoint
-        let output = tokio::process::Command::new(&self.criu.bin_path)
-            .args(&[
-                "dump",
-                "--tree", exec_id,
-                "--images-dir", snapshot_dir.to_str().unwrap(),
-                "--leave-running",
-                "--tcp-established",
-                "--ext-unix-sk",
-            ])
-            .output()
-            .await?;
-
-        if !output.status.success() {
-            return Err(anyhow::anyhow!("CRIU checkpoint failed: {}",
-                String::from_utf8_lossy(&output.stderr)));
-        }
-
-        // Calculate snapshot size
-        let size_bytes = Self::dir_size(&snapshot_dir).await?;
+        // Use real CRIU manager to create checkpoint
+        let checkpoint_result = self.criu.checkpoint(pid, snapshot_id).await?;
 
         Ok(Snapshot {
             id: snapshot_id.to_string(),
             exec_id: exec_id.to_string(),
             backend: Backend::Criu,
-            path: snapshot_dir,
-            size_bytes,
+            path: checkpoint_result.images_path,
+            size_bytes: checkpoint_result.memory_pages * 4096, // Convert pages to bytes
             created_at: std::time::Instant::now(),
         })
     }
 
     async fn restore_criu_snapshot(&self, snapshot: &Snapshot) -> Result<String> {
-        let new_exec_id = format!("exec-{}", uuid::Uuid::new_v4());
+        let restore_id = format!("restore-{}", uuid::Uuid::new_v4());
 
-        // Execute CRIU restore
-        let output = tokio::process::Command::new(&self.criu.bin_path)
-            .args(&[
-                "restore",
-                "--images-dir", snapshot.path.to_str().unwrap(),
-                "--pidfile", &format!("/tmp/{}.pid", new_exec_id),
-                "--tcp-established",
-                "--ext-unix-sk",
-            ])
-            .output()
-            .await?;
+        // Use real CRIU manager to restore from checkpoint
+        let restore_result = self.criu.restore(&snapshot.id, &restore_id).await?;
 
-        if !output.status.success() {
-            return Err(anyhow::anyhow!("CRIU restore failed: {}",
-                String::from_utf8_lossy(&output.stderr)));
-        }
-
-        Ok(new_exec_id)
+        // Return the new PID as exec_id
+        Ok(restore_result.new_pid.to_string())
     }
 
-    async fn create_firecracker_snapshot(&self, exec_id: &str, snapshot_id: &str) -> Result<Snapshot> {
+    async fn create_firecracker_snapshot(
+        &self,
+        exec_id: &str,
+        snapshot_id: &str,
+    ) -> Result<Snapshot> {
         let snapshot_dir = self.firecracker.snapshots_dir.join(snapshot_id);
         tokio::fs::create_dir_all(&snapshot_dir).await?;
 

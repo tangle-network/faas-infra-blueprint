@@ -5,7 +5,7 @@ use blueprint_sdk::{
     runner::config::BlueprintEnvironment,
 };
 use faas_common::SandboxExecutor;
-use faas_executor::{docktopus::DockerBuilder, firecracker::FirecrackerExecutor, DockerExecutor};
+use faas_executor::{DockerExecutor, docktopus::DockerBuilder, firecracker::FirecrackerExecutor};
 use faas_orchestrator::{Error as OrchestratorError, Orchestrator};
 use std::env;
 use std::sync::Arc;

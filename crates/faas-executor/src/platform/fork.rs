@@ -36,7 +36,10 @@ impl ForkManager {
 
         for i in 0..count {
             let branch_id = format!("{}-fork-{}", parent_id, i);
-            let overlay_path = self.cow_storage.create_overlay(parent_id, &branch_id).await?;
+            let overlay_path = self
+                .cow_storage
+                .create_overlay(parent_id, &branch_id)
+                .await?;
 
             let branch = Branch {
                 id: branch_id.clone(),
@@ -99,14 +102,20 @@ impl CowStorage {
             .await?;
 
         if !output.status.success() {
-            return Err(anyhow::anyhow!("Reflink copy failed: {}",
-                String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow::anyhow!(
+                "Reflink copy failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
         Ok(())
     }
 
-    async fn create_bind_overlay(&self, _lower: &std::path::Path, overlay: &std::path::Path) -> Result<()> {
+    async fn create_bind_overlay(
+        &self,
+        _lower: &std::path::Path,
+        overlay: &std::path::Path,
+    ) -> Result<()> {
         // Create overlay filesystem structure
         let work_dir = overlay.join("work");
         let upper_dir = overlay.join("upper");

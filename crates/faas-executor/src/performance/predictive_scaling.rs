@@ -1,9 +1,9 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime};
-use serde::{Serialize, Deserialize};
-use tokio::sync::RwLock;
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+use tokio::sync::RwLock;
 
 /// Predictive scaling system using ML-based load forecasting
 pub struct PredictiveScaler {
@@ -93,8 +93,8 @@ impl Default for ScalingConfig {
     fn default() -> Self {
         Self {
             prediction_window: Duration::from_secs(900), // 15 minutes
-            scaling_threshold: 0.7, // Scale when 70% confidence
-            max_scale_factor: 3.0,  // Max 3x scale up
+            scaling_threshold: 0.7,                      // Scale when 70% confidence
+            max_scale_factor: 3.0,                       // Max 3x scale up
             min_instances: 1,
             max_instances: 50,
             cooldown_period: Duration::from_secs(300), // 5 minutes
@@ -116,7 +116,8 @@ impl PredictiveScaler {
         let mut patterns = self.patterns.write().await;
         let now = SystemTime::now();
 
-        let pattern = patterns.entry(environment.to_string())
+        let pattern = patterns
+            .entry(environment.to_string())
             .or_insert_with(|| UsagePattern::new(environment));
 
         // Update hourly and daily patterns
@@ -301,16 +302,23 @@ impl PredictiveScaler {
         };
 
         // Age factor - reduce confidence for old data
-        let age_hours = pattern.last_updated
+        let age_hours = pattern
+            .last_updated
             .elapsed()
             .unwrap_or(Duration::ZERO)
-            .as_secs_f64() / 3600.0;
+            .as_secs_f64()
+            / 3600.0;
         let age_factor = (1.0 - age_hours / 168.0).max(0.3); // 1 week decay
 
         (trend_confidence * r_squared_factor * extremity_factor * age_factor).min(1.0)
     }
 
-    fn generate_reasoning(&self, pattern: &UsagePattern, predicted_load: f64, load_ratio: f64) -> String {
+    fn generate_reasoning(
+        &self,
+        pattern: &UsagePattern,
+        predicted_load: f64,
+        load_ratio: f64,
+    ) -> String {
         let mut reasons = Vec::new();
 
         match pattern.trend.direction {
@@ -338,7 +346,8 @@ impl PredictiveScaler {
         let n = hourly_data.len() as f64;
         let x_sum: f64 = (0..24).map(|i| i as f64).sum();
         let y_sum: f64 = hourly_data.iter().sum();
-        let xy_sum: f64 = hourly_data.iter()
+        let xy_sum: f64 = hourly_data
+            .iter()
             .enumerate()
             .map(|(i, &y)| i as f64 * y)
             .sum();
@@ -349,7 +358,8 @@ impl PredictiveScaler {
         // Calculate R-squared
         let y_mean = y_sum / n;
         let ss_tot: f64 = hourly_data.iter().map(|&y| (y - y_mean).powi(2)).sum();
-        let ss_res: f64 = hourly_data.iter()
+        let ss_res: f64 = hourly_data
+            .iter()
             .enumerate()
             .map(|(i, &y)| {
                 let predicted = slope * i as f64 + (y_sum - slope * x_sum) / n;
@@ -357,7 +367,11 @@ impl PredictiveScaler {
             })
             .sum();
 
-        let r_squared = if ss_tot > 0.0 { 1.0 - ss_res / ss_tot } else { 0.0 };
+        let r_squared = if ss_tot > 0.0 {
+            1.0 - ss_res / ss_tot
+        } else {
+            0.0
+        };
 
         let direction = if slope.abs() < 0.01 {
             TrendDirection::Stable
@@ -395,13 +409,17 @@ impl PredictiveScaler {
 
     fn get_hour_of_day(&self, time: SystemTime) -> usize {
         // Simplified hour extraction
-        let duration = time.duration_since(SystemTime::UNIX_EPOCH).unwrap_or(Duration::ZERO);
+        let duration = time
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO);
         ((duration.as_secs() / 3600) % 24) as usize
     }
 
     fn get_day_of_week(&self, time: SystemTime) -> usize {
         // Simplified day extraction (0 = Sunday)
-        let duration = time.duration_since(SystemTime::UNIX_EPOCH).unwrap_or(Duration::ZERO);
+        let duration = time
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO);
         ((duration.as_secs() / 86400 + 4) % 7) as usize // Unix epoch was Thursday
     }
 }
@@ -474,9 +492,8 @@ mod tests {
 
         // Create increasing trend
         let increasing_data = [
-            1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
-            2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,
-            3.0, 3.1, 3.2, 3.3
+            1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6,
+            2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3,
         ];
 
         let trend = scaler.calculate_trend(&increasing_data);

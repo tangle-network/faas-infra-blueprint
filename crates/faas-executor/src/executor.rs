@@ -10,8 +10,8 @@ use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::environment_registry::{
-    EnvironmentRegistry, EnvironmentTemplate, WorkloadRequirements, WorkloadType,
-    ConfigurationManager, CacheMount, CacheType,
+    CacheMount, CacheType, ConfigurationManager, EnvironmentRegistry, EnvironmentTemplate,
+    WorkloadRequirements, WorkloadType,
 };
 
 // Simple hashmap macro for initialization
@@ -135,17 +135,16 @@ impl Executor {
         // Load environment registry - try from file first, fallback to defaults
         let config_path = PathBuf::from("faas-environments.json");
         let config_manager = Arc::new(Mutex::new(
-            ConfigurationManager::new(config_path.clone()).await
+            ConfigurationManager::new(config_path.clone())
+                .await
                 .unwrap_or_else(|_| {
                     // Fallback to default configuration
                     let default_registry = EnvironmentRegistry::default();
                     ConfigurationManager::new_with_registry(default_registry, config_path.clone())
-                })
+                }),
         ));
 
-        let registry = Arc::new(RwLock::new(
-            config_manager.lock().await.registry.clone()
-        ));
+        let registry = Arc::new(RwLock::new(config_manager.lock().await.registry.clone()));
 
         let executor = Self {
             strategy,
@@ -172,7 +171,8 @@ impl Executor {
             for template in registry.environments.values() {
                 for layer in &template.layers {
                     for cache_mount in &layer.cache_mounts {
-                        self.ensure_cache_volume(container_strategy, &cache_mount).await?;
+                        self.ensure_cache_volume(container_strategy, &cache_mount)
+                            .await?;
                     }
                 }
 
@@ -181,14 +181,13 @@ impl Executor {
                 if template.id == "alpine-fast" {
                     let pool_size = self.calculate_pool_size(&template);
                     if pool_size > 0 {
-                        info!("Pre-warming {} containers for environment: {}",
-                              pool_size, template.display_name);
+                        info!(
+                            "Pre-warming {} containers for environment: {}",
+                            pool_size, template.display_name
+                        );
 
-                        self.pre_warm_from_template(
-                            container_strategy,
-                            template,
-                            pool_size
-                        ).await?;
+                        self.pre_warm_from_template(container_strategy, template, pool_size)
+                            .await?;
                     }
                 }
             }
@@ -244,22 +243,30 @@ impl Executor {
                                 CacheType::SourceCache => "source".to_string(),
                                 CacheType::DataCache => "data".to_string(),
                                 CacheType::Custom(s) => s.clone(),
-                            }
+                            },
                         );
                         labels.insert(
                             "faas.cache.shared".to_string(),
-                            if cache_mount.shared { "true" } else { "false" }.to_string()
+                            if cache_mount.shared { "true" } else { "false" }.to_string(),
                         );
                         labels.insert(
                             "faas.cache.persistent".to_string(),
-                            if cache_mount.persistent { "true" } else { "false" }.to_string()
+                            if cache_mount.persistent {
+                                "true"
+                            } else {
+                                "false"
+                            }
+                            .to_string(),
                         );
                         labels
                     },
                     ..Default::default()
                 };
 
-                container_strategy.docker.create_volume(create_options).await?;
+                container_strategy
+                    .docker
+                    .create_volume(create_options)
+                    .await?;
                 info!("Created cache volume: {}", volume_name);
             }
         }
@@ -280,17 +287,27 @@ impl Executor {
     ) -> Result<()> {
         let mut warm_pools = container_strategy.warm_pools.lock().await;
         // Use the base image as the key for the warm pool so it matches try_get_warm_container
-        let pool = warm_pools.entry(template.base_image.clone()).or_insert_with(VecDeque::new);
+        let pool = warm_pools
+            .entry(template.base_image.clone())
+            .or_insert_with(VecDeque::new);
 
         for i in 0..pool_size {
-            info!("Pre-warming container {}/{} for {}", i + 1, pool_size, template.display_name);
+            info!(
+                "Pre-warming container {}/{} for {}",
+                i + 1,
+                pool_size,
+                template.display_name
+            );
 
             // Build container configuration from template
-            let container_config = self.build_container_config(template, container_strategy).await?;
+            let container_config = self
+                .build_container_config(template, container_strategy)
+                .await?;
 
             // Create and start container
             let container_name = format!("faas-warm-{}-{}", template.id, Uuid::new_v4());
-            let create_response = container_strategy.docker
+            let create_response = container_strategy
+                .docker
                 .create_container::<String, String>(
                     Some(docktopus::bollard::container::CreateContainerOptions {
                         name: container_name.clone(),
@@ -300,7 +317,8 @@ impl Executor {
                 )
                 .await?;
 
-            container_strategy.docker
+            container_strategy
+                .docker
                 .start_container::<String>(&create_response.id, None)
                 .await?;
 
@@ -345,8 +363,13 @@ impl Executor {
         let host_config = docktopus::bollard::models::HostConfig {
             mounts: Some(mounts),
             cpu_count: Some((template.resource_requirements.max_cpu_cores * 1024.0) as i64),
-            memory: Some((template.resource_requirements.max_memory_gb * 1024.0 * 1024.0 * 1024.0) as i64),
-            memory_swap: Some((template.resource_requirements.max_memory_gb * 2.0 * 1024.0 * 1024.0 * 1024.0) as i64),
+            memory: Some(
+                (template.resource_requirements.max_memory_gb * 1024.0 * 1024.0 * 1024.0) as i64,
+            ),
+            memory_swap: Some(
+                (template.resource_requirements.max_memory_gb * 2.0 * 1024.0 * 1024.0 * 1024.0)
+                    as i64,
+            ),
             // Enable GPU if required
             device_requests: if template.performance_hints.gpu_required {
                 Some(vec![docktopus::bollard::models::DeviceRequest {
@@ -378,35 +401,67 @@ impl Executor {
 
         if let ExecutionStrategy::Container(container_strategy) = &self.strategy {
             // Initialize shared dependency volumes
-            self.initialize_dependency_volumes(container_strategy).await?;
+            self.initialize_dependency_volumes(container_strategy)
+                .await?;
 
             // Pre-warm specialized containers
             let specialized_images = vec![
                 // Rust blockchain development (with pre-cached deps)
-                ("rust-blockchain", "rust:latest", 3, vec![
-                    "cargo", "alloy", "ethers", "reth", "solana-sdk", "anchor-lang",
-                    "tokio", "tower", "tonic", "prost", "serde", "bincode",
-                ]),
+                (
+                    "rust-blockchain",
+                    "rust:latest",
+                    3,
+                    vec![
+                        "cargo",
+                        "alloy",
+                        "ethers",
+                        "reth",
+                        "solana-sdk",
+                        "anchor-lang",
+                        "tokio",
+                        "tower",
+                        "tonic",
+                        "prost",
+                        "serde",
+                        "bincode",
+                    ],
+                ),
                 // Solana development
-                ("solana-dev", "solanalabs/solana:latest", 2, vec![
-                    "anchor", "spl-token", "spl-governance", "metaplex",
-                ]),
+                (
+                    "solana-dev",
+                    "solanalabs/solana:latest",
+                    2,
+                    vec!["anchor", "spl-token", "spl-governance", "metaplex"],
+                ),
                 // Ethereum development
-                ("ethereum-dev", "ethereum/client-go:latest", 2, vec![
-                    "foundry", "hardhat", "web3", "ethers",
-                ]),
+                (
+                    "ethereum-dev",
+                    "ethereum/client-go:latest",
+                    2,
+                    vec!["foundry", "hardhat", "web3", "ethers"],
+                ),
                 // High-performance compute
-                ("compute-optimized", "nvidia/cuda:12.0-devel", 1, vec![
-                    "pytorch", "tensorflow", "jax", "triton",
-                ]),
+                (
+                    "compute-optimized",
+                    "nvidia/cuda:12.0-devel",
+                    1,
+                    vec!["pytorch", "tensorflow", "jax", "triton"],
+                ),
                 // Fast general purpose
                 ("alpine-fast", "alpine:latest", 5, vec![]),
             ];
 
             for (name, image, pool_size, pre_cached_deps) in specialized_images {
-                match self.pre_warm_specialized_containers(
-                    name, image, pool_size, pre_cached_deps, container_strategy
-                ).await {
+                match self
+                    .pre_warm_specialized_containers(
+                        name,
+                        image,
+                        pool_size,
+                        pre_cached_deps,
+                        container_strategy,
+                    )
+                    .await
+                {
                     Ok(count) => info!("Pre-warmed {} {} containers with deps", count, name),
                     Err(e) => error!("Failed to pre-warm {}: {}", name, e),
                 }
@@ -417,17 +472,36 @@ impl Executor {
     }
 
     /// Initialize shared dependency volumes for ultra-fast compilation
-    async fn initialize_dependency_volumes(&self, strategy: &ContainerStrategy) -> anyhow::Result<()> {
+    async fn initialize_dependency_volumes(
+        &self,
+        strategy: &ContainerStrategy,
+    ) -> anyhow::Result<()> {
         let mut dep_layers = strategy.dependency_layers.write().await;
 
         // Create persistent volumes for dependency caching
         let volumes = vec![
-            ("cargo-registry", "/cache/cargo-registry", DependencyType::CargoRegistry),
-            ("cargo-git", "/cache/cargo-git", DependencyType::CargoRegistry),
-            ("cargo-target", "/cache/cargo-target", DependencyType::CargoRegistry),
+            (
+                "cargo-registry",
+                "/cache/cargo-registry",
+                DependencyType::CargoRegistry,
+            ),
+            (
+                "cargo-git",
+                "/cache/cargo-git",
+                DependencyType::CargoRegistry,
+            ),
+            (
+                "cargo-target",
+                "/cache/cargo-target",
+                DependencyType::CargoRegistry,
+            ),
             ("go-modules", "/cache/go-modules", DependencyType::GoModules),
             ("solana-cache", "/cache/solana", DependencyType::SolanaTools),
-            ("ethereum-cache", "/cache/ethereum", DependencyType::EthereumTools),
+            (
+                "ethereum-cache",
+                "/cache/ethereum",
+                DependencyType::EthereumTools,
+            ),
         ];
 
         for (name, path, dep_type) in volumes {
@@ -441,21 +515,27 @@ impl Executor {
             match strategy.docker.create_volume(volume_config).await {
                 Ok(_) => {
                     info!("Created cache volume: {}", name);
-                    dep_layers.insert(name.to_string(), DependencyLayer {
-                        volume_path: path.to_string(),
-                        last_updated: std::time::Instant::now(),
-                        size_bytes: 0,
-                        dep_type,
-                    });
+                    dep_layers.insert(
+                        name.to_string(),
+                        DependencyLayer {
+                            volume_path: path.to_string(),
+                            last_updated: std::time::Instant::now(),
+                            size_bytes: 0,
+                            dep_type,
+                        },
+                    );
                 }
                 Err(e) if e.to_string().contains("already exists") => {
                     info!("Cache volume {} already exists", name);
-                    dep_layers.insert(name.to_string(), DependencyLayer {
-                        volume_path: path.to_string(),
-                        last_updated: std::time::Instant::now(),
-                        size_bytes: 0,
-                        dep_type,
-                    });
+                    dep_layers.insert(
+                        name.to_string(),
+                        DependencyLayer {
+                            volume_path: path.to_string(),
+                            last_updated: std::time::Instant::now(),
+                            size_bytes: 0,
+                            dep_type,
+                        },
+                    );
                 }
                 Err(e) => error!("Failed to create volume {}: {}", name, e),
             }
@@ -471,13 +551,16 @@ impl Executor {
         image: &str,
         count: usize,
         pre_cached_deps: Vec<&str>,
-        strategy: &ContainerStrategy
+        strategy: &ContainerStrategy,
     ) -> anyhow::Result<usize> {
         let mut warmed_count = 0;
         let mut pool = strategy.warm_pools.lock().await;
 
         for i in 0..count {
-            match self.create_specialized_warm_container(name, image, &pre_cached_deps, strategy).await {
+            match self
+                .create_specialized_warm_container(name, image, &pre_cached_deps, strategy)
+                .await
+            {
                 Ok(warm_container) => {
                     pool.entry(image.to_string())
                         .or_insert_with(VecDeque::new)
@@ -501,9 +584,13 @@ impl Executor {
         name: &str,
         image: &str,
         _pre_cached_deps: &[&str],
-        strategy: &ContainerStrategy
+        strategy: &ContainerStrategy,
     ) -> anyhow::Result<WarmContainer> {
-        let container_id = format!("warm-{}-{}", name.replace([':', '/', '-'], "_"), Uuid::new_v4());
+        let container_id = format!(
+            "warm-{}-{}",
+            name.replace([':', '/', '-'], "_"),
+            Uuid::new_v4()
+        );
 
         // Mount cache volumes based on image type
         let mut mounts = Vec::new();
@@ -578,10 +665,22 @@ impl Executor {
             ]);
         }
 
-        let result = strategy.docker.create_container(create_options, container_config).await?;
-        strategy.docker.start_container(&result.id, None::<docktopus::bollard::container::StartContainerOptions<String>>).await?;
+        let result = strategy
+            .docker
+            .create_container(create_options, container_config)
+            .await?;
+        strategy
+            .docker
+            .start_container(
+                &result.id,
+                None::<docktopus::bollard::container::StartContainerOptions<String>>,
+            )
+            .await?;
 
-        info!("Created specialized warm container: {} for {}", result.id, name);
+        info!(
+            "Created specialized warm container: {} for {}",
+            result.id, name
+        );
 
         Ok(WarmContainer {
             container_id: result.id,
@@ -590,7 +689,12 @@ impl Executor {
     }
 
     /// Pre-warm containers for immediate use
-    async fn pre_warm_containers(&self, image: &str, count: usize, strategy: &ContainerStrategy) -> anyhow::Result<usize> {
+    async fn pre_warm_containers(
+        &self,
+        image: &str,
+        count: usize,
+        strategy: &ContainerStrategy,
+    ) -> anyhow::Result<usize> {
         let mut warmed_count = 0;
         let mut pool = strategy.warm_pools.lock().await;
 
@@ -613,7 +717,11 @@ impl Executor {
     }
 
     /// Create a pre-warmed container ready for immediate execution
-    async fn create_warm_container(&self, image: &str, strategy: &ContainerStrategy) -> anyhow::Result<WarmContainer> {
+    async fn create_warm_container(
+        &self,
+        image: &str,
+        strategy: &ContainerStrategy,
+    ) -> anyhow::Result<WarmContainer> {
         let container_id = format!("warm-{}-{}", image.replace([':', '/'], "-"), Uuid::new_v4());
 
         let create_options = Some(docktopus::bollard::container::CreateContainerOptions {
@@ -630,10 +738,19 @@ impl Executor {
             ..Default::default()
         };
 
-        let result = strategy.docker.create_container(create_options, container_config).await?;
+        let result = strategy
+            .docker
+            .create_container(create_options, container_config)
+            .await?;
 
         // Start the container immediately
-        strategy.docker.start_container(&result.id, None::<docktopus::bollard::container::StartContainerOptions<String>>).await?;
+        strategy
+            .docker
+            .start_container(
+                &result.id,
+                None::<docktopus::bollard::container::StartContainerOptions<String>>,
+            )
+            .await?;
 
         info!("Created warm container: {} for image: {}", result.id, image);
 
@@ -685,11 +802,16 @@ impl SandboxExecutor for Executor {
         {
             let mut metrics = self.metrics.lock().await;
             metrics.total_executions += 1;
-            *metrics.environments_served.entry(config.source.clone()).or_insert(0) += 1;
+            *metrics
+                .environments_served
+                .entry(config.source.clone())
+                .or_insert(0) += 1;
         }
 
         // Check if we have a cached environment for instant start
-        let cache_hit = self.check_environment_cache(&config).await
+        let cache_hit = self
+            .check_environment_cache(&config)
+            .await
             .map_err(|e| faas_common::FaasError::Executor(e.to_string()))?;
 
         let result = if cache_hit {
@@ -705,13 +827,18 @@ impl SandboxExecutor for Executor {
         {
             let mut metrics = self.metrics.lock().await;
             if cache_hit {
-                metrics.avg_warm_start_ms = (metrics.avg_warm_start_ms + duration.as_millis() as f64) / 2.0;
+                metrics.avg_warm_start_ms =
+                    (metrics.avg_warm_start_ms + duration.as_millis() as f64) / 2.0;
             } else {
-                metrics.avg_cold_start_ms = (metrics.avg_cold_start_ms + duration.as_millis() as f64) / 2.0;
+                metrics.avg_cold_start_ms =
+                    (metrics.avg_cold_start_ms + duration.as_millis() as f64) / 2.0;
             }
         }
 
-        info!("Execution completed in {:?} (cache_hit: {})", duration, cache_hit);
+        info!(
+            "Execution completed in {:?} (cache_hit: {})",
+            duration, cache_hit
+        );
 
         result.map_err(|e| faas_common::FaasError::Executor(e.to_string()))
     }
@@ -723,13 +850,18 @@ impl Executor {
         Ok(cache.dev_environments.contains_key(&config.source))
     }
 
-    async fn execute_from_cache(&self, config: &SandboxConfig, _request_id: &str) -> anyhow::Result<InvocationResult> {
+    async fn execute_from_cache(
+        &self,
+        config: &SandboxConfig,
+        _request_id: &str,
+    ) -> anyhow::Result<InvocationResult> {
         // Ultra-fast execution using pre-warmed containers
         info!("Using warm container for instant execution...");
 
         match &self.strategy {
             ExecutionStrategy::Container(container_strategy) => {
-                self.execute_with_warm_container(config, container_strategy).await
+                self.execute_with_warm_container(config, container_strategy)
+                    .await
             }
             _ => {
                 // Fallback for other strategies
@@ -743,69 +875,102 @@ impl Executor {
         }
     }
 
-    async fn execute_cold_start(&self, config: &SandboxConfig, _request_id: &str) -> anyhow::Result<InvocationResult> {
+    async fn execute_cold_start(
+        &self,
+        config: &SandboxConfig,
+        _request_id: &str,
+    ) -> anyhow::Result<InvocationResult> {
         info!("Performing cold start execution...");
 
         match &self.strategy {
             ExecutionStrategy::Container(container_strategy) => {
                 // Try to get a warm container first, fall back to cold start
-                match self.try_get_warm_container(&config.source, container_strategy).await {
+                match self
+                    .try_get_warm_container(&config.source, container_strategy)
+                    .await
+                {
                     Some(warm_container) => {
                         info!("Found warm container, using it for 'cold' start");
-                        self.execute_with_existing_container(config, &warm_container.container_id, container_strategy).await
+                        self.execute_with_existing_container(
+                            config,
+                            &warm_container.container_id,
+                            container_strategy,
+                        )
+                        .await
                     }
                     None => {
                         // True cold start - delegate to DockerExecutor
                         info!("No warm container available, creating new one");
-                        let docker_executor = crate::DockerExecutor::new(container_strategy.docker.clone());
-                        docker_executor.execute(config.clone()).await
+                        let docker_executor =
+                            crate::DockerExecutor::new(container_strategy.docker.clone());
+                        docker_executor
+                            .execute(config.clone())
+                            .await
                             .map_err(|e| anyhow::anyhow!("Execution failed: {}", e))
                     }
                 }
             }
-            _ => {
-                Ok(InvocationResult {
-                    request_id: Uuid::new_v4().to_string(),
-                    response: Some(b"Cold execution result".to_vec()),
-                    logs: Some("Executed via cold start".to_string()),
-                    error: None,
-                })
-            }
+            _ => Ok(InvocationResult {
+                request_id: Uuid::new_v4().to_string(),
+                response: Some(b"Cold execution result".to_vec()),
+                logs: Some("Executed via cold start".to_string()),
+                error: None,
+            }),
         }
     }
 
     /// Execute using a pre-warmed container for maximum speed
-    async fn execute_with_warm_container(&self, config: &SandboxConfig, strategy: &ContainerStrategy) -> anyhow::Result<InvocationResult> {
+    async fn execute_with_warm_container(
+        &self,
+        config: &SandboxConfig,
+        strategy: &ContainerStrategy,
+    ) -> anyhow::Result<InvocationResult> {
         // Try to get a warm container
         match self.try_get_warm_container(&config.source, strategy).await {
             Some(warm_container) => {
                 info!("Reusing warm container: {}", warm_container.container_id);
-                self.execute_with_existing_container(config, &warm_container.container_id, strategy).await
+                self.execute_with_existing_container(config, &warm_container.container_id, strategy)
+                    .await
             }
             None => {
                 // No warm container available, create a new one
-                warn!("No warm container available for {}, falling back to cold start", config.source);
+                warn!(
+                    "No warm container available for {}, falling back to cold start",
+                    config.source
+                );
                 let docker_executor = crate::DockerExecutor::new(strategy.docker.clone());
-                docker_executor.execute(config.clone()).await
+                docker_executor
+                    .execute(config.clone())
+                    .await
                     .map_err(|e| anyhow::anyhow!("Execution failed: {}", e))
             }
         }
     }
 
     /// Try to get a warm container from the pool
-    async fn try_get_warm_container(&self, image: &str, strategy: &ContainerStrategy) -> Option<WarmContainer> {
+    async fn try_get_warm_container(
+        &self,
+        image: &str,
+        strategy: &ContainerStrategy,
+    ) -> Option<WarmContainer> {
         let mut pool = strategy.warm_pools.lock().await;
 
         if let Some(containers) = pool.get_mut(image) {
             if let Some(container) = containers.pop_front() {
-                info!("Retrieved warm container: {} (age: {:?})", container.container_id, container.ready_at.elapsed());
+                info!(
+                    "Retrieved warm container: {} (age: {:?})",
+                    container.container_id,
+                    container.ready_at.elapsed()
+                );
 
                 // Spawn a task to replace this container in the background
                 let strategy_clone = strategy.clone();
                 let image_clone = image.to_string();
                 let pool_clone = strategy.warm_pools.clone();
                 tokio::spawn(async move {
-                    if let Ok(new_container) = Self::create_warm_container_static(&image_clone, &strategy_clone).await {
+                    if let Ok(new_container) =
+                        Self::create_warm_container_static(&image_clone, &strategy_clone).await
+                    {
                         let mut pool = pool_clone.lock().await;
                         pool.entry(image_clone)
                             .or_insert_with(VecDeque::new)
@@ -821,7 +986,10 @@ impl Executor {
     }
 
     /// Static version of create_warm_container for background tasks
-    async fn create_warm_container_static(image: &str, strategy: &ContainerStrategy) -> anyhow::Result<WarmContainer> {
+    async fn create_warm_container_static(
+        image: &str,
+        strategy: &ContainerStrategy,
+    ) -> anyhow::Result<WarmContainer> {
         let container_id = format!("warm-{}-{}", image.replace([':', '/'], "-"), Uuid::new_v4());
 
         let create_options = Some(docktopus::bollard::container::CreateContainerOptions {
@@ -838,8 +1006,17 @@ impl Executor {
             ..Default::default()
         };
 
-        let result = strategy.docker.create_container(create_options, container_config).await?;
-        strategy.docker.start_container(&result.id, None::<docktopus::bollard::container::StartContainerOptions<String>>).await?;
+        let result = strategy
+            .docker
+            .create_container(create_options, container_config)
+            .await?;
+        strategy
+            .docker
+            .start_container(
+                &result.id,
+                None::<docktopus::bollard::container::StartContainerOptions<String>>,
+            )
+            .await?;
 
         Ok(WarmContainer {
             container_id: result.id,
@@ -848,7 +1025,12 @@ impl Executor {
     }
 
     /// Execute a command in an existing container using exec API
-    async fn execute_with_existing_container(&self, config: &SandboxConfig, container_id: &str, strategy: &ContainerStrategy) -> anyhow::Result<InvocationResult> {
+    async fn execute_with_existing_container(
+        &self,
+        config: &SandboxConfig,
+        container_id: &str,
+        strategy: &ContainerStrategy,
+    ) -> anyhow::Result<InvocationResult> {
         let request_id = Uuid::new_v4().to_string();
 
         // Create an exec instance
@@ -860,7 +1042,10 @@ impl Executor {
             ..Default::default()
         };
 
-        let exec_result = strategy.docker.create_exec(container_id, exec_config).await?;
+        let exec_result = strategy
+            .docker
+            .create_exec(container_id, exec_config)
+            .await?;
 
         // Start the exec
         let start_config = docktopus::bollard::exec::StartExecOptions {
@@ -869,7 +1054,11 @@ impl Executor {
             output_capacity: None,
         };
 
-        match strategy.docker.start_exec(&exec_result.id, Some(start_config)).await? {
+        match strategy
+            .docker
+            .start_exec(&exec_result.id, Some(start_config))
+            .await?
+        {
             docktopus::bollard::exec::StartExecResults::Attached { mut output, .. } => {
                 let mut result_output = Vec::new();
 
@@ -877,8 +1066,8 @@ impl Executor {
                 use futures::StreamExt;
                 while let Some(chunk) = output.next().await {
                     match chunk? {
-                        docktopus::bollard::container::LogOutput::StdOut { message } |
-                        docktopus::bollard::container::LogOutput::StdErr { message } => {
+                        docktopus::bollard::container::LogOutput::StdOut { message }
+                        | docktopus::bollard::container::LogOutput::StdErr { message } => {
                             result_output.extend_from_slice(&message);
                         }
                         _ => {}
@@ -924,12 +1113,12 @@ pub struct DependencyLayer {
 
 #[derive(Debug, Clone)]
 pub enum DependencyType {
-    CargoRegistry,    // Rust cargo registry (~10GB for blockchain deps)
-    GoModules,        // Go modules cache
-    NpmPackages,      // Node packages
-    PythonPackages,   // Python pip/conda
-    SolanaTools,      // Solana SDK and tools
-    EthereumTools,    // Ethereum toolchain (foundry, hardhat)
+    CargoRegistry,  // Rust cargo registry (~10GB for blockchain deps)
+    GoModules,      // Go modules cache
+    NpmPackages,    // Node packages
+    PythonPackages, // Python pip/conda
+    SolanaTools,    // Solana SDK and tools
+    EthereumTools,  // Ethereum toolchain (foundry, hardhat)
 }
 
 #[derive(Debug)]
@@ -1009,4 +1198,3 @@ impl EnvironmentCache {
         }
     }
 }
-

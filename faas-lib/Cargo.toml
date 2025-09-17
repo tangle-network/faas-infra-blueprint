@@ -43,6 +43,7 @@ serde_json = { workspace = true }
 
 [features]
 scale = ["parity-scale-codec", "faas-common/scale"]
+testing = ["blueprint-sdk/testing"]
 
 [[bench]]
 name = "platform_benchmarks"

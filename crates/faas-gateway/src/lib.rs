@@ -1,9 +1,9 @@
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::post,
-    Router,
 };
 use faas_common::{InvocationResult, Language};
 use faas_orchestrator::Error as OrchestratorError;
