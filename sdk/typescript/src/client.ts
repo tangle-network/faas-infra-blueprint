@@ -2,8 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
 
 /**
- * FaaS Cloud Client - Simple, clean SDK for FaaS platform
- * Inspired by best practices from Morph Cloud
+ * FaaS Cloud Client - Clean SDK for FaaS platform
  */
 
 // ============================================================================
@@ -384,7 +383,7 @@ const client = new FaaSClient();
 const result = await client.execute("echo Hello World");
 console.log(result.stdout); // "Hello World"
 
-// Create and use an instance (like Morph Cloud)
+// Create and use an instance
 const snapshot = await client.snapshots.create({
   name: "my-env",
   image: "ubuntu:latest",

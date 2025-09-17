@@ -2,7 +2,7 @@ use faas_executor::platform::{Executor, Mode, Request};
 use std::time::Duration;
 use tokio;
 
-/// AI Sandbox Environment - equivalent to Morpho Cloud's AI sandbox
+/// AI Sandbox Environment for machine learning workloads
 /// Provides Jupyter-like environment with AI agent capabilities and state preservation
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
