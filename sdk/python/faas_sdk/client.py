@@ -1,6 +1,3 @@
-"""
-FaaS SDK for Python
-"""
 
 import os
 import time
@@ -11,7 +8,6 @@ from dataclasses import dataclass
 
 @dataclass
 class Snapshot:
-    """VM/container snapshot"""
     id: str
     name: str
     created_at: int
@@ -21,7 +17,6 @@ class Snapshot:
 
 @dataclass
 class Instance:
-    """Running instance"""
     id: str
     status: str  # 'starting', 'running', 'paused', 'stopped'
     created_at: int
@@ -35,7 +30,6 @@ class Instance:
 
 @dataclass
 class ExecResult:
-    """Command execution result"""
     stdout: str
     stderr: str
     exit_code: int
@@ -43,7 +37,6 @@ class ExecResult:
 
 @dataclass
 class Branch:
-    """Snapshot branch for parallel exploration"""
     id: str
     parent_snapshot_id: str
     name: str
@@ -51,7 +44,6 @@ class Branch:
 
 
 class FaaSClient:
-    """FaaS platform client"""
 
     def __init__(self, api_key: Optional[str] = None, endpoint: Optional[str] = None):
         self.api_key = api_key or os.getenv('FAAS_API_KEY', 'dev-api-key')
@@ -63,7 +55,6 @@ class FaaSClient:
         self.branches = BranchManager(self)
 
     def execute(self, command: str, image: str = 'alpine:latest') -> ExecResult:
-        """Execute a command in ephemeral container"""
         response = requests.post(
             f'{self.endpoint}/api/v1/execute',
             headers=self.headers,
@@ -90,7 +81,6 @@ class FaaSClient:
                         checkpoint_id: Optional[str] = None,
                         branch_from: Optional[str] = None,
                         timeout: Optional[int] = None) -> ExecResult:
-        """Execute with advanced options"""
         response = requests.post(
             f'{self.endpoint}/api/v1/execute/advanced',
             headers=self.headers,
@@ -116,7 +106,6 @@ class FaaSClient:
 
 
 class SnapshotManager:
-    """Manages snapshots"""
 
     def __init__(self, client: FaaSClient):
         self._client = client
@@ -128,7 +117,6 @@ class SnapshotManager:
                vcpus: int = 1,
                memory: int = 1024,
                disk_size: int = 10240) -> Snapshot:
-        """Create a new snapshot"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/snapshots',
             headers=self._client.headers,
@@ -150,7 +138,6 @@ class SnapshotManager:
         )
 
     def list(self) -> List[Snapshot]:
-        """List all snapshots"""
         response = requests.get(
             f'{self._client.endpoint}/api/v1/snapshots',
             headers=self._client.headers
@@ -160,7 +147,6 @@ class SnapshotManager:
         return [Snapshot(**snap) for snap in response.json()]
 
     def restore(self, snapshot_id: str) -> str:
-        """Restore a snapshot"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/snapshots/{snapshot_id}/restore',
             headers=self._client.headers
@@ -170,7 +156,6 @@ class SnapshotManager:
 
 
 class InstanceManager:
-    """Manages instances"""
 
     def __init__(self, client: FaaSClient):
         self._client = client
@@ -182,7 +167,6 @@ class InstanceManager:
               memory_mb: int = 1024,
               disk_gb: int = 10,
               enable_ssh: bool = False) -> 'InstanceProxy':
-        """Start a new instance"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/instances',
             headers=self._client.headers,
@@ -210,7 +194,6 @@ class InstanceManager:
         return InstanceProxy(instance, self._client)
 
     def get(self, instance_id: str) -> Instance:
-        """Get instance info"""
         response = requests.get(
             f'{self._client.endpoint}/api/v1/instances/{instance_id}/info',
             headers=self._client.headers
@@ -231,7 +214,6 @@ class InstanceManager:
         )
 
     def list(self) -> List[Instance]:
-        """List all instances"""
         response = requests.get(
             f'{self._client.endpoint}/api/v1/instances',
             headers=self._client.headers
@@ -252,13 +234,11 @@ class InstanceManager:
 
 
 class BranchManager:
-    """Manages branches"""
 
     def __init__(self, client: FaaSClient):
         self._client = client
 
     def create(self, parent_snapshot_id: str, name: str) -> Branch:
-        """Create a branch from a snapshot"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/branches',
             headers=self._client.headers,
@@ -278,7 +258,6 @@ class BranchManager:
         )
 
     def merge(self, branch_ids: List[str], strategy: str = 'latest') -> str:
-        """Merge branches"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/branches/merge',
             headers=self._client.headers,
@@ -292,7 +271,6 @@ class BranchManager:
 
 
 class InstanceProxy:
-    """Proxy for instance operations"""
 
     def __init__(self, instance: Instance, client: FaaSClient):
         self._instance = instance
@@ -307,7 +285,6 @@ class InstanceProxy:
         return self._instance.status
 
     def exec(self, command: str) -> ExecResult:
-        """Execute a command on the instance"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/execute/advanced',
             headers=self._client.headers,
@@ -330,7 +307,6 @@ class InstanceProxy:
         )
 
     def snapshot(self, name: Optional[str] = None) -> Snapshot:
-        """Create a snapshot of this instance"""
         snapshot_name = name or f'snapshot-{self._instance.id}-{int(time.time())}'
 
         response = requests.post(
@@ -353,7 +329,6 @@ class InstanceProxy:
         )
 
     def stop(self) -> None:
-        """Stop this instance"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/instances/{self._instance.id}/stop',
             headers=self._client.headers
@@ -362,7 +337,6 @@ class InstanceProxy:
         self._instance.status = 'stopped'
 
     def pause(self) -> str:
-        """Pause this instance (with checkpoint)"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/instances/{self._instance.id}/pause',
             headers=self._client.headers
@@ -372,7 +346,6 @@ class InstanceProxy:
         return response.json()['checkpoint_id']
 
     def expose_port(self, port: int, protocol: str = 'http', subdomain: Optional[str] = None) -> str:
-        """Expose a port"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/ports/expose',
             headers=self._client.headers,
@@ -387,7 +360,6 @@ class InstanceProxy:
         return response.json()['public_url']
 
     def upload_files(self, target_path: str, files_data: bytes) -> None:
-        """Upload files to the instance"""
         response = requests.post(
             f'{self._client.endpoint}/api/v1/files/upload',
             headers=self._client.headers,

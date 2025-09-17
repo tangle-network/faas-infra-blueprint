@@ -1,13 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
 
-/**
- * FaaS Cloud Client - Clean SDK for FaaS platform
- */
 
-// ============================================================================
-// Core Types
-// ============================================================================
 
 export interface SnapshotSpec {
   image?: string;
@@ -58,9 +52,6 @@ export interface Branch {
   createdAt: number;
 }
 
-// ============================================================================
-// Main Client
-// ============================================================================
 
 export class FaaSClient {
   private api: AxiosInstance;
@@ -84,9 +75,6 @@ export class FaaSClient {
     this.branches = new BranchManager(this.api);
   }
 
-  /**
-   * Quick execute - for simple one-off executions
-   */
   async execute(command: string, image = 'alpine:latest'): Promise<ExecResult> {
     const response = await this.api.post('/api/v1/execute', {
       image,
@@ -102,9 +90,6 @@ export class FaaSClient {
     };
   }
 
-  /**
-   * Execute with advanced options
-   */
   async executeAdvanced(options: {
     command: string;
     image?: string;
@@ -132,16 +117,10 @@ export class FaaSClient {
   }
 }
 
-// ============================================================================
-// Resource Managers
-// ============================================================================
 
 class SnapshotManager {
   constructor(private api: AxiosInstance) {}
 
-  /**
-   * Create a new snapshot
-   */
   async create(spec: SnapshotSpec): Promise<Snapshot> {
     const response = await this.api.post('/api/v1/snapshots', {
       container_id: spec.containerID || `new_${Date.now()}`,
@@ -158,17 +137,11 @@ class SnapshotManager {
     };
   }
 
-  /**
-   * List all snapshots
-   */
   async list(): Promise<Snapshot[]> {
     const response = await this.api.get('/api/v1/snapshots');
     return response.data;
   }
 
-  /**
-   * Restore a snapshot
-   */
   async restore(snapshotId: string): Promise<string> {
     const response = await this.api.post(`/api/v1/snapshots/${snapshotId}/restore`);
     return response.data.container_id;
@@ -178,9 +151,6 @@ class SnapshotManager {
 class InstanceManager {
   constructor(private api: AxiosInstance) {}
 
-  /**
-   * Start a new instance
-   */
   async start(options: {
     snapshotId?: string;
     image?: string;
@@ -212,17 +182,11 @@ class InstanceManager {
     return new InstanceProxy(instance, this.api);
   }
 
-  /**
-   * Get instance info
-   */
   async get(instanceId: string): Promise<Instance> {
     const response = await this.api.get(`/api/v1/instances/${instanceId}/info`);
     return response.data;
   }
 
-  /**
-   * List all instances
-   */
   async list(): Promise<Instance[]> {
     const response = await this.api.get('/api/v1/instances');
     return response.data;
@@ -232,9 +196,6 @@ class InstanceManager {
 class BranchManager {
   constructor(private api: AxiosInstance) {}
 
-  /**
-   * Create a branch from a snapshot
-   */
   async create(parentSnapshotId: string, name: string): Promise<Branch> {
     const response = await this.api.post('/api/v1/branches', {
       parent_snapshot_id: parentSnapshotId,
@@ -249,9 +210,6 @@ class BranchManager {
     };
   }
 
-  /**
-   * Merge branches
-   */
   async merge(branchIds: string[], strategy: 'union' | 'intersection' | 'latest' = 'latest'): Promise<string> {
     const response = await this.api.post('/api/v1/branches/merge', {
       branch_ids: branchIds,
@@ -262,9 +220,6 @@ class BranchManager {
   }
 }
 
-// ============================================================================
-// Instance Proxy - Provides fluent interface for instance operations
-// ============================================================================
 
 export class InstanceProxy {
   constructor(
@@ -280,9 +235,6 @@ export class InstanceProxy {
     return this.instance.status;
   }
 
-  /**
-   * Execute a command on the instance
-   */
   async exec(command: string): Promise<ExecResult> {
     const response = await this.api.post('/api/v1/execute/advanced', {
       image: 'use-instance',
@@ -300,9 +252,6 @@ export class InstanceProxy {
     };
   }
 
-  /**
-   * Create a snapshot of this instance
-   */
   async snapshot(name?: string): Promise<Snapshot> {
     const response = await this.api.post('/api/v1/snapshots', {
       container_id: this.instance.id,
@@ -318,26 +267,17 @@ export class InstanceProxy {
     };
   }
 
-  /**
-   * Stop this instance
-   */
   async stop(): Promise<void> {
     await this.api.post(`/api/v1/instances/${this.instance.id}/stop`);
     this.instance.status = 'stopped';
   }
 
-  /**
-   * Pause this instance (with checkpoint)
-   */
   async pause(): Promise<string> {
     const response = await this.api.post(`/api/v1/instances/${this.instance.id}/pause`);
     this.instance.status = 'paused';
     return response.data.checkpoint_id;
   }
 
-  /**
-   * Expose a port
-   */
   async exposePort(port: number, protocol: 'http' | 'https' | 'tcp' = 'http', subdomain?: string): Promise<string> {
     const response = await this.api.post('/api/v1/ports/expose', {
       instance_id: this.instance.id,
@@ -349,9 +289,6 @@ export class InstanceProxy {
     return response.data.public_url;
   }
 
-  /**
-   * Upload files to the instance
-   */
   async uploadFiles(targetPath: string, files: Buffer): Promise<void> {
     await this.api.post('/api/v1/files/upload', {
       instance_id: this.instance.id,
@@ -360,9 +297,6 @@ export class InstanceProxy {
     });
   }
 
-  /**
-   * Get SSH info
-   */
   async getSSH(): Promise<SSHInfo> {
     const response = await this.api.get(`/api/v1/instances/${this.instance.id}/info`);
     return {
@@ -373,32 +307,4 @@ export class InstanceProxy {
   }
 }
 
-// ============================================================================
-// Usage Examples
-// ============================================================================
 
-/*
-// Simple execution
-const client = new FaaSClient();
-const result = await client.execute("echo Hello World");
-console.log(result.stdout); // "Hello World"
-
-// Create and use an instance
-const snapshot = await client.snapshots.create({
-  name: "my-env",
-  image: "ubuntu:latest",
-  vcpus: 2,
-  memory: 4096
-});
-
-const instance = await client.instances.start({ snapshotId: snapshot.id });
-const output = await instance.exec("ls -la");
-console.log(output.stdout);
-
-// Create a snapshot of running instance
-const newSnapshot = await instance.snapshot();
-const newInstance = await client.instances.start({ snapshotId: newSnapshot.id });
-
-// Branching
-const branch = await client.branches.create(snapshot.id, "feature-branch");
-*/

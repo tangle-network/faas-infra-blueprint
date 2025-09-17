@@ -117,8 +117,8 @@ async fn test_blueprint_job_with_env_vars() -> color_eyre::Result<()> {
     let ctx = create_faas_context().await?;
 
     let env_vars = vec![
-        ("BLUEPRINT_VAR".to_string(), "blueprint_value".to_string()),
-        ("TEST_MODE".to_string(), "true".to_string()),
+        "BLUEPRINT_VAR=blueprint_value".to_string(),
+        "TEST_MODE=true".to_string(),
     ];
 
     let args = ExecuteFunctionArgs {

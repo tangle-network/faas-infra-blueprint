@@ -1,16 +1,15 @@
 use axum::{
     extract::{Json, Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::IntoResponse,
-    routing::{get, post, delete},
+    routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{info, instrument};
+use tracing::instrument;
 
 use crate::api_server::{ApiError, ApiState, authenticate, check_rate_limit};
-use crate::context::FaaSContext;
 use crate::jobs::*;
 use blueprint_sdk::extract::Context;
 use blueprint_sdk::tangle::extract::{CallId, TangleArg};

@@ -1,9 +1,8 @@
 use axum::{
-    extract::{Extension, Json, Path, Query, State},
+    extract::{Json, Path, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
-    Router,
+    routing::post,
 };
 use faas_common::{ExecuteFunctionArgs, InvocationResult};
 use serde::{Deserialize, Serialize};
@@ -47,17 +46,17 @@ pub struct ApiKeyPermissions {
 
 /// Shared state for the API server
 #[derive(Clone)]
-struct ApiState {
-    context: FaaSContext,
-    config: ApiServerConfig,
-    request_counts: Arc<RwLock<HashMap<String, u32>>>, // For rate limiting
+pub(crate) struct ApiState {
+    pub(crate) context: FaaSContext,
+    pub(crate) config: ApiServerConfig,
+    pub(crate) request_counts: Arc<RwLock<HashMap<String, u32>>>, // For rate limiting
 }
 
 /// API error response
 #[derive(Serialize)]
-struct ApiError {
-    error: String,
-    code: String,
+pub(crate) struct ApiError {
+    pub(crate) error: String,
+    pub(crate) code: String,
 }
 
 impl IntoResponse for ApiError {
@@ -146,9 +145,9 @@ impl ApiBackgroundService {
         };
 
         // Use the comprehensive router from api_routes
-        let app = crate::api_routes::build_api_router(state)
+        let app = crate::api_routes::build_api_router(state.clone())
             // Add the basic execute endpoint for backward compatibility
-            .route("/api/v1/execute", post(execute_function_handler));
+            .route("/api/v1/execute", post(execute_function_handler).with_state(state.clone()));
 
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr).await?;
@@ -162,7 +161,7 @@ impl ApiBackgroundService {
 }
 
 // Authentication middleware
-async fn authenticate(
+pub(crate) async fn authenticate(
     headers: &HeaderMap,
     state: &ApiState,
 ) -> Result<ApiKeyPermissions, ApiError> {
@@ -186,7 +185,7 @@ async fn authenticate(
 }
 
 // Rate limiting check
-async fn check_rate_limit(
+pub(crate) async fn check_rate_limit(
     api_key: &str,
     limit: Option<u32>,
     state: &ApiState,
@@ -269,7 +268,7 @@ async fn execute_function_handler(
 async fn create_instance_handler(
     State(state): State<ApiState>,
     headers: HeaderMap,
-    Json(request): Json<InstanceRequest>,
+    Json(_request): Json<InstanceRequest>,
 ) -> Result<Json<InstanceResponse>, ApiError> {
     let permissions = authenticate(&headers, &state).await?;
     if !permissions.can_manage_instances {

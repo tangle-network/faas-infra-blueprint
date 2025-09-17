@@ -39,6 +39,32 @@ pub struct FaaSContext {
 }
 
 impl FaaSContext {
+    #[cfg(test)]
+    pub fn new() -> Self {
+        use faas_executor::executor::{ContainerStrategy, ExecutionStrategy, Executor};
+        use std::collections::HashMap;
+
+        // Create a minimal context for tests
+        let strategy = ExecutionStrategy::Container(ContainerStrategy {
+            warm_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            max_pool_size: 5,
+            docker: Default::default(),
+            build_cache_volumes: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            dependency_layers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            gpu_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        });
+
+        let executor = Arc::new(Executor::new_sync(strategy));
+        let orchestrator = Arc::new(Orchestrator::new(executor));
+
+        Self {
+            config: BlueprintEnvironment::Production,
+            orchestrator,
+            executor_type: "docker".to_string(),
+            default_firecracker_rootfs_path: None,
+        }
+    }
+
     pub async fn new(config: BlueprintEnvironment) -> Result<Self, BlueprintLibError> {
         let executor_type = env::var("FAAS_EXECUTOR_TYPE")
             .unwrap_or_else(|_| "docker".to_string())

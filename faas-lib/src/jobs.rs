@@ -17,10 +17,10 @@ use tracing::{error, info, instrument};
 
 pub const EXECUTE_FUNCTION_JOB_ID: u64 = 0;
 
-#[instrument(skip(ctx), fields(job_id = % EXECUTE_FUNCTION_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % EXECUTE_FUNCTION_JOB_ID))]
 #[debug_job]
 pub async fn execute_function_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<ExecuteFunctionArgs>,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
@@ -28,7 +28,7 @@ pub async fn execute_function_job(
 
     let function_id = format!("job_{}", call_id);
 
-    let invocation_result = match ctx
+    let invocation_result = match _ctx
         .orchestrator
         .schedule_execution(
             function_id,
@@ -78,10 +78,10 @@ pub struct ExecuteAdvancedArgs {
     pub timeout_secs: Option<u64>,
 }
 
-#[instrument(skip(ctx), fields(job_id = % EXECUTE_ADVANCED_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % EXECUTE_ADVANCED_JOB_ID))]
 #[debug_job]
 pub async fn execute_advanced_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<ExecuteAdvancedArgs>,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
@@ -138,10 +138,10 @@ pub struct CreateSnapshotArgs {
     pub description: Option<String>,
 }
 
-#[instrument(skip(ctx), fields(job_id = % CREATE_SNAPSHOT_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % CREATE_SNAPSHOT_JOB_ID))]
 #[debug_job]
 pub async fn create_snapshot_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<CreateSnapshotArgs>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -159,10 +159,10 @@ pub async fn create_snapshot_job(
 
 pub const RESTORE_SNAPSHOT_JOB_ID: u64 = 3;
 
-#[instrument(skip(ctx), fields(job_id = % RESTORE_SNAPSHOT_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % RESTORE_SNAPSHOT_JOB_ID))]
 #[debug_job]
 pub async fn restore_snapshot_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(snapshot_id): TangleArg<String>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -191,10 +191,10 @@ pub struct CreateBranchArgs {
     pub branch_name: String,
 }
 
-#[instrument(skip(ctx), fields(job_id = % CREATE_BRANCH_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % CREATE_BRANCH_JOB_ID))]
 #[debug_job]
 pub async fn create_branch_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<CreateBranchArgs>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -221,10 +221,10 @@ pub struct MergeBranchesArgs {
     pub merge_strategy: String, // "union", "intersection", "latest"
 }
 
-#[instrument(skip(ctx), fields(job_id = % MERGE_BRANCHES_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % MERGE_BRANCHES_JOB_ID))]
 #[debug_job]
 pub async fn merge_branches_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<MergeBranchesArgs>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -256,10 +256,10 @@ pub struct StartInstanceArgs {
     pub enable_ssh: bool,
 }
 
-#[instrument(skip(ctx), fields(job_id = % START_INSTANCE_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % START_INSTANCE_JOB_ID))]
 #[debug_job]
 pub async fn start_instance_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<StartInstanceArgs>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -278,10 +278,10 @@ pub async fn start_instance_job(
 
 pub const STOP_INSTANCE_JOB_ID: u64 = 7;
 
-#[instrument(skip(ctx), fields(job_id = % STOP_INSTANCE_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % STOP_INSTANCE_JOB_ID))]
 #[debug_job]
 pub async fn stop_instance_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(instance_id): TangleArg<String>,
 ) -> Result<TangleResult<bool>, JobError> {
@@ -295,10 +295,10 @@ pub async fn stop_instance_job(
 
 pub const PAUSE_INSTANCE_JOB_ID: u64 = 8;
 
-#[instrument(skip(ctx), fields(job_id = % PAUSE_INSTANCE_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % PAUSE_INSTANCE_JOB_ID))]
 #[debug_job]
 pub async fn pause_instance_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(instance_id): TangleArg<String>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -315,10 +315,10 @@ pub async fn pause_instance_job(
 
 pub const RESUME_INSTANCE_JOB_ID: u64 = 9;
 
-#[instrument(skip(ctx), fields(job_id = % RESUME_INSTANCE_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % RESUME_INSTANCE_JOB_ID))]
 #[debug_job]
 pub async fn resume_instance_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(checkpoint_id): TangleArg<String>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -347,10 +347,10 @@ pub struct ExposePortArgs {
     pub subdomain: Option<String>,
 }
 
-#[instrument(skip(ctx), fields(job_id = % EXPOSE_PORT_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % EXPOSE_PORT_JOB_ID))]
 #[debug_job]
 pub async fn expose_port_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<ExposePortArgs>,
 ) -> Result<TangleResult<String>, JobError> {
@@ -381,10 +381,10 @@ pub struct UploadFilesArgs {
     pub files_data: Vec<u8>, // Tar archive or similar
 }
 
-#[instrument(skip(ctx), fields(job_id = % UPLOAD_FILES_JOB_ID))]
+#[instrument(skip(_ctx), fields(job_id = % UPLOAD_FILES_JOB_ID))]
 #[debug_job]
 pub async fn upload_files_job(
-    Context(ctx): Context<FaaSContext>,
+    Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<UploadFilesArgs>,
 ) -> Result<TangleResult<u64>, JobError> {
