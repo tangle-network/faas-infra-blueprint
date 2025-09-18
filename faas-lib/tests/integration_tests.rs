@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::context::FaaSContext;
-    use crate::jobs::*;
-    use crate::api_server::{ApiServerConfig, ApiKeyPermissions, ApiBackgroundService};
+    use faas_blueprint_lib::context::FaaSContext;
+    use faas_blueprint_lib::jobs::*;
+    use faas_blueprint_lib::api_server::{ApiServerConfig, ApiKeyPermissions};
     use blueprint_sdk::extract::Context;
     use blueprint_sdk::tangle::extract::{CallId, TangleArg};
     use faas_common::ExecuteFunctionArgs;
@@ -11,7 +10,7 @@ mod tests {
     use tokio;
 
     fn create_test_context() -> FaaSContext {
-        FaaSContext::new()
+        FaaSContext::new_for_test()
     }
 
     // Test all 12 Tangle jobs
@@ -140,7 +139,7 @@ mod tests {
         let ctx = create_test_context();
         let args = StartInstanceArgs {
             snapshot_id: None,
-            image: "alpine:latest".to_string(),
+            image: Some("alpine:latest".to_string()),
             cpu_cores: 1,
             memory_mb: 512,
             disk_gb: 1,
@@ -281,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn test_api_authentication() {
         use axum::http::HeaderMap;
-        use crate::api_server::{ApiState, authenticate};
+        use faas_blueprint_lib::api_server::{authenticate};
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
@@ -327,7 +326,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limiting() {
-        use crate::api_server::{ApiState, check_rate_limit};
+        use faas_blueprint_lib::api_server::{ApiState, check_rate_limit};
         use std::sync::Arc;
         use tokio::sync::RwLock;
 

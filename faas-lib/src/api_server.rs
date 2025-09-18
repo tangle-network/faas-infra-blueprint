@@ -46,10 +46,10 @@ pub struct ApiKeyPermissions {
 
 /// Shared state for the API server
 #[derive(Clone)]
-pub(crate) struct ApiState {
-    pub(crate) context: FaaSContext,
-    pub(crate) config: ApiServerConfig,
-    pub(crate) request_counts: Arc<RwLock<HashMap<String, u32>>>, // For rate limiting
+pub struct ApiState {
+    pub context: FaaSContext,
+    pub config: ApiServerConfig,
+    pub request_counts: Arc<RwLock<HashMap<String, u32>>>, // For rate limiting
 }
 
 /// API error response

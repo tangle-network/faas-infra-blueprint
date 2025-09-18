@@ -9,7 +9,7 @@ members = [
     "crates/faas-orchestrator", # Kept as a library for state logic ideas
     "crates/faas-executor",     # Renamed from faas-worker-agent
     "faas-tester",
-    "crates/faas-guest-agent",
+    "crates/faas-guest-agent", "crates/faas-usage-tracker",
 ]
 
 exclude = ["dependencies/"]

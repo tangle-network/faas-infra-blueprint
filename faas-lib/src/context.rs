@@ -40,27 +40,33 @@ pub struct FaaSContext {
 
 impl FaaSContext {
     #[cfg(test)]
-    pub fn new() -> Self {
-        use faas_executor::executor::{ContainerStrategy, ExecutionStrategy, Executor};
-        use std::collections::HashMap;
+    pub fn new_for_test() -> Self {
+        use faas_common::{SandboxExecutor, SandboxConfig, InvocationResult};
+        use async_trait::async_trait;
 
-        // Create a minimal context for tests
-        let strategy = ExecutionStrategy::Container(ContainerStrategy {
-            warm_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            max_pool_size: 5,
-            docker: Default::default(),
-            build_cache_volumes: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-            dependency_layers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-            gpu_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        });
+        // Create a mock executor for tests
+        #[derive(Clone)]
+        struct MockExecutor;
 
-        let executor = Arc::new(Executor::new_sync(strategy));
+        #[async_trait]
+        impl SandboxExecutor for MockExecutor {
+            async fn execute(&self, _config: SandboxConfig) -> faas_common::Result<InvocationResult> {
+                Ok(InvocationResult {
+                    request_id: "test".to_string(),
+                    response: Some(b"test".to_vec()),
+                    logs: Some("test logs".to_string()),
+                    error: None,
+                })
+            }
+        }
+
+        let executor: Arc<dyn SandboxExecutor + Send + Sync> = Arc::new(MockExecutor);
         let orchestrator = Arc::new(Orchestrator::new(executor));
 
         Self {
-            config: BlueprintEnvironment::Production,
+            config: BlueprintEnvironment::default(),
             orchestrator,
-            executor_type: "docker".to_string(),
+            executor_type: "mock".to_string(),
             default_firecracker_rootfs_path: None,
         }
     }

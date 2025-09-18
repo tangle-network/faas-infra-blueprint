@@ -6322,6 +6322,7 @@ dependencies = [
 name = "faas-blueprint-lib"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum 0.7.9",
  "blueprint-sdk",
  "bollard",
@@ -6458,6 +6459,17 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
+]
+
+[[package]]
+name = "faas-usage-tracker"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
