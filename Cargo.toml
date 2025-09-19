@@ -59,7 +59,7 @@ color-eyre = "0.6"
 tower = { version = "0.5", default-features = false }
 
 # Testing Utilities
-tempfile = "3.3"
+tempfile = "3.22"
 
 # Additional dependencies needed by executor
 chrono = { version = "0.4", features = ["serde"] }
