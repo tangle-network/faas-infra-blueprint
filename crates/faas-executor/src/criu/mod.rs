@@ -1,7 +1,6 @@
+
 use anyhow::Result;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 use tokio::process::Command as AsyncCommand;
 use tracing::{debug, error, info, warn};
@@ -480,30 +479,25 @@ impl CriuManager {
 mod tests {
     use super::*;
     use std::process::Stdio;
-    use tokio::io::AsyncWriteExt;
+    
 
     #[tokio::test]
+    #[cfg_attr(not(target_os = "linux"), ignore = "CRIU requires Linux")]
     async fn test_criu_manager_creation() {
-        // This test will pass on machines without CRIU but skip the actual functionality
         let config = CriuConfig::default();
 
-        match CriuManager::new(config).await {
-            Ok(manager) => {
-                println!("✅ CRIU manager created successfully");
+        let manager = CriuManager::new(config).await
+            .expect("Failed to create CRIU manager");
 
-                // Test version check
-                if let Ok(version) = manager.get_version().await {
-                    println!("📋 CRIU version: {}", version);
-                }
-            }
-            Err(e) => {
-                println!("⚠️  CRIU not available (expected on macOS): {}", e);
-                // This is expected on macOS - CRIU is Linux-only
-            }
-        }
+        // Test version check
+        let version = manager.get_version().await
+            .expect("Failed to get CRIU version");
+        println!("CRIU version: {}", version);
+        assert!(!version.is_empty());
     }
 
     #[tokio::test]
+    #[cfg_attr(not(target_os = "linux"), ignore = "CRIU requires Linux")]
     async fn test_checkpoint_restore_cycle() {
         let config = CriuConfig::default();
 

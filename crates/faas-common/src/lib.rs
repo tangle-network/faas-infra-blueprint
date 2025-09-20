@@ -5,7 +5,6 @@ use std::fmt::Display;
 use async_trait::async_trait;
 pub use serde::{Deserialize, Serialize};
 use thiserror::Error;
-pub use tracing;
 pub use uuid;
 
 #[derive(Error, Debug)]

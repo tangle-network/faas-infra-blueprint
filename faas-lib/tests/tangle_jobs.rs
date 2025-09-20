@@ -1,6 +1,8 @@
-use blueprint_sdk::testing::{InputValue, OutputValue, TangleTestHarness};
-use faas_lib::context::FaaSContext;
-use faas_lib::jobs::*;
+use blueprint_sdk::tangle::layers::TangleLayer;
+use blueprint_sdk::testing::tempfile;
+use blueprint_sdk::testing::utils::tangle::{InputValue, OutputValue, TangleTestHarness};
+use faas_blueprint_lib::context::FaaSContext;
+use faas_blueprint_lib::jobs::*;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -15,7 +17,7 @@ async fn test_execute_function_job() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add the execute function job
     test_env
-        .add_job(execute_function_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(execute_function_job.layer(TangleLayer))
         .await;
 
     test_env.start(()).await?;
@@ -63,7 +65,7 @@ async fn test_execute_advanced_job() -> Result<(), Box<dyn std::error::Error>> {
     test_env.initialize().await?;
 
     test_env
-        .add_job(execute_advanced_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(execute_advanced_job.layer(TangleLayer))
         .await;
 
     test_env.start(()).await?;
@@ -106,10 +108,10 @@ async fn test_snapshot_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add snapshot jobs
     test_env
-        .add_job(create_snapshot_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(create_snapshot_job.layer(TangleLayer))
         .await;
     test_env
-        .add_job(restore_snapshot_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(restore_snapshot_job.layer(TangleLayer))
         .await;
 
     test_env.start(()).await?;
@@ -172,7 +174,7 @@ async fn test_branch_creation() -> Result<(), Box<dyn std::error::Error>> {
     test_env.initialize().await?;
 
     test_env
-        .add_job(create_branch_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(create_branch_job.layer(TangleLayer))
         .await;
 
     test_env.start(()).await?;
@@ -210,16 +212,16 @@ async fn test_instance_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add instance jobs
     test_env
-        .add_job(start_instance_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(start_instance_job.layer(TangleLayer))
         .await;
     test_env
-        .add_job(pause_instance_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(pause_instance_job.layer(TangleLayer))
         .await;
     test_env
-        .add_job(resume_instance_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(resume_instance_job.layer(TangleLayer))
         .await;
     test_env
-        .add_job(stop_instance_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(stop_instance_job.layer(TangleLayer))
         .await;
 
     test_env.start(()).await?;
@@ -314,7 +316,7 @@ async fn test_expose_port() -> Result<(), Box<dyn std::error::Error>> {
     test_env.initialize().await?;
 
     test_env
-        .add_job(expose_port_job.layer(blueprint_sdk::tangle::layer::TangleLayer))
+        .add_job(expose_port_job.layer(TangleLayer))
         .await;
 
     test_env.start(()).await?;

@@ -1,3 +1,4 @@
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -505,7 +506,7 @@ impl MetricsCollector {
         } else {
             0.0
         };
-        score *= (1.0 - cold_start_rate * 0.5); // Penalize high cold start rates
+        score *= 1.0 - cold_start_rate * 0.5; // Penalize high cold start rates
 
         // Factor in error rates
         let total_errors: u64 = metrics.error_counts.values().sum();
@@ -514,7 +515,7 @@ impl MetricsCollector {
         } else {
             0.0
         };
-        score *= (1.0 - error_rate);
+        score *= 1.0 - error_rate;
 
         score.max(0.0).min(1.0)
     }

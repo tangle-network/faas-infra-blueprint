@@ -1,8 +1,9 @@
+
 use chrono::{DateTime, Duration, Utc};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use ssh_key::private::Ed25519Keypair;
-use ssh_key::{Algorithm, LineEnding, PrivateKey, PublicKey};
+use ssh_key::{LineEnding, PrivateKey, PublicKey};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;

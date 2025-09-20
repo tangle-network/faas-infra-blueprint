@@ -1,5 +1,6 @@
 // --- FirecrackerExecutor Implementation (Placeholder) ---
 
+
 use async_trait::async_trait;
 use faas_common::{
     FaasError, InvocationResult, Result as CommonResult, SandboxConfig, SandboxExecutor,
@@ -7,7 +8,7 @@ use faas_common::{
 use firecracker_rs_sdk::{
     firecracker::FirecrackerOption,
     models::{
-        vsock::Vsock, BootSource, Drive, LogLevel, Logger, MachineConfiguration, NetworkInterface,
+        vsock::Vsock, BootSource, Drive, LogLevel, Logger, MachineConfiguration,
     },
     Error as FcError,
 };
@@ -17,7 +18,7 @@ use std::path::{Path, PathBuf};
 use tempfile::Builder as TempFileBuilder;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{timeout, Duration};
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
@@ -105,6 +106,13 @@ pub struct FirecrackerExecutor {
 }
 
 impl FirecrackerExecutor {
+    pub fn stub() -> Self {
+        Self {
+            fc_binary_path: String::new(),
+            kernel_image_path: String::new(),
+        }
+    }
+
     pub fn new(fc_binary_path: String, kernel_image_path: String) -> Result<Self, FaasError> {
         info!(%fc_binary_path, %kernel_image_path, "Creating FirecrackerExecutor (async)");
         // Basic validation
@@ -239,7 +247,7 @@ impl SandboxExecutor for FirecrackerExecutor {
                  }
              }).await;
 
-            let mut stream = match stream_result {
+            let stream = match stream_result {
                 Ok(Ok(s)) => {
                     info!(%instance_id, "Vsock UDS connected.");
                     s

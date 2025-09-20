@@ -1,0 +1,49 @@
+# Lightweight Alpine Linux container for testing CRIU
+# Note: Firecracker needs glibc so it won't work well on Alpine
+
+FROM rust:1.75-alpine3.19
+
+# Install dependencies
+RUN apk add --no-cache \
+    # Build essentials
+    musl-dev \
+    openssl-dev \
+    pkgconfig \
+    # CRIU and dependencies
+    criu \
+    criu-dev \
+    # Utilities
+    bash \
+    git \
+    curl \
+    wget \
+    # For nested containers
+    docker-cli \
+    # Network tools for testing
+    iproute2 \
+    iptables
+
+# Install Rust nightly
+RUN rustup toolchain install nightly && \
+    rustup default nightly
+
+# Set up working directory
+WORKDIR /workspace
+
+# Copy project
+COPY . .
+
+# Create test script for CRIU
+RUN echo '#!/bin/bash\n\
+echo "=== Alpine CRIU Test Environment ==="\n\
+echo "CRIU Version:"\n\
+criu --version\n\
+echo ""\n\
+echo "Testing CRIU functionality:"\n\
+criu check && echo "CRIU check passed!" || echo "CRIU check failed - some features unavailable"\n\
+echo ""\n\
+echo "Running CRIU tests:"\n\
+cargo +nightly test --package faas-executor --test criu_tests -- --ignored --nocapture\n\
+' > /test-criu.sh && chmod +x /test-criu.sh
+
+CMD ["/test-criu.sh"]

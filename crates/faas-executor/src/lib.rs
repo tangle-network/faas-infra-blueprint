@@ -1,20 +1,19 @@
-use async_trait::async_trait; // Import async_trait
+use async_trait::async_trait;
+use std::sync::Arc;
+use tracing::{error, info, instrument, warn};
 use docktopus::bollard::container::{
-    AttachContainerOptions, AttachContainerResults, LogOutput, LogsOptions, RemoveContainerOptions,
+    AttachContainerOptions, AttachContainerResults, LogOutput, RemoveContainerOptions,
     WaitContainerOptions,
-}; // Import LogsOptions
-use docktopus::bollard::errors::Error as BollardError; // Alias bollard error
+};
+use docktopus::bollard::errors::Error as BollardError;
 use docktopus::bollard::Docker;
-use docktopus::container::Container; // Use doctopus Container
 use faas_common::{
     FaasError, InvocationResult, Result as CommonResult, SandboxConfig, SandboxExecutor,
-}; // Use common Result and InvocationResult
-use futures::{SinkExt, StreamExt, TryStreamExt}; // Add SinkExt for writing to stdin stream
-use std::sync::Arc;
+};
+use futures::{StreamExt, TryStreamExt};
 use thiserror::Error;
-use tokio::io::AsyncWriteExt; // For write_all
-use tracing::{error, info, instrument, warn};
-use uuid::Uuid; // Add thiserror
+use tokio::io::AsyncWriteExt;
+use uuid::Uuid;
 
 // Re-export dependencies potentially needed by consumers (like orchestrator)
 pub use docktopus;
@@ -31,6 +30,8 @@ pub mod readiness;
 pub mod snapshot;
 pub mod ssh;
 pub mod sync;
+
+pub mod test_utils;
 
 // --- Custom Error Type ---
 #[derive(Error, Debug)]

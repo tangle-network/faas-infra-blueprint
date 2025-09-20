@@ -1,11 +1,12 @@
+
 use chrono::{DateTime, Utc};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 
 /// Advanced file synchronization with gitignore support
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -341,7 +342,6 @@ impl FileSynchronizer {
     }
 }
 
-use std::sync::Arc;
 
 /// Instance file synchronization
 pub struct InstanceSync {

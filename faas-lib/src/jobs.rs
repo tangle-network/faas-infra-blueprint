@@ -3,11 +3,11 @@ use crate::JobError;
 use blueprint_sdk::extract::Context;
 use blueprint_sdk::macros::debug_job;
 use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleResult};
-use faas_common::{ExecuteFunctionArgs, InvocationResult};
-use faas_executor::platform::{Executor as PlatformExecutor, Mode, Request as PlatformRequest};
+use faas_common::ExecuteFunctionArgs;
+use faas_executor::platform::{Mode, Request as PlatformRequest};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
 // ============================================================================
 // STATE-CHANGING JOBS (Require Tangle for state transitions)
@@ -24,38 +24,30 @@ pub async fn execute_function_job(
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<ExecuteFunctionArgs>,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
-    info!(image = %args.image, command = ?args.command, "Executing function via Blueprint job");
+    info!(image = %args.image, command = ?args.command, "Executing function");
 
-    let function_id = format!("job_{}", call_id);
-
-    let invocation_result = match _ctx
-        .orchestrator
-        .schedule_execution(
-            function_id,
-            args.image,
-            args.command,
-            args.env_vars,
-            args.payload,
-        )
-        .await
-    {
-        Ok(result) => result,
-        Err(e) => {
-            return Err(JobError::SchedulingFailed(e));
-        }
+    let request = PlatformRequest {
+        id: format!("job_{}", call_id),
+        code: args.command.join(" "),
+        mode: Mode::Ephemeral,
+        env: args.image,
+        timeout: Duration::from_secs(60),
+        checkpoint: None,
+        branch_from: None,
     };
 
-    if let Some(err_msg) = invocation_result.error {
-        error!(error_message = %err_msg, logs = ?invocation_result.logs, "Function execution reported error");
-        return Err(JobError::FunctionExecutionFailed(InvocationResult {
-            request_id: invocation_result.request_id,
-            response: invocation_result.response,
-            logs: invocation_result.logs,
-            error: Some(err_msg),
-        }));
+    let response = _ctx.executor.run(request).await.map_err(|e| {
+        JobError::ExecutionFailed(format!("Platform execution failed: {}", e))
+    })?;
+
+    if response.exit_code != 0 {
+        return Err(JobError::ExecutionFailed(format!(
+            "Container exited with code {}",
+            response.exit_code
+        )));
     }
 
-    Ok(TangleResult(invocation_result.response.unwrap_or_default()))
+    Ok(TangleResult(response.stdout))
 }
 
 // --- Advanced Execution with Modes ---
@@ -102,22 +94,18 @@ pub async fn execute_advanced_job(
         _ => Mode::Ephemeral,
     };
 
-    let platform_request = PlatformRequest {
-        id: function_id.clone(),
+    let request = PlatformRequest {
+        id: function_id,
         code: args.command.join(" "),
         mode,
-        env: args.image.clone(),
+        env: args.image,
         timeout: Duration::from_secs(args.timeout_secs.unwrap_or(60)),
         checkpoint: args.checkpoint_id,
         branch_from: args.branch_from,
     };
 
-    let platform_executor = PlatformExecutor::new().await.map_err(|e| {
-        JobError::InvalidInput(format!("Failed to create platform executor: {}", e))
-    })?;
-
-    let response = platform_executor.run(platform_request).await.map_err(|e| {
-        JobError::InvalidInput(format!("Platform execution failed: {}", e))
+    let response = _ctx.executor.run(request).await.map_err(|e| {
+        JobError::ExecutionFailed(format!("Execution failed: {}", e))
     })?;
 
     Ok(TangleResult(response.stdout))

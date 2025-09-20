@@ -1,4 +1,5 @@
-use crate::criu::{CheckpointResult, CriuConfig, CriuManager, RestoreResult};
+
+use crate::criu::{CriuConfig, CriuManager};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

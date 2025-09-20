@@ -15,7 +15,6 @@ path = "src/lib.rs"
 [dependencies]
 faas-common = { workspace = true, features = ["scale"] }
 faas-executor = { workspace = true }
-faas-orchestrator = { workspace = true }
 faas-gateway = { workspace = true }
 
 tokio = { workspace = true, features = ["net"] }

@@ -70,10 +70,8 @@ impl From<FaaSExecutionOutput> for ExecuteFunctionResult {
 
 #[derive(Error, Debug)]
 pub enum JobError {
-    #[error("Orchestrator scheduling failed: {0}")]
-    SchedulingFailed(#[from] faas_orchestrator::Error),
-    #[error("FaaS execution failed: {0}")]
-    FunctionExecutionFailed(InvocationResult),
-    #[error("Invalid job input: {0}")]
+    #[error("Execution failed: {0}")]
+    ExecutionFailed(String),
+    #[error("Invalid input: {0}")]
     InvalidInput(String),
 }

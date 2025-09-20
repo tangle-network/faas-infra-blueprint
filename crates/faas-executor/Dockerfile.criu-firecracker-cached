@@ -1,0 +1,188 @@
+# Optimized Dockerfile with caching and non-interactive mode
+FROM ubuntu:22.04 AS builder
+
+# Set non-interactive mode to prevent timezone prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Install dependencies in layers for better caching
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
+    && ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
+    && dpkg-reconfigure --frontend noninteractive tzdata
+
+# Layer 1: Build essentials (rarely changes)
+RUN apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    make \
+    curl \
+    wget \
+    ca-certificates \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Layer 2: CRIU build dependencies (changes occasionally)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libprotobuf-dev \
+    libprotobuf-c-dev \
+    protobuf-c-compiler \
+    protobuf-compiler \
+    python3-protobuf \
+    python3-yaml \
+    libnl-3-dev \
+    libnet-dev \
+    libcap-dev \
+    libaio-dev \
+    libgnutls28-dev \
+    libselinux-dev \
+    libdrm-dev \
+    asciidoc \
+    xmlto \
+    python3-future \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build CRIU (cache this layer)
+WORKDIR /build
+RUN git clone --depth 1 --branch v3.18 https://github.com/checkpoint-restore/criu.git && \
+    cd criu && \
+    make -j$(nproc) && \
+    make install
+
+# Runtime image
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Install runtime dependencies in one layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tzdata && \
+    ln -fs /usr/share/zoneinfo/UTC /etc/localtime && \
+    dpkg-reconfigure --frontend noninteractive tzdata && \
+    apt-get install -y --no-install-recommends \
+    libprotobuf-dev \
+    libprotobuf-c1 \
+    python3-protobuf \
+    libnl-3-200 \
+    libnet1 \
+    libcap2 \
+    libaio1 \
+    libgnutls30 \
+    libselinux1 \
+    libdrm2 \
+    curl \
+    git \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    docker.io \
+    wget \
+    ca-certificates \
+    sudo \
+    iproute2 \
+    iptables \
+    kmod \
+    util-linux \
+    qemu-utils \
+    bridge-utils \
+    strace \
+    lsof \
+    procps \
+    net-tools \
+    iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy CRIU from builder
+COPY --from=builder /usr/local/sbin/criu /usr/local/sbin/criu
+COPY --from=builder /usr/local/lib/libcriu* /usr/local/lib/
+COPY --from=builder /usr/local/include/criu /usr/local/include/criu
+
+# Install Rust (cache this layer)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup toolchain install nightly && \
+    rustup default nightly && \
+    rustup target add wasm32-unknown-unknown
+
+# Download Firecracker (cache this layer)
+RUN ARCH=$(uname -m) && \
+    wget -q https://github.com/firecracker-microvm/firecracker/releases/download/v1.5.0/firecracker-v1.5.0-${ARCH}.tgz && \
+    tar -xzf firecracker-v1.5.0-${ARCH}.tgz && \
+    mv release-v1.5.0-${ARCH}/firecracker-v1.5.0-${ARCH} /usr/local/bin/firecracker && \
+    mv release-v1.5.0-${ARCH}/jailer-v1.5.0-${ARCH} /usr/local/bin/jailer && \
+    chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer && \
+    rm -rf release-v1.5.0-${ARCH} firecracker-v1.5.0-${ARCH}.tgz
+
+# Create directories
+RUN mkdir -p /var/lib/firecracker/kernel && \
+    mkdir -p /var/lib/firecracker/rootfs && \
+    mkdir -p /var/lib/faas/kernel && \
+    mkdir -p /var/run/firecracker && \
+    mkdir -p /srv/jailer && \
+    mkdir -p /var/lib/criu
+
+# Copy scripts first (unlikely to change)
+COPY crates/faas-executor/scripts/setup-env.sh /setup-env.sh
+COPY crates/faas-executor/scripts/run-tests.sh /run-tests.sh
+RUN chmod +x /setup-env.sh /run-tests.sh 2>/dev/null || true
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy Cargo files first for dependency caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/faas-executor/Cargo.toml ./crates/faas-executor/
+COPY crates/faas-common/Cargo.toml ./crates/faas-common/
+COPY faas-lib/Cargo.toml ./faas-lib/
+
+# Create dummy files to build dependencies
+RUN mkdir -p crates/faas-executor/src && \
+    echo "fn main() {}" > crates/faas-executor/src/main.rs && \
+    mkdir -p crates/faas-common/src && \
+    echo "fn main() {}" > crates/faas-common/src/lib.rs && \
+    mkdir -p faas-lib/src && \
+    echo "fn main() {}" > faas-lib/src/lib.rs
+
+# Build dependencies only (this layer is cached)
+RUN cargo +nightly build --package faas-executor --release && \
+    rm -rf crates/faas-executor/src && \
+    rm -rf crates/faas-common/src && \
+    rm -rf faas-lib/src
+
+# Now copy the actual source code
+COPY . .
+
+# Build the real project (only this layer rebuilds on source changes)
+RUN touch crates/faas-executor/src/lib.rs && \
+    cargo +nightly build --package faas-executor --release
+
+# Default test script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "=== FaaS Testing Environment ==="\n\
+echo ""\n\
+echo "System: $(uname -a)"\n\
+echo "CRIU: $(criu --version 2>/dev/null | head -1 || echo "Not available")"\n\
+echo "Firecracker: $(firecracker --version 2>/dev/null || echo "Not available")"\n\
+echo "Docker: $(docker version 2>/dev/null | grep Version | head -1 || echo "Not available")"\n\
+echo ""\n\
+\n\
+if [ "$1" = "criu" ]; then\n\
+    echo "Running CRIU tests..."\n\
+    cargo +nightly test --package faas-executor --test criu_tests -- --nocapture\n\
+elif [ "$1" = "docker" ]; then\n\
+    echo "Running Docker tests..."\n\
+    cargo +nightly test --package faas-executor --test docker_integration -- --ignored --nocapture\n\
+elif [ "$1" = "all" ]; then\n\
+    echo "Running all tests..."\n\
+    cargo +nightly test --package faas-executor --all\n\
+else\n\
+    echo "Usage: $0 [criu|docker|all]"\n\
+    echo "Running default test suite..."\n\
+    cargo +nightly test --package faas-executor --lib\n\
+fi\n\
+' > /test.sh && chmod +x /test.sh
+
+CMD ["/test.sh", "all"]

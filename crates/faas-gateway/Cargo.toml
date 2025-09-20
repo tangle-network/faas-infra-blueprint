@@ -14,7 +14,6 @@ path = "src/lib.rs"
 
 [dependencies]
 faas-common = { workspace = true }
-faas-orchestrator = { path = "../faas-orchestrator" }
 
 # Web Framework
 axum = { workspace = true }

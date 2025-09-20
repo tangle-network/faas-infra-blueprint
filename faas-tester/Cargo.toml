@@ -9,7 +9,6 @@ publish = false      # This crate is only for testing
 faas-blueprint-lib = { workspace = true }
 faas-common = { workspace = true }
 faas-executor = { workspace = true }
-faas-orchestrator = { workspace = true }
 faas-gateway = { workspace = true }
 
 dotenvy = "0.15"

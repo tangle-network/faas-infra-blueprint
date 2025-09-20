@@ -1,0 +1,220 @@
+# Full Ubuntu container with CRIU and Firecracker support
+FROM ubuntu:22.04 AS builder
+
+# Install all dependencies for CRIU compilation
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libprotobuf-dev \
+    libprotobuf-c-dev \
+    protobuf-c-compiler \
+    protobuf-compiler \
+    python3-protobuf \
+    python3-yaml \
+    libnl-3-dev \
+    libnet-dev \
+    libcap-dev \
+    libaio-dev \
+    libgnutls28-dev \
+    libselinux-dev \
+    libdrm-dev \
+    pkg-config \
+    git \
+    make \
+    curl \
+    wget \
+    asciidoc \
+    xmlto \
+    python3-future
+
+# Build CRIU from source for latest features
+WORKDIR /build
+RUN git clone https://github.com/checkpoint-restore/criu.git && \
+    cd criu && \
+    git checkout v3.18 && \
+    make -j$(nproc) && \
+    make install
+
+FROM ubuntu:22.04
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libprotobuf-dev \
+    libprotobuf-c1 \
+    python3-protobuf \
+    libnl-3-200 \
+    libnet1 \
+    libcap2 \
+    libaio1 \
+    libgnutls30 \
+    libselinux1 \
+    libdrm2 \
+    curl \
+    git \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    docker.io \
+    wget \
+    ca-certificates \
+    sudo \
+    iproute2 \
+    iptables \
+    kmod \
+    util-linux \
+    # For Firecracker
+    qemu-system-x86 \
+    qemu-utils \
+    bridge-utils \
+    dnsmasq \
+    # Additional tools
+    strace \
+    lsof \
+    procps \
+    net-tools \
+    iputils-ping \
+    vim \
+    htop \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy CRIU from builder
+COPY --from=builder /usr/local/sbin/criu /usr/local/sbin/criu
+COPY --from=builder /usr/local/lib/libcriu* /usr/local/lib/
+COPY --from=builder /usr/local/include/criu /usr/local/include/criu
+
+# Install Rust with nightly
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup toolchain install nightly && \
+    rustup default nightly && \
+    rustup target add wasm32-unknown-unknown
+
+# Download and install Firecracker
+RUN ARCH=$(uname -m) && \
+    wget https://github.com/firecracker-microvm/firecracker/releases/download/v1.5.0/firecracker-v1.5.0-${ARCH}.tgz && \
+    tar -xzf firecracker-v1.5.0-${ARCH}.tgz && \
+    mv release-v1.5.0-${ARCH}/firecracker-v1.5.0-${ARCH} /usr/local/bin/firecracker && \
+    mv release-v1.5.0-${ARCH}/jailer-v1.5.0-${ARCH} /usr/local/bin/jailer && \
+    chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer && \
+    rm -rf release-v1.5.0-${ARCH} firecracker-v1.5.0-${ARCH}.tgz
+
+# Download Firecracker kernel and rootfs
+RUN mkdir -p /var/lib/firecracker/kernel && \
+    mkdir -p /var/lib/firecracker/rootfs && \
+    mkdir -p /var/lib/faas/kernel && \
+    # Download kernel
+    wget https://github.com/firecracker-microvm/firecracker/releases/download/v1.5.0/vmlinux-5.10.186 \
+        -O /var/lib/faas/kernel/vmlinux.bin && \
+    # Download minimal rootfs
+    wget https://github.com/firecracker-microvm/firecracker/releases/download/v1.5.0/ubuntu-22.04.x86_64.rootfs.ext4 \
+        -O /var/lib/firecracker/rootfs/ubuntu.ext4 2>/dev/null || true
+
+# Create necessary directories
+RUN mkdir -p /var/run/firecracker && \
+    mkdir -p /srv/jailer && \
+    mkdir -p /var/lib/criu
+
+# Set up cgroup v2 support for CRIU
+RUN mkdir -p /sys/fs/cgroup/unified && \
+    echo "cgroup2 /sys/fs/cgroup/unified cgroup2 defaults 0 0" >> /etc/fstab
+
+# Create test environment setup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "=== System Environment Setup ==="\n\
+\n\
+# Check kernel version\n\
+echo "Kernel: $(uname -r)"\n\
+\n\
+# Check CRIU\n\
+echo "CRIU Version:"\n\
+criu --version || echo "CRIU not available"\n\
+\n\
+# Check CRIU features\n\
+echo ""\n\
+echo "CRIU Features Check:"\n\
+criu check || echo "Note: Some CRIU features may not work in container"\n\
+\n\
+# Check Firecracker\n\
+echo ""\n\
+echo "Firecracker Version:"\n\
+firecracker --version || echo "Firecracker not available"\n\
+\n\
+# Check for KVM\n\
+if [ -e /dev/kvm ]; then\n\
+    echo "KVM: Available"\n\
+    ls -l /dev/kvm\n\
+else\n\
+    echo "KVM: Not available (Firecracker will not work fully)"\n\
+fi\n\
+\n\
+# Docker check\n\
+echo ""\n\
+echo "Docker:"\n\
+docker version 2>/dev/null | head -5 || echo "Docker not available"\n\
+\n\
+echo ""\n\
+echo "=== Environment Ready ===" \n\
+' > /setup-env.sh && chmod +x /setup-env.sh
+
+# Create comprehensive test runner
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "=== Comprehensive FaaS Testing Suite ==="\n\
+/setup-env.sh\n\
+\n\
+cd /workspace\n\
+\n\
+# Build the project\n\
+echo ""\n\
+echo "Building FaaS executor..."\n\
+cargo +nightly build --package faas-executor --release\n\
+\n\
+echo ""\n\
+echo "=== Running Test Suites ==="\n\
+\n\
+# Test 1: CRIU functionality tests\n\
+echo ""\n\
+echo ">> CRIU Tests"\n\
+if criu check > /dev/null 2>&1; then\n\
+    cargo +nightly test --package faas-executor --test criu_tests -- --ignored --nocapture\n\
+else\n\
+    echo "CRIU check failed, running mock tests only"\n\
+    cargo +nightly test --package faas-executor --test criu_tests -- --nocapture\n\
+fi\n\
+\n\
+# Test 2: Firecracker tests\n\
+echo ""\n\
+echo ">> Firecracker Tests"\n\
+if [ -e /dev/kvm ]; then\n\
+    cargo +nightly test --package faas-executor --lib firecracker -- --nocapture\n\
+else\n\
+    echo "No KVM support, skipping Firecracker tests"\n\
+fi\n\
+\n\
+# Test 3: Platform executor tests\n\
+echo ""\n\
+echo ">> Platform Executor Tests"\n\
+cargo +nightly test --package faas-executor --lib platform::executor -- --ignored --nocapture\n\
+\n\
+# Test 4: Docker integration tests\n\
+echo ""\n\
+echo ">> Docker Integration Tests"\n\
+if docker ps > /dev/null 2>&1; then\n\
+    cargo +nightly test --package faas-executor --test docker_integration -- --ignored --nocapture\n\
+else\n\
+    echo "Docker daemon not accessible"\n\
+fi\n\
+\n\
+echo ""\n\
+echo "=== All Tests Complete ===" \n\
+' > /run-tests.sh && chmod +x /run-tests.sh
+
+WORKDIR /workspace
+
+# Copy project files
+COPY . .
+
+# Default command
+CMD ["/run-tests.sh"]

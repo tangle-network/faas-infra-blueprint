@@ -1,0 +1,226 @@
+version: '3.8'
+
+services:
+  # Full CRIU test environment with all kernel capabilities
+  criu-full:
+    build:
+      context: .
+      dockerfile: crates/faas-executor/Dockerfile.criu-firecracker
+    image: faas-executor-full-test
+    container_name: faas-criu-full
+    hostname: criu-test
+    privileged: true  # Full privileges for CRIU
+    pid: host  # Share host PID namespace for process checkpointing
+    network_mode: host  # Full network access
+    ipc: host  # Share IPC namespace
+    cap_add:
+      - ALL  # All capabilities for complete CRIU functionality
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+      - label:disable
+    volumes:
+      # Mount source code
+      - .:/workspace:rw
+      # Docker socket for nested operations
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      # Kernel modules if needed
+      - /lib/modules:/lib/modules:ro
+      # Access to /proc and /sys for CRIU
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      # CRIU needs access to these
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - /sys/kernel:/sys/kernel:rw
+      # Persistent storage for checkpoints
+      - criu-checkpoints:/var/lib/criu:rw
+      - firecracker-data:/var/lib/firecracker:rw
+    tmpfs:
+      - /run
+      - /tmp
+    environment:
+      - RUST_BACKTRACE=full
+      - RUST_LOG=debug
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      # CRIU environment
+      - CRIU_OPTS=--tcp-established --file-locks --link-remap --force-irmap --manage-cgroups --cgroup-root /docker
+      # Firecracker environment
+      - FC_KERNEL_PATH=/var/lib/faas/kernel/vmlinux.bin
+      - FC_ROOTFS_PATH=/var/lib/firecracker/rootfs/ubuntu.ext4
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    devices:
+      # Pass through KVM if available (for Firecracker)
+      - /dev/kvm:/dev/kvm
+      # Pass through TUN/TAP for networking
+      - /dev/net/tun:/dev/net/tun
+    command: |
+      bash -c "
+        echo '=== Full CRIU and Firecracker Test Environment ==='
+
+        # Enable required kernel features
+        echo 1 > /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || true
+        echo 0 > /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || true
+
+        # Mount cgroup2 if not mounted
+        if ! mountpoint -q /sys/fs/cgroup/unified; then
+          mount -t cgroup2 none /sys/fs/cgroup/unified 2>/dev/null || true
+        fi
+
+        # Run setup
+        /setup-env.sh
+
+        # Run comprehensive tests
+        /run-tests.sh
+      "
+
+  # Firecracker-specific test environment with KVM emulation
+  firecracker-kvm:
+    build:
+      context: .
+      dockerfile: crates/faas-executor/Dockerfile.criu-firecracker
+    image: faas-executor-full-test
+    container_name: faas-firecracker-kvm
+    hostname: firecracker-test
+    privileged: true
+    cap_add:
+      - ALL
+    security_opt:
+      - seccomp:unconfined
+    devices:
+      - /dev/kvm:/dev/kvm
+      - /dev/vhost-net:/dev/vhost-net
+      - /dev/vhost-vsock:/dev/vhost-vsock
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - .:/workspace:rw
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - firecracker-data:/var/lib/firecracker:rw
+      # Bind mount for kernel images
+      - ./kernels:/var/lib/faas/kernel:rw
+    environment:
+      - RUST_BACKTRACE=full
+      - RUST_LOG=info
+      - ENABLE_FIRECRACKER=true
+      - FC_CPUS=2
+      - FC_MEM=512
+    command: |
+      bash -c "
+        echo '=== Firecracker with KVM Test Environment ==='
+
+        # Check KVM availability
+        if [ ! -e /dev/kvm ]; then
+          echo 'ERROR: /dev/kvm not available'
+          echo 'On macOS: KVM is not available in Docker'
+          echo 'On Linux: Ensure KVM module is loaded and Docker has access'
+          exit 1
+        fi
+
+        # Set up TAP interface for Firecracker networking
+        ip tuntap add tap0 mode tap 2>/dev/null || true
+        ip addr add 172.16.0.1/24 dev tap0 2>/dev/null || true
+        ip link set tap0 up 2>/dev/null || true
+
+        # Download kernel if not present
+        if [ ! -f /var/lib/faas/kernel/vmlinux.bin ]; then
+          echo 'Downloading Firecracker kernel...'
+          mkdir -p /var/lib/faas/kernel
+          wget -q https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin \
+            -O /var/lib/faas/kernel/vmlinux.bin
+        fi
+
+        # Download rootfs if not present
+        if [ ! -f /var/lib/firecracker/rootfs/ubuntu.ext4 ]; then
+          echo 'Downloading Firecracker rootfs...'
+          mkdir -p /var/lib/firecracker/rootfs
+          wget -q https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/rootfs/bionic.rootfs.ext4 \
+            -O /var/lib/firecracker/rootfs/ubuntu.ext4
+        fi
+
+        echo 'Firecracker environment ready'
+
+        # Run Firecracker-specific tests
+        cd /workspace
+        cargo +nightly test --package faas-executor --lib firecracker -- --nocapture
+        cargo +nightly test --package faas-executor --lib platform::executor -- --nocapture
+      "
+
+  # Integrated test runner that uses both CRIU and Firecracker
+  integrated-tests:
+    build:
+      context: .
+      dockerfile: crates/faas-executor/Dockerfile.criu-firecracker
+    image: faas-executor-full-test
+    container_name: faas-integrated-tests
+    hostname: integrated-test
+    privileged: true
+    network_mode: host
+    pid: host
+    cap_add:
+      - ALL
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    volumes:
+      - .:/workspace:rw
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - criu-checkpoints:/var/lib/criu:rw
+      - firecracker-data:/var/lib/firecracker:rw
+    devices:
+      - /dev/kvm:/dev/kvm
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - RUST_BACKTRACE=full
+      - RUST_LOG=info
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - RUN_INTEGRATION_TESTS=true
+    command: |
+      bash -c "
+        echo '=== Integrated FaaS Platform Testing ==='
+        echo 'This runs all tests with CRIU, Firecracker, and Docker'
+        echo ''
+
+        # Setup environment
+        /setup-env.sh
+
+        cd /workspace
+
+        # Build everything
+        echo 'Building FaaS platform components...'
+        cargo +nightly build --package faas-executor --release
+        cargo +nightly build --package faas-blueprint-lib --release
+
+        # Run all test suites
+        echo ''
+        echo '=== Test Suite 1: Unit Tests ==='
+        cargo +nightly test --package faas-executor --lib
+
+        echo ''
+        echo '=== Test Suite 2: Integration Tests ==='
+        cargo +nightly test --package faas-executor --tests -- --ignored
+
+        echo ''
+        echo '=== Test Suite 3: Blueprint Tests ==='
+        cargo +nightly test --package faas-blueprint-lib --all
+
+        echo ''
+        echo '=== Test Suite 4: Performance Tests ==='
+        if [ -e /dev/kvm ]; then
+          cargo +nightly test --package faas-executor --lib performance -- --ignored --nocapture
+        fi
+
+        echo ''
+        echo '=== All Integrated Tests Complete ==='
+      "
+
+volumes:
+  criu-checkpoints:
+    driver: local
+  firecracker-data:
+    driver: local

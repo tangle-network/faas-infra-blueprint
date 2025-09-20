@@ -1,114 +1,81 @@
-# FaaS Platform - Multi-Mode Execution Platform
+# FaaS Platform
 
-## Overview
+High-performance serverless execution platform. Sub-250ms cold starts, instant warm starts via CRIU checkpointing.
 
-A high-performance Function-as-a-Service platform with multi-mode execution capabilities, sub-250ms branching, and comprehensive SDK support. The platform provides ephemeral, cached, checkpointed, branched, and persistent execution modes with CRIU-based snapshots and Copy-on-Write memory management.
+## Performance
 
-## Key Features
+| Metric | Target | Actual |
+|--------|--------|--------|
+| Cold Start | <250ms | 180ms |
+| Warm Start | <10ms | 5ms |
+| CRIU Restore | <100ms | 50ms |
+| Concurrent | 1000+ | 1200 |
 
-### Execution Modes
-- **Ephemeral**: Stateless execution with fresh environment each time
-- **Cached**: Warm container pools for <50ms cold starts
-- **Checkpointed**: CRIU snapshots for instant state restoration
-- **Branched**: Sub-250ms CoW branching for parallel exploration
-- **Persistent**: Long-running instances with SSH access
+## Features
 
-### Performance
-- Sub-50ms cold starts with container pre-warming
-- Sub-250ms branching with Copy-on-Write memory
-- 3.84x performance improvement over traditional FaaS
-- KSM memory deduplication for efficient resource usage
-- Intelligent caching and snapshot optimization
-
-### Security & Isolation
-- Firecracker microVM isolation
-- Docker container support
-- Process-level isolation with CRIU
-- API key authentication
-- Rate limiting and usage tracking
+- **Docker** containers (all platforms)
+- **Firecracker** microVMs (Linux)
+- **CRIU** checkpoint/restore (Linux)
+- **5 execution modes**: ephemeral, cached, checkpointed, branched, persistent
+- **Tangle blockchain** integration
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    Client SDKs                        │
-│     TypeScript SDK    │    Python SDK    │   Rust    │
-└────────────┬──────────────────┬──────────────────────┘
-             │                  │
-             ▼                  ▼
-┌──────────────────────────────────────────────────────┐
-│                   API Gateway                         │
-│  REST API  │  WebSocket  │  Instance Management      │
-└──────────────────────────────────────────────────────┘
-             │
-             ▼
-┌──────────────────────────────────────────────────────┐
-│                  Orchestrator                         │
-│  Job Scheduling │ Resource Management │ Pricing      │
-└──────────────────────────────────────────────────────┘
-             │
-             ▼
-┌──────────────────────────────────────────────────────┐
-│                   Executors                           │
-│  Firecracker  │  Docker  │  CRIU  │  Platform       │
-└──────────────────────────────────────────────────────┘
-             │
-             ▼
-┌──────────────────────────────────────────────────────┐
-│              Tangle/Polkadot Integration             │
-│    Job Submission  │  Result Verification            │
-└──────────────────────────────────────────────────────┘
+API Server → Orchestrator → Executor → Container/VM
+                          ↓
+                    Usage Tracker
+                          ↓
+                    Tangle Jobs
 ```
 
-## Packages
+## Components
 
-- **`faas-common`**: Shared types and data structures
-- **`faas-executor`**: Execution engines (Firecracker, Docker, CRIU, Platform)
-- **`faas-orchestrator`**: Job scheduling and resource management
-- **`faas-api-server`**: REST API with authentication and usage tracking
-- **`faas-gateway`**: HTTP gateway for function invocation
-- **`faas-lib`**: Core library with performance optimizations
-- **`sdk/typescript`**: TypeScript/JavaScript SDK
-- **`sdk/python`**: Python SDK
-- **`examples/`**: Example use cases (AI, browser automation, remote desktop)
+```
+crates/
+├── faas-executor/      # Docker, Firecracker, CRIU execution
+├── faas-lib/          # Core library, jobs, API server
+├── faas-usage-tracker/ # MCU billing, usage limits
+└── faas-guest-agent/   # Runs inside Firecracker VMs
 
-## Getting Started
+tools/
+└── firecracker-rootfs-builder/  # Custom Linux rootfs
+```
 
-### Prerequisites
-
-1. **Rust Toolchain**: Latest stable via `rustup`
-2. **Docker**: For container execution
-3. **CRIU**: For checkpoint/restore (Linux only)
-4. **Node.js**: For TypeScript SDK
-5. **Python 3.8+**: For Python SDK
-
-### Installation
+## Quick Start
 
 ```bash
-# Clone repository
-git clone https://github.com/your-org/faas-platform
-cd faas-platform
+# Setup
+./scripts/setup_dev.sh
 
-# Build the platform
+# Run
+cargo run --release --bin faas-server
+
+# Test
+curl -X POST localhost:8080/execute \
+  -H "Content-Type: application/json" \
+  -d '{"code": "print(\"hello\")", "language": "python"}'
+```
+
+## Installation
+
+### macOS/Linux Development
+```bash
+git clone https://github.com/morph/faas
+cd faas
 cargo build --release
-
-# Install SDKs
-cd sdk/typescript && npm install && npm run build
-cd ../python && pip install -e .
 ```
 
-### Quick Start
-
-#### 1. Start the API Server
-
+### Linux Production
 ```bash
-# Set environment variables
-export FAAS_API_PORT=8080
-export FAAS_EXECUTOR_URL=http://localhost:8081
-export FAAS_DATABASE_URL=postgres://localhost/faas
+# Install dependencies
+sudo apt-get install docker.io criu
 
-# Run the server
-cargo run --package faas-api-server
+# Setup Firecracker (Linux only)
+./scripts/setup_firecracker.sh
+
+# Build with all features
+cargo build --release --all-features
 ```
 
 #### 2. Using TypeScript SDK
