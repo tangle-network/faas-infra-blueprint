@@ -73,11 +73,7 @@ impl UsageTracker {
         self.storage.record_execution(&record).await
     }
 
-    pub async fn start_instance(
-        &self,
-        account_id: &str,
-        instance: InstanceRecord,
-    ) -> Result<()> {
+    pub async fn start_instance(&self, account_id: &str, instance: InstanceRecord) -> Result<()> {
         // Check limits first
         self.check_limits(account_id, instance.vcpus, instance.ram_gb)
             .await?;

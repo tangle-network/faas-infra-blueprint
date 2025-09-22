@@ -1,4 +1,3 @@
-
 pub mod container;
 
 use anyhow::Result;
@@ -358,10 +357,7 @@ impl CriuManager {
     /// Validate CRIU capabilities and permissions
     async fn validate_criu_capabilities(binary_path: &Path) -> Result<()> {
         // Check if CRIU can run - note: --ms is deprecated in CRIU 3.19+
-        let output = AsyncCommand::new(binary_path)
-            .arg("check")
-            .output()
-            .await?;
+        let output = AsyncCommand::new(binary_path).arg("check").output().await?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -480,18 +476,20 @@ impl CriuManager {
 mod tests {
     use super::*;
     use std::process::Stdio;
-    
 
     #[tokio::test]
     #[cfg_attr(not(target_os = "linux"), ignore = "CRIU requires Linux")]
     async fn test_criu_manager_creation() {
         let config = CriuConfig::default();
 
-        let manager = CriuManager::new(config).await
+        let manager = CriuManager::new(config)
+            .await
             .expect("Failed to create CRIU manager");
 
         // Test version check
-        let version = manager.get_version().await
+        let version = manager
+            .get_version()
+            .await
             .expect("Failed to get CRIU version");
         println!("CRIU version: {}", version);
         assert!(!version.is_empty());

@@ -1,17 +1,15 @@
 //! CRIU tests that can run inside a Docker container
 //! These tests use actual CRIU functionality when available
 
-use std::process::{Command, Stdio};
 use std::fs;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 #[test]
 #[ignore = "Requires CRIU in Docker container"]
 fn test_criu_available() {
-    let output = Command::new("criu")
-        .arg("--version")
-        .output();
+    let output = Command::new("criu").arg("--version").output();
 
     match output {
         Ok(out) => {
@@ -81,9 +79,7 @@ fn test_simple_process_checkpoint() {
                 println!("Successfully checkpointed process {}", pid);
 
                 // Check if checkpoint files were created
-                let entries = fs::read_dir(&checkpoint_dir)
-                    .unwrap()
-                    .count();
+                let entries = fs::read_dir(&checkpoint_dir).unwrap().count();
                 assert!(entries > 0, "No checkpoint files created");
 
                 // List checkpoint files
@@ -119,10 +115,7 @@ fn test_criu_features() {
     ];
 
     for (cmd, args) in features {
-        let output = Command::new("criu")
-            .arg(cmd)
-            .args(&args)
-            .output();
+        let output = Command::new("criu").arg(cmd).args(&args).output();
 
         match output {
             Ok(out) => {
@@ -167,9 +160,7 @@ fn test_checkpoint_restore_cycle() {
         .unwrap();
 
     // Start the script
-    let child = Command::new("bash")
-        .arg(&script_path)
-        .spawn();
+    let child = Command::new("bash").arg(&script_path).spawn();
 
     if let Ok(mut proc) = child {
         let pid = proc.id();

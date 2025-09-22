@@ -1,4 +1,4 @@
-use faas_lib::api_server::{ApiServerConfig, ApiKeyPermissions, ExecuteRequest};
+use faas_lib::api_server::{ApiKeyPermissions, ApiServerConfig, ExecuteRequest};
 use reqwest;
 use serde_json::json;
 use std::collections::HashMap;
@@ -15,10 +15,7 @@ async fn test_api_server_execution() -> Result<(), Box<dyn std::error::Error>> {
     let base_url = "http://localhost:8080";
 
     // Test health endpoint (no auth required)
-    let health_response = client
-        .get(format!("{}/health", base_url))
-        .send()
-        .await?;
+    let health_response = client.get(format!("{}/health", base_url)).send().await?;
 
     assert_eq!(health_response.status(), 200);
     let health_json: serde_json::Value = health_response.json().await?;
@@ -41,7 +38,9 @@ async fn test_api_server_execution() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     if execute_response.status() == 401 {
-        println!("⚠️  Authentication failed - make sure service is running with FAAS_API_KEY=test-key");
+        println!(
+            "⚠️  Authentication failed - make sure service is running with FAAS_API_KEY=test-key"
+        );
         return Ok(());
     }
 
@@ -53,9 +52,10 @@ async fn test_api_server_execution() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(response_bytes) = result["response"].as_array() {
         let response_str = String::from_utf8(
-            response_bytes.iter()
+            response_bytes
+                .iter()
                 .filter_map(|v| v.as_u64().map(|b| b as u8))
-                .collect()
+                .collect(),
         )?;
         println!("✅ Execution response: {}", response_str.trim());
     }
@@ -118,7 +118,9 @@ async fn test_api_server_instances() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     if create_response.status() == 401 {
-        println!("⚠️  Authentication failed - make sure service is running with FAAS_API_KEY=test-key");
+        println!(
+            "⚠️  Authentication failed - make sure service is running with FAAS_API_KEY=test-key"
+        );
         return Ok(());
     }
 
@@ -145,7 +147,10 @@ async fn test_api_server_instances() -> Result<(), Box<dyn std::error::Error>> {
 
     // Stop instance
     let stop_response = client
-        .post(format!("{}/api/v1/instances/{}/stop", base_url, instance_id))
+        .post(format!(
+            "{}/api/v1/instances/{}/stop",
+            base_url, instance_id
+        ))
         .header("x-api-key", "test-key")
         .send()
         .await?;

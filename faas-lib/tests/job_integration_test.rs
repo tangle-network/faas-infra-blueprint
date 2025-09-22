@@ -33,12 +33,7 @@ mod tests {
             payload: vec![],
         };
 
-        let result = execute_function_job(
-            Context(ctx),
-            CallId(1),
-            TangleArg(args),
-        )
-        .await;
+        let result = execute_function_job(Context(ctx), CallId(1), TangleArg(args)).await;
 
         assert!(result.is_ok());
     }
@@ -58,12 +53,7 @@ mod tests {
             timeout_secs: Some(30),
         };
 
-        let result = execute_advanced_job(
-            Context(ctx),
-            CallId(2),
-            TangleArg(args),
-        )
-        .await;
+        let result = execute_advanced_job(Context(ctx), CallId(2), TangleArg(args)).await;
 
         assert!(result.is_ok());
     }
@@ -78,12 +68,7 @@ mod tests {
             description: Some("Test snapshot".to_string()),
         };
 
-        let result = create_snapshot_job(
-            Context(ctx),
-            CallId(3),
-            TangleArg(args),
-        )
-        .await;
+        let result = create_snapshot_job(Context(ctx), CallId(3), TangleArg(args)).await;
 
         // Platform executor will handle this appropriately
         let _ = result;

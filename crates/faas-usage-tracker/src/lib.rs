@@ -28,9 +28,9 @@ pub type Result<T> = std::result::Result<T, UsageError>;
 // Core Types
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum Tier {
-    Developer,  // Free tier - 300 MCUs
-    Team,       // Popular tier - 1000 MCUs, $40/month
-    Scale,      // Enterprise tier - 7500 MCUs, $250/month
+    Developer, // Free tier - 300 MCUs
+    Team,      // Popular tier - 1000 MCUs, $40/month
+    Scale,     // Enterprise tier - 7500 MCUs, $250/month
 }
 
 impl Tier {

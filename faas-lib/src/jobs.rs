@@ -36,9 +36,11 @@ pub async fn execute_function_job(
         branch_from: None,
     };
 
-    let response = _ctx.executor.run(request).await.map_err(|e| {
-        JobError::ExecutionFailed(format!("Platform execution failed: {}", e))
-    })?;
+    let response = _ctx
+        .executor
+        .run(request)
+        .await
+        .map_err(|e| JobError::ExecutionFailed(format!("Platform execution failed: {}", e)))?;
 
     if response.exit_code != 0 {
         return Err(JobError::ExecutionFailed(format!(
@@ -104,9 +106,11 @@ pub async fn execute_advanced_job(
         branch_from: args.branch_from,
     };
 
-    let response = _ctx.executor.run(request).await.map_err(|e| {
-        JobError::ExecutionFailed(format!("Execution failed: {}", e))
-    })?;
+    let response = _ctx
+        .executor
+        .run(request)
+        .await
+        .map_err(|e| JobError::ExecutionFailed(format!("Execution failed: {}", e)))?;
 
     Ok(TangleResult(response.stdout))
 }
@@ -345,7 +349,8 @@ pub async fn expose_port_job(
     info!(instance = %args.instance_id, port = args.internal_port, "Exposing port");
 
     // TODO: Configure reverse proxy or port mapping
-    let public_url = format!("https://{}.faas.local:{}",
+    let public_url = format!(
+        "https://{}.faas.local:{}",
         args.subdomain.unwrap_or_else(|| args.instance_id.clone()),
         args.internal_port
     );

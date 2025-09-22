@@ -29,8 +29,8 @@ async fn test_execute_function_job() -> Result<(), Box<dyn std::error::Error>> {
             InputValue::String("echo".into()),
             InputValue::String("hello".into()),
         ]), // command
-        InputValue::None, // env_vars
-        InputValue::Bytes(vec![]), // payload
+        InputValue::None,                           // env_vars
+        InputValue::Bytes(vec![]),                  // payload
     ];
 
     let test_timeout = Duration::from_secs(30);
@@ -38,7 +38,11 @@ async fn test_execute_function_job() -> Result<(), Box<dyn std::error::Error>> {
         .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID, job_args)
         .await?;
 
-    let results = timeout(test_timeout, harness.wait_for_job_execution(service_id, job)).await??;
+    let results = timeout(
+        test_timeout,
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await??;
 
     // Verify job executed successfully
     assert_eq!(results.service_id, service_id);
@@ -77,12 +81,12 @@ async fn test_execute_advanced_job() -> Result<(), Box<dyn std::error::Error>> {
             InputValue::String("echo".into()),
             InputValue::String("cached test".into()),
         ]), // command
-        InputValue::None, // env_vars
-        InputValue::Bytes(vec![]), // payload
-        InputValue::String("cached".into()), // mode
-        InputValue::None, // checkpoint_id
-        InputValue::None, // branch_from
-        InputValue::Uint64(30), // timeout_secs
+        InputValue::None,                           // env_vars
+        InputValue::Bytes(vec![]),                  // payload
+        InputValue::String("cached".into()),        // mode
+        InputValue::None,                           // checkpoint_id
+        InputValue::None,                           // branch_from
+        InputValue::Uint64(30),                     // timeout_secs
     ];
 
     let test_timeout = Duration::from_secs(30);
@@ -90,7 +94,11 @@ async fn test_execute_advanced_job() -> Result<(), Box<dyn std::error::Error>> {
         .submit_job(service_id, EXECUTE_ADVANCED_JOB_ID, job_args)
         .await?;
 
-    let results = timeout(test_timeout, harness.wait_for_job_execution(service_id, job)).await??;
+    let results = timeout(
+        test_timeout,
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await??;
 
     assert_eq!(results.service_id, service_id);
 
@@ -173,9 +181,7 @@ async fn test_branch_creation() -> Result<(), Box<dyn std::error::Error>> {
     let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
     test_env.initialize().await?;
 
-    test_env
-        .add_job(create_branch_job.layer(TangleLayer))
-        .await;
+    test_env.add_job(create_branch_job.layer(TangleLayer)).await;
 
     test_env.start(()).await?;
 
@@ -189,7 +195,11 @@ async fn test_branch_creation() -> Result<(), Box<dyn std::error::Error>> {
         .submit_job(service_id, CREATE_BRANCH_JOB_ID, branch_args)
         .await?;
 
-    let results = timeout(test_timeout, harness.wait_for_job_execution(service_id, job)).await??;
+    let results = timeout(
+        test_timeout,
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await??;
 
     // Verify branch was created
     if let Some(OutputValue::String(branch_id)) = results.result.first() {
@@ -220,20 +230,18 @@ async fn test_instance_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
     test_env
         .add_job(resume_instance_job.layer(TangleLayer))
         .await;
-    test_env
-        .add_job(stop_instance_job.layer(TangleLayer))
-        .await;
+    test_env.add_job(stop_instance_job.layer(TangleLayer)).await;
 
     test_env.start(()).await?;
 
     // Start an instance
     let start_args = vec![
-        InputValue::None,                            // snapshot_id
-        InputValue::String("ubuntu:latest".into()),  // image
-        InputValue::Uint32(2),                       // cpu_cores
-        InputValue::Uint32(4096),                    // memory_mb
-        InputValue::Uint32(20),                      // disk_gb
-        InputValue::Bool(true),                      // enable_ssh
+        InputValue::None,                           // snapshot_id
+        InputValue::String("ubuntu:latest".into()), // image
+        InputValue::Uint32(2),                      // cpu_cores
+        InputValue::Uint32(4096),                   // memory_mb
+        InputValue::Uint32(20),                     // disk_gb
+        InputValue::Bool(true),                     // enable_ssh
     ];
 
     let test_timeout = Duration::from_secs(30);
@@ -315,17 +323,15 @@ async fn test_expose_port() -> Result<(), Box<dyn std::error::Error>> {
     let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
     test_env.initialize().await?;
 
-    test_env
-        .add_job(expose_port_job.layer(TangleLayer))
-        .await;
+    test_env.add_job(expose_port_job.layer(TangleLayer)).await;
 
     test_env.start(()).await?;
 
     let port_args = vec![
-        InputValue::String("inst_123".into()),       // instance_id
-        InputValue::Uint16(8080),                    // internal_port
-        InputValue::String("http".into()),           // protocol
-        InputValue::String("myapp".into()),          // subdomain
+        InputValue::String("inst_123".into()), // instance_id
+        InputValue::Uint16(8080),              // internal_port
+        InputValue::String("http".into()),     // protocol
+        InputValue::String("myapp".into()),    // subdomain
     ];
 
     let test_timeout = Duration::from_secs(30);
@@ -333,7 +339,11 @@ async fn test_expose_port() -> Result<(), Box<dyn std::error::Error>> {
         .submit_job(service_id, EXPOSE_PORT_JOB_ID, port_args)
         .await?;
 
-    let results = timeout(test_timeout, harness.wait_for_job_execution(service_id, job)).await??;
+    let results = timeout(
+        test_timeout,
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await??;
 
     // Verify URL was generated
     if let Some(OutputValue::String(url)) = results.result.first() {

@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use faas_executor::platform::{Executor, Mode, Request};
 use std::time::Duration;
 use tokio::runtime::Runtime;

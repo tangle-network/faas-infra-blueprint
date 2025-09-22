@@ -1,4 +1,3 @@
-
 use chrono::{DateTime, Utc};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde::{Deserialize, Serialize};
@@ -341,7 +340,6 @@ impl FileSynchronizer {
         Ok(())
     }
 }
-
 
 /// Instance file synchronization
 pub struct InstanceSync {

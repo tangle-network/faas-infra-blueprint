@@ -1,4 +1,3 @@
-
 use anyhow::Result;
 use faas_common::SandboxExecutor;
 use std::sync::Arc;
@@ -86,10 +85,13 @@ impl Executor {
                 .await?,
             ),
             vm: if cfg!(target_os = "linux") {
-                Arc::new(crate::firecracker::FirecrackerExecutor::new(
-                    "firecracker".to_string(),
-                    "/var/lib/faas/kernel".to_string(),
-                ).unwrap_or_else(|_| crate::firecracker::FirecrackerExecutor::stub()))
+                Arc::new(
+                    crate::firecracker::FirecrackerExecutor::new(
+                        "firecracker".to_string(),
+                        "/var/lib/faas/kernel".to_string(),
+                    )
+                    .unwrap_or_else(|_| crate::firecracker::FirecrackerExecutor::stub()),
+                )
             } else {
                 Arc::new(crate::firecracker::FirecrackerExecutor::stub())
             },
@@ -134,7 +136,7 @@ impl Executor {
         let result = if cfg!(target_os = "linux") {
             match self.vm.execute(config.clone()).await {
                 Ok(res) => res,
-                Err(_) => self.container.execute(config).await?
+                Err(_) => self.container.execute(config).await?,
             }
         } else {
             self.container.execute(config).await?
@@ -163,7 +165,7 @@ impl Executor {
         let result = if cfg!(target_os = "linux") {
             match self.vm.execute(config.clone()).await {
                 Ok(res) => res,
-                Err(_) => self.container.execute(config).await?
+                Err(_) => self.container.execute(config).await?,
             }
         } else {
             self.container.execute(config).await?
@@ -254,7 +256,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires Docker or Firecracker"]
     async fn test_modes() {
-        let exec = Executor::new().await
+        let exec = Executor::new()
+            .await
             .expect("Failed to create executor - ensure Docker is running");
 
         let req = Request {

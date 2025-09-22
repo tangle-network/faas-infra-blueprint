@@ -1,13 +1,13 @@
 //! CRIU container integration for checkpoint/restore functionality
 //! This module provides real CRIU integration that works in Docker containers
 
-use std::process::Command;
-use std::path::{Path, PathBuf};
-use std::fs;
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use anyhow::{Result, Context};
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use tracing::{debug, error, info, warn};
 
 /// CRIU checkpoint/restore manager for containers
 pub struct CriuContainerManager {
@@ -99,9 +99,7 @@ impl CriuContainerManager {
         let mut features = CriuFeatures::default();
 
         // Basic check
-        let basic = Command::new("criu")
-            .arg("check")
-            .output()?;
+        let basic = Command::new("criu").arg("check").output()?;
         features.basic = basic.status.success();
 
         // Check specific features
@@ -153,8 +151,10 @@ impl CriuContainerManager {
 
         let mut cmd = Command::new("criu");
         cmd.arg("dump")
-            .arg("-t").arg(pid.to_string())
-            .arg("-D").arg(&checkpoint_path);
+            .arg("-t")
+            .arg(pid.to_string())
+            .arg("-D")
+            .arg(&checkpoint_path);
 
         // Apply options
         if self.options.tcp_established {
@@ -207,19 +207,28 @@ impl CriuContainerManager {
             container_id: None,
         };
 
-        self.checkpoints.insert(checkpoint_id.to_string(), metadata.clone());
+        self.checkpoints
+            .insert(checkpoint_id.to_string(), metadata.clone());
 
         // Save metadata
         let metadata_path = checkpoint_path.join("metadata.json");
         let metadata_json = serde_json::to_string_pretty(&metadata)?;
         fs::write(metadata_path, metadata_json)?;
 
-        info!("Checkpoint {} created successfully ({} bytes)", checkpoint_id, size);
+        info!(
+            "Checkpoint {} created successfully ({} bytes)",
+            checkpoint_id, size
+        );
         Ok(metadata)
     }
 
     /// Create an incremental checkpoint
-    pub fn incremental_checkpoint(&mut self, pid: u32, checkpoint_id: &str, parent_id: &str) -> Result<CheckpointMetadata> {
+    pub fn incremental_checkpoint(
+        &mut self,
+        pid: u32,
+        checkpoint_id: &str,
+        parent_id: &str,
+    ) -> Result<CheckpointMetadata> {
         let parent_path = self.checkpoint_dir.join(parent_id);
         if !parent_path.exists() {
             return Err(anyhow::anyhow!("Parent checkpoint {} not found", parent_id));
@@ -228,7 +237,10 @@ impl CriuContainerManager {
         let checkpoint_path = self.checkpoint_dir.join(checkpoint_id);
         fs::create_dir_all(&checkpoint_path)?;
 
-        info!("Creating incremental checkpoint {} from parent {}", checkpoint_id, parent_id);
+        info!(
+            "Creating incremental checkpoint {} from parent {}",
+            checkpoint_id, parent_id
+        );
 
         // First, do a pre-dump to track memory
         let predump_path = checkpoint_path.join("predump");
@@ -236,10 +248,13 @@ impl CriuContainerManager {
 
         let predump = Command::new("criu")
             .arg("pre-dump")
-            .arg("-t").arg(pid.to_string())
-            .arg("-D").arg(&predump_path)
+            .arg("-t")
+            .arg(pid.to_string())
+            .arg("-D")
+            .arg(&predump_path)
             .arg("--track-mem")
-            .arg("--parent-path").arg(&parent_path)
+            .arg("--parent-path")
+            .arg(&parent_path)
             .output()?;
 
         if !predump.status.success() {
@@ -250,9 +265,12 @@ impl CriuContainerManager {
         // Now do the actual incremental dump
         let mut cmd = Command::new("criu");
         cmd.arg("dump")
-            .arg("-t").arg(pid.to_string())
-            .arg("-D").arg(&checkpoint_path)
-            .arg("--prev-images-dir").arg(&parent_path)
+            .arg("-t")
+            .arg(pid.to_string())
+            .arg("-D")
+            .arg(&checkpoint_path)
+            .arg("--prev-images-dir")
+            .arg(&parent_path)
             .arg("--track-mem");
 
         if self.options.leave_running {
@@ -282,9 +300,13 @@ impl CriuContainerManager {
             container_id: None,
         };
 
-        self.checkpoints.insert(checkpoint_id.to_string(), metadata.clone());
+        self.checkpoints
+            .insert(checkpoint_id.to_string(), metadata.clone());
 
-        info!("Incremental checkpoint {} created ({} bytes)", checkpoint_id, size);
+        info!(
+            "Incremental checkpoint {} created ({} bytes)",
+            checkpoint_id, size
+        );
         Ok(metadata)
     }
 
@@ -299,7 +321,8 @@ impl CriuContainerManager {
 
         let mut cmd = Command::new("criu");
         cmd.arg("restore")
-            .arg("-D").arg(&checkpoint_path)
+            .arg("-D")
+            .arg(&checkpoint_path)
             .arg("--restore-detached");
 
         if self.options.tcp_established {
@@ -435,9 +458,7 @@ mod tests {
                 println!("Process restored with PID {}", new_pid);
 
                 // Kill restored process
-                let _ = Command::new("kill")
-                    .arg(new_pid.to_string())
-                    .output();
+                let _ = Command::new("kill").arg(new_pid.to_string()).output();
             }
         }
     }

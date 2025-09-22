@@ -1,16 +1,16 @@
 //! Firecracker VM Manager with full microVM orchestration
 //! This provides complete Firecracker integration with proper error handling
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio, Child};
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
-use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use anyhow::{Result, Context};
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Firecracker VM configuration
@@ -180,9 +180,7 @@ impl FirecrackerManager {
             let p = PathBuf::from(path);
             if p.exists() {
                 // Verify it's executable
-                let output = Command::new(&p)
-                    .arg("--version")
-                    .output();
+                let output = Command::new(&p).arg("--version").output();
 
                 if let Ok(out) = output {
                     if out.status.success() {
@@ -218,11 +216,20 @@ impl FirecrackerManager {
 
     /// Setup network for VMs
     pub async fn setup_network(&self) -> Result<()> {
-        info!("Setting up Firecracker network bridge: {}", self.network_cfg.bridge_name);
+        info!(
+            "Setting up Firecracker network bridge: {}",
+            self.network_cfg.bridge_name
+        );
 
         // Create bridge
         let _ = Command::new("ip")
-            .args(&["link", "add", &self.network_cfg.bridge_name, "type", "bridge"])
+            .args(&[
+                "link",
+                "add",
+                &self.network_cfg.bridge_name,
+                "type",
+                "bridge",
+            ])
             .output();
 
         // Set bridge up
@@ -232,8 +239,13 @@ impl FirecrackerManager {
 
         // Add IP to bridge
         let _ = Command::new("ip")
-            .args(&["addr", "add", &format!("{}/24", self.network_cfg.gateway),
-                   "dev", &self.network_cfg.bridge_name])
+            .args(&[
+                "addr",
+                "add",
+                &format!("{}/24", self.network_cfg.gateway),
+                "dev",
+                &self.network_cfg.bridge_name,
+            ])
             .output();
 
         // Enable IP forwarding
@@ -241,10 +253,19 @@ impl FirecrackerManager {
 
         // Setup NAT
         let _ = Command::new("iptables")
-            .args(&["-t", "nat", "-A", "POSTROUTING",
-                   "-s", &self.network_cfg.subnet,
-                   "!", "-d", &self.network_cfg.subnet,
-                   "-j", "MASQUERADE"])
+            .args(&[
+                "-t",
+                "nat",
+                "-A",
+                "POSTROUTING",
+                "-s",
+                &self.network_cfg.subnet,
+                "!",
+                "-d",
+                &self.network_cfg.subnet,
+                "-j",
+                "MASQUERADE",
+            ])
             .output();
 
         info!("Network setup complete");
@@ -268,7 +289,13 @@ impl FirecrackerManager {
 
         // Add to bridge
         Command::new("ip")
-            .args(&["link", "set", &tap_name, "master", &self.network_cfg.bridge_name])
+            .args(&[
+                "link",
+                "set",
+                &tap_name,
+                "master",
+                &self.network_cfg.bridge_name,
+            ])
             .output()?;
 
         Ok(tap_name)
@@ -284,10 +311,16 @@ impl FirecrackerManager {
 
         // Verify kernel and rootfs exist
         if !config.kernel_path.exists() {
-            return Err(anyhow::anyhow!("Kernel not found: {:?}", config.kernel_path));
+            return Err(anyhow::anyhow!(
+                "Kernel not found: {:?}",
+                config.kernel_path
+            ));
         }
         if !config.rootfs_path.exists() {
-            return Err(anyhow::anyhow!("Rootfs not found: {:?}", config.rootfs_path));
+            return Err(anyhow::anyhow!(
+                "Rootfs not found: {:?}",
+                config.rootfs_path
+            ));
         }
 
         // Create API socket
@@ -317,8 +350,7 @@ impl FirecrackerManager {
             self.create_firecracker_command(&api_socket)?
         };
 
-        let process = cmd.spawn()
-            .context("Failed to spawn Firecracker process")?;
+        let process = cmd.spawn().context("Failed to spawn Firecracker process")?;
 
         // Wait for API socket
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -352,33 +384,47 @@ impl FirecrackerManager {
 
     fn create_firecracker_command(&self, api_socket: &Path) -> Result<Command> {
         let mut cmd = Command::new(&self.firecracker_bin);
-        cmd.arg("--api-sock").arg(api_socket)
+        cmd.arg("--api-sock")
+            .arg(api_socket)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         Ok(cmd)
     }
 
-    fn create_jailer_command(&self, vm_id: &str, config: &VmConfig, api_socket: &Path) -> Result<Command> {
-        let jailer_bin = self.jailer_bin.as_ref()
+    fn create_jailer_command(
+        &self,
+        vm_id: &str,
+        config: &VmConfig,
+        api_socket: &Path,
+    ) -> Result<Command> {
+        let jailer_bin = self
+            .jailer_bin
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Jailer not available"))?;
 
-        let jailer_cfg = config.jailer_cfg.as_ref()
+        let jailer_cfg = config
+            .jailer_cfg
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Jailer config required"))?;
 
         let mut cmd = Command::new(jailer_bin);
-        cmd.arg("--id").arg(&jailer_cfg.id)
-            .arg("--exec-file").arg(&self.firecracker_bin)
-            .arg("--uid").arg(jailer_cfg.uid.to_string())
-            .arg("--gid").arg(jailer_cfg.gid.to_string())
-            .arg("--chroot-base-dir").arg(&jailer_cfg.chroot_base_dir);
+        cmd.arg("--id")
+            .arg(&jailer_cfg.id)
+            .arg("--exec-file")
+            .arg(&self.firecracker_bin)
+            .arg("--uid")
+            .arg(jailer_cfg.uid.to_string())
+            .arg("--gid")
+            .arg(jailer_cfg.gid.to_string())
+            .arg("--chroot-base-dir")
+            .arg(&jailer_cfg.chroot_base_dir);
 
         if jailer_cfg.daemonize {
             cmd.arg("--daemonize");
         }
 
-        cmd.arg("--")
-            .arg("--api-sock").arg(api_socket);
+        cmd.arg("--").arg("--api-sock").arg(api_socket);
 
         Ok(cmd)
     }
@@ -435,7 +481,8 @@ impl FirecrackerManager {
             "boot_args": config.kernel_args
         });
 
-        self.api_request(api_socket, "PUT", "/boot-source", &boot_source).await?;
+        self.api_request(api_socket, "PUT", "/boot-source", &boot_source)
+            .await?;
 
         // Set machine config
         let machine_config = serde_json::json!({
@@ -444,7 +491,8 @@ impl FirecrackerManager {
             "smt": false
         });
 
-        self.api_request(api_socket, "PUT", "/machine-config", &machine_config).await?;
+        self.api_request(api_socket, "PUT", "/machine-config", &machine_config)
+            .await?;
 
         // Add rootfs drive
         let drive = serde_json::json!({
@@ -454,7 +502,8 @@ impl FirecrackerManager {
             "is_read_only": false
         });
 
-        self.api_request(api_socket, "PUT", "/drives/rootfs", &drive).await?;
+        self.api_request(api_socket, "PUT", "/drives/rootfs", &drive)
+            .await?;
 
         // Configure network interfaces
         for iface in &config.network_interfaces {
@@ -464,9 +513,13 @@ impl FirecrackerManager {
                 "guest_mac": iface.guest_mac
             });
 
-            self.api_request(api_socket, "PUT",
-                            &format!("/network-interfaces/{}", iface.iface_id),
-                            &net_config).await?;
+            self.api_request(
+                api_socket,
+                "PUT",
+                &format!("/network-interfaces/{}", iface.iface_id),
+                &net_config,
+            )
+            .await?;
         }
 
         // Start the VM
@@ -474,20 +527,31 @@ impl FirecrackerManager {
             "action_type": "InstanceStart"
         });
 
-        self.api_request(api_socket, "PUT", "/actions", &action).await?;
+        self.api_request(api_socket, "PUT", "/actions", &action)
+            .await?;
 
         Ok(())
     }
 
-    async fn api_request(&self, socket: &Path, method: &str, path: &str, body: &serde_json::Value) -> Result<()> {
+    async fn api_request(
+        &self,
+        socket: &Path,
+        method: &str,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<()> {
         let socket_path = socket.to_str().unwrap();
         let body_str = serde_json::to_string(body)?;
 
         let output = Command::new("curl")
-            .arg("--unix-socket").arg(socket_path)
-            .arg("-X").arg(method)
-            .arg("-H").arg("Content-Type: application/json")
-            .arg("-d").arg(body_str)
+            .arg("--unix-socket")
+            .arg(socket_path)
+            .arg("-X")
+            .arg(method)
+            .arg("-H")
+            .arg("Content-Type: application/json")
+            .arg("-d")
+            .arg(body_str)
             .arg(format!("http://localhost{}", path))
             .output()?;
 
@@ -502,12 +566,14 @@ impl FirecrackerManager {
     fn generate_mac() -> String {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        format!("02:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-                rng.gen::<u8>(),
-                rng.gen::<u8>(),
-                rng.gen::<u8>(),
-                rng.gen::<u8>(),
-                rng.gen::<u8>())
+        format!(
+            "02:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            rng.gen::<u8>(),
+            rng.gen::<u8>(),
+            rng.gen::<u8>(),
+            rng.gen::<u8>(),
+            rng.gen::<u8>()
+        )
     }
 
     /// Stop a VM
@@ -522,7 +588,8 @@ impl FirecrackerManager {
                 "action_type": "SendCtrlAltDel"
             });
 
-            self.api_request(&vm.api_socket, "PUT", "/actions", &action).await?;
+            self.api_request(&vm.api_socket, "PUT", "/actions", &action)
+                .await?;
 
             // Wait a bit for graceful shutdown
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;

@@ -147,7 +147,10 @@ impl ApiBackgroundService {
         // Use the comprehensive router from api_routes
         let app = crate::api_routes::build_api_router(state.clone())
             // Add the basic execute endpoint for backward compatibility
-            .route("/api/v1/execute", post(execute_function_handler).with_state(state.clone()));
+            .route(
+                "/api/v1/execute",
+                post(execute_function_handler).with_state(state.clone()),
+            );
 
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr).await?;

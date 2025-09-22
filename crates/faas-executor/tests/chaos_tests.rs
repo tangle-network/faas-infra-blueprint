@@ -1,11 +1,11 @@
 //! Edge case and failure mode tests
 //! Tests resource exhaustion, race conditions, error recovery, and system limits
 
-use std::sync::Arc;
+use anyhow::Result;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
-use anyhow::Result;
 
 /// Resource manager for testing resource exhaustion scenarios
 pub struct ResourceManager {
@@ -38,22 +38,31 @@ impl ResourceManager {
         // Check CPU
         let current_cpu = self.cpu_cores.load(Ordering::SeqCst);
         if current_cpu < cpu {
-            return Err(anyhow::anyhow!("Insufficient CPU resources: {} available, {} requested",
-                current_cpu, cpu));
+            return Err(anyhow::anyhow!(
+                "Insufficient CPU resources: {} available, {} requested",
+                current_cpu,
+                cpu
+            ));
         }
 
         // Check memory
         let current_memory = self.memory_mb.load(Ordering::SeqCst);
         if current_memory < memory {
-            return Err(anyhow::anyhow!("Insufficient memory: {} MB available, {} MB requested",
-                current_memory, memory));
+            return Err(anyhow::anyhow!(
+                "Insufficient memory: {} MB available, {} MB requested",
+                current_memory,
+                memory
+            ));
         }
 
         // Check disk
         let current_disk = self.disk_gb.load(Ordering::SeqCst);
         if current_disk < disk {
-            return Err(anyhow::anyhow!("Insufficient disk: {} GB available, {} GB requested",
-                current_disk, disk));
+            return Err(anyhow::anyhow!(
+                "Insufficient disk: {} GB available, {} GB requested",
+                current_disk,
+                disk
+            ));
         }
 
         // Atomically allocate resources
@@ -70,8 +79,10 @@ impl ResourceManager {
     }
 
     pub fn release_resources(&self, allocation: ResourceAllocation) {
-        self.cpu_cores.fetch_add(allocation.cpu_count, Ordering::SeqCst);
-        self.memory_mb.fetch_add(allocation.memory_mb, Ordering::SeqCst);
+        self.cpu_cores
+            .fetch_add(allocation.cpu_count, Ordering::SeqCst);
+        self.memory_mb
+            .fetch_add(allocation.memory_mb, Ordering::SeqCst);
         self.disk_gb.fetch_add(allocation.disk_gb, Ordering::SeqCst);
     }
 
@@ -128,7 +139,7 @@ impl CircuitBreaker {
         F: FnOnce() -> Result<T>,
     {
         let current_state = self.state.read().await.clone();
-        
+
         match current_state {
             CircuitState::Open => {
                 // Check if timeout has passed
@@ -143,7 +154,7 @@ impl CircuitBreaker {
             }
             _ => {}
         }
-        
+
         // Try the operation
         match f() {
             Ok(result) => {
@@ -159,7 +170,7 @@ impl CircuitBreaker {
 
     async fn on_success(&self) {
         let current_state = self.state.read().await.clone();
-        
+
         match current_state {
             CircuitState::HalfOpen => {
                 let count = self.success_count.fetch_add(1, Ordering::SeqCst) + 1;
@@ -180,7 +191,7 @@ impl CircuitBreaker {
 
     async fn on_failure(&self) {
         let current_state = self.state.read().await.clone();
-        
+
         match current_state {
             CircuitState::Closed => {
                 let count = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
@@ -208,19 +219,19 @@ mod tests {
     #[tokio::test]
     async fn test_resource_exhaustion() {
         let manager = ResourceManager::new(4, 8192, 100);
-        
+
         // Allocate all CPU cores
         let alloc1 = manager.allocate_resources(2, 2048, 10).await.unwrap();
         let alloc2 = manager.allocate_resources(2, 2048, 10).await.unwrap();
-        
+
         // Try to allocate more - should fail
         let result = manager.allocate_resources(1, 1024, 10).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Insufficient CPU"));
-        
+
         // Release one allocation
         manager.release_resources(alloc1);
-        
+
         // Now allocation should succeed
         let alloc3 = manager.allocate_resources(1, 1024, 10).await.unwrap();
         assert_eq!(manager.get_available_resources().0, 1); // 1 CPU core left
@@ -229,15 +240,18 @@ mod tests {
     #[tokio::test]
     async fn test_memory_exhaustion() {
         let manager = ResourceManager::new(8, 4096, 100);
-        
+
         // Allocate most memory
         let alloc1 = manager.allocate_resources(1, 3500, 10).await.unwrap();
-        
+
         // Try to allocate more than available
         let result = manager.allocate_resources(1, 1000, 10).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Insufficient memory"));
-        
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Insufficient memory"));
+
         // Smaller allocation should work
         let alloc2 = manager.allocate_resources(1, 500, 10).await.unwrap();
         let (_, memory, _) = manager.get_available_resources();
@@ -248,41 +262,46 @@ mod tests {
     async fn test_circuit_breaker_opens_on_failures() {
         let breaker = CircuitBreaker::new(3, 2, Duration::from_millis(100));
         let failure_count = Arc::new(AtomicUsize::new(0));
-        
+
         // Simulate failures
         for _ in 0..3 {
             let count = failure_count.clone();
-            let result = breaker.call(|| {
-                count.fetch_add(1, Ordering::SeqCst);
-                Err::<(), _>(anyhow::anyhow!("Service unavailable"))
-            }).await;
+            let result = breaker
+                .call(|| {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    Err::<(), _>(anyhow::anyhow!("Service unavailable"))
+                })
+                .await;
             assert!(result.is_err());
         }
-        
+
         // Circuit should be open now
         let result = breaker.call(|| Ok("test")).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Circuit breaker is open"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circuit breaker is open"));
     }
 
     #[tokio::test]
     async fn test_circuit_breaker_half_open_recovery() {
         let breaker = CircuitBreaker::new(2, 2, Duration::from_millis(50));
-        
+
         // Open the circuit
         for _ in 0..2 {
             let _ = breaker.call(|| Err::<(), _>(anyhow::anyhow!("fail"))).await;
         }
-        
+
         // Wait for timeout
         tokio::time::sleep(Duration::from_millis(60)).await;
-        
+
         // Circuit should be half-open, successes should close it
         for _ in 0..2 {
             let result = breaker.call(|| Ok("success")).await;
             assert!(result.is_ok());
         }
-        
+
         // Circuit should be closed now
         assert_eq!(*breaker.state.read().await, CircuitState::Closed);
     }
@@ -291,27 +310,25 @@ mod tests {
     async fn test_concurrent_resource_allocation_race() {
         let manager = Arc::new(ResourceManager::new(4, 4096, 100));
         let mut handles = vec![];
-        
+
         // Spawn 10 tasks trying to allocate resources concurrently
         for i in 0..10 {
             let mgr = manager.clone();
-            let handle = tokio::spawn(async move {
-                mgr.allocate_resources(1, 500, 5).await
-            });
+            let handle = tokio::spawn(async move { mgr.allocate_resources(1, 500, 5).await });
             handles.push(handle);
         }
-        
+
         // Collect results
         let mut successful = 0;
         let mut failed = 0;
-        
+
         for handle in handles {
             match handle.await.unwrap() {
                 Ok(_) => successful += 1,
                 Err(_) => failed += 1,
             }
         }
-        
+
         // Only 4 should succeed (4 CPU cores)
         assert_eq!(successful, 4);
         assert_eq!(failed, 6);
@@ -322,9 +339,9 @@ mod tests {
         // Test that multiple resources can be acquired without deadlock
         let resource_a = Arc::new(Mutex::new(100));
         let resource_b = Arc::new(Mutex::new(200));
-        
+
         let mut handles = vec![];
-        
+
         // Task 1: Acquires A then B
         let a1 = resource_a.clone();
         let b1 = resource_b.clone();
@@ -334,7 +351,7 @@ mod tests {
             let _lock_b = b1.lock().await;
             "task1"
         }));
-        
+
         // Task 2: Also acquires A then B (same order - no deadlock)
         let a2 = resource_a.clone();
         let b2 = resource_b.clone();
@@ -344,7 +361,7 @@ mod tests {
             let _lock_b = b2.lock().await;
             "task2"
         }));
-        
+
         // Both tasks should complete
         let results = futures::future::join_all(handles).await;
         assert_eq!(results.len(), 2);
@@ -372,7 +389,7 @@ mod tests {
                     breaker: CircuitBreaker::new(2, 1, Duration::from_millis(50)),
                 })
             }
-            
+
             async fn call(&self) -> Result<String> {
                 if !*self.healthy.read().await {
                     return Err(anyhow::anyhow!("Service {} is unhealthy", self.name));
@@ -389,7 +406,10 @@ mod tests {
                     let dep_deps = dep.dependencies.read().await;
                     for dep_dep in dep_deps.iter() {
                         if !*dep_dep.healthy.read().await {
-                            return Err(anyhow::anyhow!("Transitive dependency {} is unhealthy", dep_dep.name));
+                            return Err(anyhow::anyhow!(
+                                "Transitive dependency {} is unhealthy",
+                                dep_dep.name
+                            ));
                         }
                     }
                 }
@@ -397,7 +417,7 @@ mod tests {
                 Ok(format!("Response from {}", self.name))
             }
         }
-        
+
         let service_a = Service::new("A".to_string());
         let service_b = Service::new("B".to_string());
         let service_c = Service::new("C".to_string());
@@ -405,14 +425,14 @@ mod tests {
         // C depends on B, B depends on A
         service_b.dependencies.write().await.push(service_a.clone());
         service_c.dependencies.write().await.push(service_b.clone());
-        
+
         // A fails
         *service_a.healthy.write().await = false;
-        
+
         // C should fail due to dependency
         let result = service_c.call().await;
         assert!(result.is_err());
-        
+
         // But C itself remains healthy
         assert!(*service_c.healthy.read().await);
     }
@@ -421,17 +441,14 @@ mod tests {
     async fn test_retry_with_exponential_backoff() {
         let attempt_count = Arc::new(AtomicUsize::new(0));
         let start = Instant::now();
-        
-        async fn retry_with_backoff<F, T>(
-            mut f: F,
-            max_attempts: usize,
-        ) -> Result<T>
+
+        async fn retry_with_backoff<F, T>(mut f: F, max_attempts: usize) -> Result<T>
         where
             F: FnMut() -> Result<T>,
         {
             let mut attempt = 0;
             let mut backoff = Duration::from_millis(10);
-            
+
             loop {
                 match f() {
                     Ok(result) => return Ok(result),
@@ -444,7 +461,7 @@ mod tests {
                 }
             }
         }
-        
+
         let count = attempt_count.clone();
         let result = retry_with_backoff(
             || {
@@ -456,11 +473,12 @@ mod tests {
                 }
             },
             5,
-        ).await;
-        
+        )
+        .await;
+
         assert!(result.is_ok());
         assert_eq!(attempt_count.load(Ordering::SeqCst), 4); // Failed 3 times, succeeded on 4th
-        
+
         // Should have taken at least 10 + 20 + 40 = 70ms
         assert!(start.elapsed() >= Duration::from_millis(70));
     }
@@ -468,17 +486,17 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limiting_under_load() {
         use tokio::sync::Semaphore;
-        
+
         // Rate limiter allowing 10 requests per second
         let rate_limiter = Arc::new(Semaphore::new(10));
         let request_count = Arc::new(AtomicUsize::new(0));
-        
+
         // Spawn 100 concurrent requests
         let mut handles = vec![];
         for _ in 0..100 {
             let limiter = rate_limiter.clone();
             let count = request_count.clone();
-            
+
             handles.push(tokio::spawn(async move {
                 let _permit = limiter.acquire().await.unwrap();
                 count.fetch_add(1, Ordering::SeqCst);
@@ -486,16 +504,16 @@ mod tests {
                 // Permit dropped here
             }));
         }
-        
+
         // After 50ms, only 10 should be processing
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(request_count.load(Ordering::SeqCst) <= 10);
-        
+
         // Wait for all to complete
         for handle in handles {
             handle.await.unwrap();
         }
-        
+
         assert_eq!(request_count.load(Ordering::SeqCst), 100);
     }
 }

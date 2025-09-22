@@ -1,13 +1,13 @@
+use blueprint_sdk::extract::Context;
+use blueprint_sdk::tangle::extract::{CallId, TangleArg};
+use faas_blueprint_lib::context::FaaSContext;
+use faas_blueprint_lib::jobs::execute_function_job;
+use faas_blueprint_lib::{ExecuteFunctionResult, FaaSExecutionOutput, EXECUTE_FUNCTION_JOB_ID};
 use faas_common::{ExecuteFunctionArgs, InvocationResult, SandboxExecutor};
 use faas_executor::docktopus::DockerBuilder;
 use faas_executor::executor::{ContainerStrategy, ExecutionStrategy};
 use faas_executor::Executor;
-use faas_blueprint_lib::context::FaaSContext;
-use faas_blueprint_lib::jobs::execute_function_job;
-use faas_blueprint_lib::{ExecuteFunctionResult, FaaSExecutionOutput, EXECUTE_FUNCTION_JOB_ID};
 use faas_orchestrator::Orchestrator;
-use blueprint_sdk::extract::Context;
-use blueprint_sdk::tangle::extract::{CallId, TangleArg};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -44,12 +44,7 @@ async fn execute_function_with_args(
     call_id: u64,
     args: ExecuteFunctionArgs,
 ) -> Result<Vec<u8>, faas_blueprint_lib::JobError> {
-    let result = execute_function_job(
-        Context(ctx),
-        CallId(call_id),
-        TangleArg(args),
-    )
-    .await?;
+    let result = execute_function_job(Context(ctx), CallId(call_id), TangleArg(args)).await?;
 
     Ok(result.0)
 }
@@ -100,10 +95,7 @@ async fn test_blueprint_job_with_payload() -> color_eyre::Result<()> {
 
     let result = execute_function_with_args(ctx, 2, args).await?;
 
-    assert_eq!(
-        result, payload_data,
-        "Should return the payload data"
-    );
+    assert_eq!(result, payload_data, "Should return the payload data");
 
     info!("Blueprint job with payload passed ✓");
     Ok(())
@@ -187,23 +179,21 @@ async fn test_blueprint_job_concurrent_executions() -> color_eyre::Result<()> {
 
     for handle in handles {
         match handle.await {
-            Ok((i, result, duration)) => {
-                match result {
-                    Ok(output) => {
-                        let output_str = String::from_utf8_lossy(&output);
-                        assert!(
-                            output_str.contains(&format!("Job {}", i)),
-                            "Each job should have unique output"
-                        );
-                        successful += 1;
-                        info!("Job {} completed in {:?}", i, duration);
-                    }
-                    Err(e) => {
-                        error!("Job {} failed: {}", i, e);
-                        failed += 1;
-                    }
+            Ok((i, result, duration)) => match result {
+                Ok(output) => {
+                    let output_str = String::from_utf8_lossy(&output);
+                    assert!(
+                        output_str.contains(&format!("Job {}", i)),
+                        "Each job should have unique output"
+                    );
+                    successful += 1;
+                    info!("Job {} completed in {:?}", i, duration);
                 }
-            }
+                Err(e) => {
+                    error!("Job {} failed: {}", i, e);
+                    failed += 1;
+                }
+            },
             Err(e) => {
                 error!("Job join failed: {}", e);
                 failed += 1;
@@ -392,11 +382,7 @@ async fn test_blueprint_job_complex_workflows() -> color_eyre::Result<()> {
 
     let followup_args = ExecuteFunctionArgs {
         image: "alpine:latest".to_string(),
-        command: vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            followup_cmd.to_string(),
-        ],
+        command: vec!["sh".to_string(), "-c".to_string(), followup_cmd.to_string()],
         env_vars: None,
         payload: vec![],
     };
@@ -435,10 +421,7 @@ async fn test_blueprint_job_performance_metrics() -> color_eyre::Result<()> {
     for i in 0..num_iterations {
         let args = ExecuteFunctionArgs {
             image: "alpine:latest".to_string(),
-            command: vec![
-                "echo".to_string(),
-                format!("Iteration {}", i),
-            ],
+            command: vec!["echo".to_string(), format!("Iteration {}", i)],
             env_vars: None,
             payload: vec![],
         };
@@ -461,7 +444,10 @@ async fn test_blueprint_job_performance_metrics() -> color_eyre::Result<()> {
     info!("Average execution time: {:?}", avg_time);
     info!("Min execution time: {:?}", min_time);
     info!("Max execution time: {:?}", max_time);
-    info!("Total time for {} executions: {:?}", num_iterations, total_time);
+    info!(
+        "Total time for {} executions: {:?}",
+        num_iterations, total_time
+    );
 
     // Performance assertions
     assert!(
@@ -474,8 +460,8 @@ async fn test_blueprint_job_performance_metrics() -> color_eyre::Result<()> {
         "Best case should be under 100ms"
     );
 
-    let consistency = (max_time.as_millis() - min_time.as_millis()) as f64
-        / avg_time.as_millis() as f64;
+    let consistency =
+        (max_time.as_millis() - min_time.as_millis()) as f64 / avg_time.as_millis() as f64;
 
     info!("Execution time consistency: {:.2}", consistency);
     assert!(

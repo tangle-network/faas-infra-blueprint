@@ -1,6 +1,4 @@
 use async_trait::async_trait;
-use std::sync::Arc;
-use tracing::{error, info, instrument, warn};
 use docktopus::bollard::container::{
     AttachContainerOptions, AttachContainerResults, LogOutput, RemoveContainerOptions,
     WaitContainerOptions,
@@ -11,8 +9,10 @@ use faas_common::{
     FaasError, InvocationResult, Result as CommonResult, SandboxConfig, SandboxExecutor,
 };
 use futures::{StreamExt, TryStreamExt};
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 // Re-export dependencies potentially needed by consumers (like orchestrator)
@@ -124,7 +124,7 @@ async fn run_container_inner(
         attach_stdin: Some(true),
         open_stdin: Some(true),
         stdin_once: Some(true), // Close stdin after attach disconnects
-        tty: Some(false), // Ensure TTY is false if using separate streams
+        tty: Some(false),       // Ensure TTY is false if using separate streams
         ..Default::default()
     };
 
@@ -226,10 +226,8 @@ async fn run_container_inner(
     };
     let mut wait_stream = docker_client.wait_container(&container_id, Some(wait_options));
 
-    let wait_result = tokio::time::timeout(
-        tokio::time::Duration::from_secs(30),
-        wait_stream.next()
-    ).await;
+    let wait_result =
+        tokio::time::timeout(tokio::time::Duration::from_secs(30), wait_stream.next()).await;
 
     let wait_result = match wait_result {
         Ok(Some(result)) => Some(result),

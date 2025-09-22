@@ -1,10 +1,10 @@
-use blueprint_sdk::Job;
 use blueprint_sdk::tangle::layers::TangleLayer;
 use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
 use blueprint_sdk::tangle::serde::BoundedVec;
 use blueprint_sdk::testing::tempfile;
 use blueprint_sdk::testing::utils::setup_log;
 use blueprint_sdk::testing::utils::tangle::{InputValue, OutputValue, TangleTestHarness};
+use blueprint_sdk::Job;
 use color_eyre::Result;
 use faas_blueprint_lib::context::FaaSContext;
 use faas_blueprint_lib::jobs::{execute_function_job, EXECUTE_FUNCTION_JOB_ID};
@@ -32,7 +32,9 @@ async fn faas_execution_onchain() -> Result<()> {
     test_env.initialize().await?;
 
     // Add the FaaS execution job to the node
-    test_env.add_job(execute_function_job.layer(TangleLayer)).await;
+    test_env
+        .add_job(execute_function_job.layer(TangleLayer))
+        .await;
 
     // Create contexts for each node
     let mut contexts = Vec::new();
@@ -58,7 +60,7 @@ async fn faas_execution_onchain() -> Result<()> {
             ]),
         ),
         InputValue::List(FieldType::String, BoundedVec(vec![])), // No env vars
-        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),   // No payload
+        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),  // No payload
     ];
 
     // Submit job on-chain
@@ -71,7 +73,11 @@ async fn faas_execution_onchain() -> Result<()> {
 
     // Wait for on-chain execution with timeout
     let test_timeout = Duration::from_secs(30);
-    let results = timeout(test_timeout, harness.wait_for_job_execution(service_id, job)).await??;
+    let results = timeout(
+        test_timeout,
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await??;
 
     // Verify on-chain results
     assert_eq!(results.service_id, service_id);
@@ -115,7 +121,9 @@ async fn faas_compilation_onchain() -> Result<()> {
     let (mut test_env, service_id, _blueprint_id) = harness.setup_services::<1>(false).await?;
     test_env.initialize().await?;
 
-    test_env.add_job(execute_function_job.layer(TangleLayer)).await;
+    test_env
+        .add_job(execute_function_job.layer(TangleLayer))
+        .await;
 
     // Single node context
     let handle = test_env.node_handles().await.into_iter().next().unwrap();
@@ -158,7 +166,11 @@ async fn faas_compilation_onchain() -> Result<()> {
 
     // Wait for compilation to complete on-chain
     let test_timeout = Duration::from_secs(60);
-    let results = timeout(test_timeout, harness.wait_for_job_execution(service_id, job)).await??;
+    let results = timeout(
+        test_timeout,
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await??;
 
     assert_eq!(results.service_id, service_id);
 
@@ -201,7 +213,9 @@ async fn faas_concurrent_jobs_onchain() -> Result<()> {
     let (mut test_env, service_id, _) = harness.setup_services::<N>(false).await?;
     test_env.initialize().await?;
 
-    test_env.add_job(execute_function_job.layer(TangleLayer)).await;
+    test_env
+        .add_job(execute_function_job.layer(TangleLayer))
+        .await;
 
     // Create contexts for all nodes
     let mut contexts = Vec::new();
@@ -294,7 +308,9 @@ async fn faas_payload_processing_onchain() -> Result<()> {
     let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
     test_env.initialize().await?;
 
-    test_env.add_job(execute_function_job.layer(TangleLayer)).await;
+    test_env
+        .add_job(execute_function_job.layer(TangleLayer))
+        .await;
 
     let handle = test_env.node_handles().await.into_iter().next().unwrap();
     let config = handle.blueprint_config().await;
@@ -306,10 +322,8 @@ async fn faas_payload_processing_onchain() -> Result<()> {
 
     // Create payload data
     let payload_data = b"Data processed on Tangle blockchain";
-    let payload_input: Vec<InputValue> = payload_data
-        .iter()
-        .map(|&b| InputValue::Uint8(b))
-        .collect();
+    let payload_input: Vec<InputValue> =
+        payload_data.iter().map(|&b| InputValue::Uint8(b)).collect();
 
     let job_args = vec![
         InputValue::String("alpine:latest".to_string()),
@@ -328,7 +342,11 @@ async fn faas_payload_processing_onchain() -> Result<()> {
     info!("Submitted payload job with call ID {}", job.call_id);
 
     let test_timeout = Duration::from_secs(30);
-    let results = timeout(test_timeout, harness.wait_for_job_execution(service_id, job)).await??;
+    let results = timeout(
+        test_timeout,
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await??;
 
     assert_eq!(results.service_id, service_id);
 
@@ -369,7 +387,9 @@ async fn faas_state_verification() -> Result<()> {
     let (mut test_env, service_id, blueprint_id) = harness.setup_services::<1>(false).await?;
     test_env.initialize().await?;
 
-    test_env.add_job(execute_function_job.layer(TangleLayer)).await;
+    test_env
+        .add_job(execute_function_job.layer(TangleLayer))
+        .await;
 
     let handle = test_env.node_handles().await.into_iter().next().unwrap();
     let config = handle.blueprint_config().await;
@@ -413,6 +433,9 @@ async fn faas_state_verification() -> Result<()> {
     // Verify service and blueprint IDs remain consistent
     info!("Service ID: {service_id}, Blueprint ID: {blueprint_id}");
 
-    info!("✅ State verification completed - {} jobs recorded on-chain", call_ids.len());
+    info!(
+        "✅ State verification completed - {} jobs recorded on-chain",
+        call_ids.len()
+    );
     Ok(())
 }

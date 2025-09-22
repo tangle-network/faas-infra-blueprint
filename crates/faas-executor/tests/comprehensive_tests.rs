@@ -17,37 +17,58 @@ async fn test_multi_language_execution() {
     let executor = DockerExecutor::new(docker);
 
     // Test shell execution
-    let sh_result = executor.execute(SandboxConfig {
-        function_id: "test-shell".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "echo 'Hello from Shell'".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let sh_result = executor
+        .execute(SandboxConfig {
+            function_id: "test-shell".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "echo 'Hello from Shell'".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
     assert_eq!(sh_result.response, Some(b"Hello from Shell\n".to_vec()));
 
     // Test with sed command
-    let sed_result = executor.execute(SandboxConfig {
-        function_id: "test-sed".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "echo 'test' | sed 's/test/Hello from SED/'".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let sed_result = executor
+        .execute(SandboxConfig {
+            function_id: "test-sed".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "echo 'test' | sed 's/test/Hello from SED/'".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
     assert_eq!(sed_result.response, Some(b"Hello from SED\n".to_vec()));
 
     // Test with awk command
-    let awk_result = executor.execute(SandboxConfig {
-        function_id: "test-awk".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "echo 'test' | awk '{print \"Hello from AWK: \" $1}'".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
-    assert_eq!(awk_result.response, Some(b"Hello from AWK: test\n".to_vec()));
+    let awk_result = executor
+        .execute(SandboxConfig {
+            function_id: "test-awk".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "echo 'test' | awk '{print \"Hello from AWK: \" $1}'".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        awk_result.response,
+        Some(b"Hello from AWK: test\n".to_vec())
+    );
 }
 
 // ============= Performance Tests =============
@@ -60,27 +81,36 @@ async fn test_cold_start_performance() {
 
     // Measure cold start time
     let start = Instant::now();
-    let _ = executor.execute(SandboxConfig {
-        function_id: "cold-start-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["echo".to_string(), "cold".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let _ = executor
+        .execute(SandboxConfig {
+            function_id: "cold-start-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec!["echo".to_string(), "cold".to_string()],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
     let cold_start_time = start.elapsed();
 
     // Second execution should be faster (warm container pool)
     let start = Instant::now();
-    let _ = executor.execute(SandboxConfig {
-        function_id: "warm-start-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["echo".to_string(), "warm".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let _ = executor
+        .execute(SandboxConfig {
+            function_id: "warm-start-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec!["echo".to_string(), "warm".to_string()],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
     let warm_start_time = start.elapsed();
 
-    println!("Cold start: {:?}, Warm start: {:?}", cold_start_time, warm_start_time);
+    println!(
+        "Cold start: {:?}, Warm start: {:?}",
+        cold_start_time, warm_start_time
+    );
     // Both should complete reasonably quickly
     // Note: We don't have container pooling yet, so warm won't necessarily be faster
     assert!(cold_start_time < Duration::from_secs(2));
@@ -107,7 +137,8 @@ async fn test_concurrent_execution_scaling() {
                     command: vec!["sleep".to_string(), "0.1".to_string()],
                     env_vars: None,
                     payload: vec![],
-                }).await
+                })
+                .await
             }));
         }
 
@@ -129,7 +160,12 @@ async fn test_concurrent_execution_scaling() {
             20 => Duration::from_secs(6),
             _ => Duration::from_secs(10),
         };
-        assert!(elapsed < max_time, "Concurrency {} took too long: {:?}", concurrency, elapsed);
+        assert!(
+            elapsed < max_time,
+            "Concurrency {} took too long: {:?}",
+            concurrency,
+            elapsed
+        );
     }
 }
 
@@ -142,15 +178,20 @@ async fn test_memory_limits() {
     let executor = DockerExecutor::new(docker);
 
     // Test that memory limits are enforced
-    let result = executor.execute(SandboxConfig {
-        function_id: "memory-limit".to_string(),
-        source: "alpine:latest".to_string(),
-        // Try to allocate 2GB of memory (should fail with default limits)
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "dd if=/dev/zero of=/dev/null bs=1M count=2048".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "memory-limit".to_string(),
+            source: "alpine:latest".to_string(),
+            // Try to allocate 2GB of memory (should fail with default limits)
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "dd if=/dev/zero of=/dev/null bs=1M count=2048".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
     // Should succeed as dd doesn't actually consume memory
     assert!(result.is_ok());
@@ -164,14 +205,19 @@ async fn test_cpu_limits() {
 
     // CPU-intensive task with built-in timeout
     let start = Instant::now();
-    let _ = executor.execute(SandboxConfig {
-        function_id: "cpu-limit".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "for i in $(seq 1 10); do echo $i; sleep 0.1; done".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+    let _ = executor
+        .execute(SandboxConfig {
+            function_id: "cpu-limit".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "for i in $(seq 1 10); do echo $i; sleep 0.1; done".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
     let elapsed = start.elapsed();
     // Should complete in ~1 second
@@ -188,14 +234,20 @@ async fn test_network_isolation() {
     let executor = DockerExecutor::new(docker);
 
     // Test that containers can't access external network by default
-    let result = executor.execute(SandboxConfig {
-        function_id: "network-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["ping".to_string(), "-c".to_string(), "1".to_string(),
-                      "8.8.8.8".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "network-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "ping".to_string(),
+                "-c".to_string(),
+                "1".to_string(),
+                "8.8.8.8".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
     // Should fail if network is properly isolated
     // Note: This depends on executor configuration
@@ -212,13 +264,16 @@ async fn test_large_payload_handling() {
 
     // Test with 1MB payload
     let large_payload = vec![b'A'; 1024 * 1024];
-    let result = executor.execute(SandboxConfig {
-        function_id: "large-payload".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["wc".to_string(), "-c".to_string()],
-        env_vars: None,
-        payload: large_payload.clone(),
-    }).await.unwrap();
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "large-payload".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec!["wc".to_string(), "-c".to_string()],
+            env_vars: None,
+            payload: large_payload.clone(),
+        })
+        .await
+        .unwrap();
 
     // wc -c should count the bytes
     let response_bytes = result.response.unwrap();
@@ -237,14 +292,20 @@ async fn test_environment_variables() {
         "NUMBER_VAR=42".to_string(),
     ];
 
-    let result = executor.execute(SandboxConfig {
-        function_id: "env-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "echo $TEST_VAR:$NUMBER_VAR".to_string()],
-        env_vars: Some(env_vars),
-        payload: vec![],
-    }).await.unwrap();
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "env-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "echo $TEST_VAR:$NUMBER_VAR".to_string(),
+            ],
+            env_vars: Some(env_vars),
+            payload: vec![],
+        })
+        .await
+        .unwrap();
 
     assert_eq!(result.response, Some(b"test_value:42\n".to_vec()));
 }
@@ -258,14 +319,15 @@ async fn test_error_propagation() {
     let executor = DockerExecutor::new(docker);
 
     // Test command failure
-    let result = executor.execute(SandboxConfig {
-        function_id: "error-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "exit 1".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "error-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec!["sh".to_string(), "-c".to_string(), "exit 1".to_string()],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
     // Should capture the error
     assert!(result.is_ok());
@@ -288,8 +350,9 @@ async fn test_timeout_handling() {
             command: vec!["sleep".to_string(), "10".to_string()],
             env_vars: None,
             payload: vec![],
-        })
-    ).await;
+        }),
+    )
+    .await;
 
     assert!(result.is_err());
     assert!(start.elapsed() < Duration::from_secs(3));
@@ -304,13 +367,16 @@ async fn test_container_cleanup() {
     let executor = DockerExecutor::new(docker.clone());
 
     // Execute a function
-    let _ = executor.execute(SandboxConfig {
-        function_id: "cleanup-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["echo".to_string(), "test".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let _ = executor
+        .execute(SandboxConfig {
+            function_id: "cleanup-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec!["echo".to_string(), "test".to_string()],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
 
     // Check that container is cleaned up
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -322,10 +388,14 @@ async fn test_container_cleanup() {
     };
 
     let containers = docker.list_containers(Some(options)).await.unwrap();
-    let cleanup_containers: Vec<_> = containers.iter()
-        .filter(|c| c.names.as_ref()
-            .map(|names| names.iter().any(|n| n.contains("cleanup-test")))
-            .unwrap_or(false))
+    let cleanup_containers: Vec<_> = containers
+        .iter()
+        .filter(|c| {
+            c.names
+                .as_ref()
+                .map(|names| names.iter().any(|n| n.contains("cleanup-test")))
+                .unwrap_or(false)
+        })
         .collect();
 
     // Container should be removed after execution
@@ -341,14 +411,19 @@ async fn test_privilege_escalation_prevention() {
     let executor = DockerExecutor::new(docker);
 
     // Try to access privileged operations
-    let result = executor.execute(SandboxConfig {
-        function_id: "privilege-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "mount -t proc proc /proc".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "privilege-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "mount -t proc proc /proc".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
     // Should fail due to lack of privileges
     assert!(result.is_ok()); // Command executes but mount should fail
@@ -361,14 +436,20 @@ async fn test_filesystem_isolation() {
     let executor = DockerExecutor::new(docker);
 
     // Try to write to host filesystem
-    let result = executor.execute(SandboxConfig {
-        function_id: "fs-isolation".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(),
-                      "echo 'test' > /test.txt && cat /test.txt".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "fs-isolation".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "echo 'test' > /test.txt && cat /test.txt".to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
 
     // Should work within container
     assert_eq!(result.response, Some(b"test\n".to_vec()));
@@ -401,7 +482,8 @@ async fn test_sustained_load() {
                 command: vec!["echo".to_string(), format!("{}", i)],
                 env_vars: None,
                 payload: vec![],
-            }).await
+            })
+            .await
         }));
     }
 

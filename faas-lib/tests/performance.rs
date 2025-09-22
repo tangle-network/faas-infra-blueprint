@@ -681,8 +681,8 @@ async fn cold_vs_warm_start_comparison() -> color_eyre::Result<()> {
     Ok(())
 }
 use faas_common::SandboxExecutor;
-use faas_executor::DockerExecutor;
 use faas_executor::docktopus::DockerBuilder;
+use faas_executor::DockerExecutor;
 use faas_orchestrator::Orchestrator;
 use std::sync::Arc;
 use std::time::Instant;

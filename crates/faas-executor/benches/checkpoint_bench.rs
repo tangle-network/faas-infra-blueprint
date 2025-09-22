@@ -1,13 +1,11 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use faas_executor::platform::{Executor as PlatformExecutor, Mode, Request};
 use std::time::Duration;
 
 fn benchmark_checkpoint_restore(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
-    let executor = runtime.block_on(async {
-        PlatformExecutor::new().await.ok()
-    });
+    let executor = runtime.block_on(async { PlatformExecutor::new().await.ok() });
 
     if executor.is_none() {
         eprintln!("Skipping benchmarks - executor unavailable");

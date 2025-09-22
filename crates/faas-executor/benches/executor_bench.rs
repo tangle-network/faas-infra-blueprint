@@ -1,9 +1,9 @@
 //! Production performance benchmarks for FaaS executor
 //! Measures cold start, warm start, and throughput
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use faas_common::{SandboxConfig, SandboxExecutor};
-use faas_executor::{DockerExecutor, config::ExecutorConfig};
+use faas_executor::{config::ExecutorConfig, DockerExecutor};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -12,7 +12,7 @@ use tokio::runtime::Runtime;
 fn bench_cold_start(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let executor = Arc::new(DockerExecutor::new());
-    
+
     let config = SandboxConfig {
         function_id: "bench-cold".to_string(),
         source: "alpine:latest".to_string(),
@@ -20,7 +20,7 @@ fn bench_cold_start(c: &mut Criterion) {
         env_vars: None,
         payload: vec![],
     };
-    
+
     c.bench_function("cold_start_docker", |b| {
         b.to_async(&rt).iter(|| async {
             let exec = executor.clone();
@@ -34,18 +34,20 @@ fn bench_cold_start(c: &mut Criterion) {
 fn bench_warm_start(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let executor = Arc::new(DockerExecutor::new());
-    
+
     // Pre-warm by running once
     rt.block_on(async {
-        let _ = executor.execute(SandboxConfig {
-            function_id: "warmup".to_string(),
-            source: "alpine:latest".to_string(),
-            command: vec!["echo".to_string(), "warmup".to_string()],
-            env_vars: None,
-            payload: vec![],
-        }).await;
+        let _ = executor
+            .execute(SandboxConfig {
+                function_id: "warmup".to_string(),
+                source: "alpine:latest".to_string(),
+                command: vec!["echo".to_string(), "warmup".to_string()],
+                env_vars: None,
+                payload: vec![],
+            })
+            .await;
     });
-    
+
     let config = SandboxConfig {
         function_id: "bench-warm".to_string(),
         source: "alpine:latest".to_string(),
@@ -53,7 +55,7 @@ fn bench_warm_start(c: &mut Criterion) {
         env_vars: None,
         payload: vec![],
     };
-    
+
     c.bench_function("warm_start_docker", |b| {
         b.to_async(&rt).iter(|| async {
             let exec = executor.clone();
@@ -67,9 +69,9 @@ fn bench_warm_start(c: &mut Criterion) {
 fn bench_throughput(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let executor = Arc::new(DockerExecutor::new());
-    
+
     let mut group = c.benchmark_group("throughput");
-    
+
     for concurrency in [1, 10, 50, 100] {
         group.bench_with_input(
             BenchmarkId::from_parameter(concurrency),
@@ -77,7 +79,7 @@ fn bench_throughput(c: &mut Criterion) {
             |b, &concurrency| {
                 b.to_async(&rt).iter(|| async move {
                     let mut handles = vec![];
-                    
+
                     for i in 0..concurrency {
                         let exec = executor.clone();
                         let handle = tokio::spawn(async move {
@@ -87,11 +89,12 @@ fn bench_throughput(c: &mut Criterion) {
                                 command: vec!["echo".to_string(), format!("{}", i)],
                                 env_vars: None,
                                 payload: vec![],
-                            }).await
+                            })
+                            .await
                         });
                         handles.push(handle);
                     }
-                    
+
                     for handle in handles {
                         black_box(handle.await);
                     }
@@ -99,7 +102,7 @@ fn bench_throughput(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
@@ -107,51 +110,52 @@ fn bench_throughput(c: &mut Criterion) {
 fn bench_payload_sizes(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let executor = Arc::new(DockerExecutor::new());
-    
+
     let mut group = c.benchmark_group("payload_size");
-    
+
     for size_kb in [1, 10, 100, 1000] {
         let payload = vec![0u8; size_kb * 1024];
-        
+
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("{}KB", size_kb)),
             &payload,
             |b, payload| {
                 b.to_async(&rt).iter(|| async {
                     let exec = executor.clone();
-                    black_box(exec.execute(SandboxConfig {
-                        function_id: "bench-payload".to_string(),
-                        source: "alpine:latest".to_string(),
-                        command: vec!["cat".to_string()],
-                        env_vars: None,
-                        payload: payload.clone(),
-                    }).await)
+                    black_box(
+                        exec.execute(SandboxConfig {
+                            function_id: "bench-payload".to_string(),
+                            source: "alpine:latest".to_string(),
+                            command: vec!["cat".to_string()],
+                            env_vars: None,
+                            payload: payload.clone(),
+                        })
+                        .await,
+                    )
                 });
             },
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark snapshot/restore performance (Linux only)
 #[cfg(target_os = "linux")]
 fn bench_snapshot_restore(c: &mut Criterion) {
-    use faas_executor::criu::{CriuManager, CriuConfig};
-    
+    use faas_executor::criu::{CriuConfig, CriuManager};
+
     let rt = Runtime::new().unwrap();
-    
+
     // Only run if CRIU is available
-    let criu = rt.block_on(async {
-        CriuManager::new(CriuConfig::default()).await.ok()
-    });
-    
+    let criu = rt.block_on(async { CriuManager::new(CriuConfig::default()).await.ok() });
+
     if let Some(criu_manager) = criu {
         let mut group = c.benchmark_group("snapshot_restore");
-        
+
         // Start a test process
         let pid = std::process::id();
-        
+
         group.bench_function("criu_checkpoint", |b| {
             b.to_async(&rt).iter(|| async {
                 let checkpoint_id = format!("bench-{}", uuid::Uuid::new_v4());
@@ -161,7 +165,7 @@ fn bench_snapshot_restore(c: &mut Criterion) {
                 black_box(result)
             });
         });
-        
+
         group.finish();
     }
 }

@@ -1,12 +1,12 @@
 //! Comprehensive executor tests with proper mocking and edge case coverage
 //! Author: L7 Staff Engineer - Production-grade test suite
 
+use anyhow::Result;
 use async_trait::async_trait;
 use faas_common::{InvocationResult, SandboxConfig, SandboxExecutor};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
-use anyhow::Result;
 
 /// Mock executor for testing - simulates various execution scenarios
 #[derive(Clone)]
@@ -68,9 +68,12 @@ impl SandboxExecutor for MockExecutor {
     async fn execute(&self, config: SandboxConfig) -> faas_common::Result<InvocationResult> {
         let started_at = Instant::now();
         let behavior = self.behavior.read().await.clone();
-        
+
         let result = match behavior {
-            MockBehavior::Success { response, duration_ms } => {
+            MockBehavior::Success {
+                response,
+                duration_ms,
+            } => {
                 tokio::time::sleep(Duration::from_millis(duration_ms)).await;
                 Ok(InvocationResult {
                     request_id: uuid::Uuid::new_v4().to_string(),
@@ -79,25 +82,26 @@ impl SandboxExecutor for MockExecutor {
                     logs: Some("Mock execution successful".to_string()),
                 })
             }
-            MockBehavior::Failure { error } => {
-                Err(faas_common::FaasError::Executor(error.clone()))
-            }
+            MockBehavior::Failure { error } => Err(faas_common::FaasError::Executor(error.clone())),
             MockBehavior::Timeout { after_ms } => {
                 tokio::time::sleep(Duration::from_millis(after_ms)).await;
-                Err(faas_common::FaasError::Executor("Execution timed out".to_string()))
-            }
-            MockBehavior::OOM { at_memory_mb } => {
                 Err(faas_common::FaasError::Executor(
-                    format!("Out of memory at {} MB", at_memory_mb)
+                    "Execution timed out".to_string(),
                 ))
             }
-            MockBehavior::NetworkFailure => {
-                Err(faas_common::FaasError::Executor("Network connection lost".to_string()))
-            }
+            MockBehavior::OOM { at_memory_mb } => Err(faas_common::FaasError::Executor(format!(
+                "Out of memory at {} MB",
+                at_memory_mb
+            ))),
+            MockBehavior::NetworkFailure => Err(faas_common::FaasError::Executor(
+                "Network connection lost".to_string(),
+            )),
             MockBehavior::RandomFailure { failure_rate } => {
                 let should_fail = rand::random::<f64>() < failure_rate;
                 if should_fail {
-                    Err(faas_common::FaasError::Executor("Random failure occurred".to_string()))
+                    Err(faas_common::FaasError::Executor(
+                        "Random failure occurred".to_string(),
+                    ))
                 } else {
                     Ok(InvocationResult {
                         request_id: uuid::Uuid::new_v4().to_string(),
@@ -114,7 +118,10 @@ impl SandboxExecutor for MockExecutor {
             config: config.clone(),
             started_at,
             completed_at,
-            result: result.as_ref().map(|r| r.clone()).map_err(|e| e.to_string()),
+            result: result
+                .as_ref()
+                .map(|r| r.clone())
+                .map_err(|e| e.to_string()),
         };
 
         self.executions.lock().await.push(record);
@@ -129,10 +136,12 @@ mod tests {
     #[tokio::test]
     async fn test_successful_execution() {
         let executor = MockExecutor::new();
-        executor.set_behavior(MockBehavior::Success {
-            response: b"Hello, World!".to_vec(),
-            duration_ms: 50,
-        }).await;
+        executor
+            .set_behavior(MockBehavior::Success {
+                response: b"Hello, World!".to_vec(),
+                duration_ms: 50,
+            })
+            .await;
 
         let config = SandboxConfig {
             function_id: "test-func".to_string(),
@@ -146,7 +155,7 @@ mod tests {
         assert_eq!(result.response, Some(b"Hello, World!".to_vec()));
         assert!(result.error.is_none());
         assert_eq!(executor.execution_count().await, 1);
-        
+
         let last_exec = executor.last_execution().await.unwrap();
         assert_eq!(last_exec.config.function_id, "test-func");
     }
@@ -154,7 +163,9 @@ mod tests {
     #[tokio::test]
     async fn test_execution_timeout() {
         let executor = MockExecutor::new();
-        executor.set_behavior(MockBehavior::Timeout { after_ms: 5000 }).await;
+        executor
+            .set_behavior(MockBehavior::Timeout { after_ms: 5000 })
+            .await;
 
         let config = SandboxConfig {
             function_id: "timeout-func".to_string(),
@@ -165,11 +176,9 @@ mod tests {
         };
 
         // Use timeout to prevent test from hanging
-        let result = tokio::time::timeout(
-            Duration::from_millis(100),
-            executor.execute(config)
-        ).await;
-        
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), executor.execute(config)).await;
+
         // Should timeout before mock completes
         assert!(result.is_err());
     }
@@ -177,7 +186,9 @@ mod tests {
     #[tokio::test]
     async fn test_oom_handling() {
         let executor = MockExecutor::new();
-        executor.set_behavior(MockBehavior::OOM { at_memory_mb: 512 }).await;
+        executor
+            .set_behavior(MockBehavior::OOM { at_memory_mb: 512 })
+            .await;
 
         let config = SandboxConfig {
             function_id: "memory-hog".to_string(),
@@ -207,19 +218,24 @@ mod tests {
 
         let result = executor.execute(config).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Network connection lost"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Network connection lost"));
     }
 
     #[tokio::test]
     async fn test_concurrent_executions() {
         let executor = Arc::new(MockExecutor::new());
-        executor.set_behavior(MockBehavior::Success {
-            response: b"concurrent".to_vec(),
-            duration_ms: 10,
-        }).await;
+        executor
+            .set_behavior(MockBehavior::Success {
+                response: b"concurrent".to_vec(),
+                duration_ms: 10,
+            })
+            .await;
 
         let mut handles = vec![];
-        
+
         // Spawn 100 concurrent executions
         for i in 0..100 {
             let exec = executor.clone();
@@ -238,23 +254,25 @@ mod tests {
 
         // Wait for all to complete
         let results = futures::future::join_all(handles).await;
-        
+
         // All should succeed
         for result in results {
             assert!(result.unwrap().is_ok());
         }
-        
+
         assert_eq!(executor.execution_count().await, 100);
     }
 
     #[tokio::test]
     async fn test_random_failures() {
         let executor = MockExecutor::new();
-        executor.set_behavior(MockBehavior::RandomFailure { failure_rate: 0.3 }).await;
+        executor
+            .set_behavior(MockBehavior::RandomFailure { failure_rate: 0.3 })
+            .await;
 
         let mut success_count = 0;
         let mut failure_count = 0;
-        
+
         // Run 100 executions
         for i in 0..100 {
             let config = SandboxConfig {
@@ -264,7 +282,7 @@ mod tests {
                 env_vars: None,
                 payload: vec![],
             };
-            
+
             match executor.execute(config).await {
                 Ok(_) => success_count += 1,
                 Err(_) => failure_count += 1,
@@ -272,21 +290,26 @@ mod tests {
         }
 
         // With 30% failure rate, we expect roughly 30 failures
-        assert!(failure_count > 20 && failure_count < 40, 
-            "Expected ~30 failures, got {}", failure_count);
+        assert!(
+            failure_count > 20 && failure_count < 40,
+            "Expected ~30 failures, got {}",
+            failure_count
+        );
         assert_eq!(success_count + failure_count, 100);
     }
 
     #[tokio::test]
     async fn test_execution_tracking() {
         let executor = MockExecutor::new();
-        
+
         // Execute with different behaviors
-        executor.set_behavior(MockBehavior::Success {
-            response: b"first".to_vec(),
-            duration_ms: 10,
-        }).await;
-        
+        executor
+            .set_behavior(MockBehavior::Success {
+                response: b"first".to_vec(),
+                duration_ms: 10,
+            })
+            .await;
+
         let config1 = SandboxConfig {
             function_id: "track-1".to_string(),
             source: "alpine:latest".to_string(),
@@ -296,10 +319,12 @@ mod tests {
         };
         executor.execute(config1).await.unwrap();
 
-        executor.set_behavior(MockBehavior::Failure {
-            error: "Intentional failure".to_string(),
-        }).await;
-        
+        executor
+            .set_behavior(MockBehavior::Failure {
+                error: "Intentional failure".to_string(),
+            })
+            .await;
+
         let config2 = SandboxConfig {
             function_id: "track-2".to_string(),
             source: "alpine:latest".to_string(),
@@ -311,7 +336,7 @@ mod tests {
 
         // Verify tracking
         assert_eq!(executor.execution_count().await, 2);
-        
+
         let executions = executor.executions.lock().await;
         assert_eq!(executions[0].config.function_id, "track-1");
         assert!(executions[0].result.is_ok());

@@ -3,12 +3,12 @@
 
 pub mod vm_manager;
 
-pub use vm_manager::{FirecrackerManager, VmConfig, VmInstance, VmState, NetworkConfig};
+pub use vm_manager::{FirecrackerManager, NetworkConfig, VmConfig, VmInstance, VmState};
 
-use faas_common::{InvocationResult, SandboxConfig, SandboxExecutor, Result as CommonResult};
 use async_trait::async_trait;
+use faas_common::{InvocationResult, Result as CommonResult, SandboxConfig, SandboxExecutor};
 use std::path::PathBuf;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// High-level Firecracker executor implementing SandboxExecutor trait
 pub struct FirecrackerExecutor {
@@ -83,7 +83,10 @@ impl SandboxExecutor for FirecrackerExecutor {
                 }
                 Err(e) => {
                     error!("Failed to launch VM: {}", e);
-                    Err(faas_common::FaasError::Executor(format!("Firecracker launch failed: {}", e)))
+                    Err(faas_common::FaasError::Executor(format!(
+                        "Firecracker launch failed: {}",
+                        e
+                    )))
                 }
             }
         } else {

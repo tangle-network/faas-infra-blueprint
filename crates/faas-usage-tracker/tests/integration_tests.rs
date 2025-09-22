@@ -7,9 +7,18 @@ async fn test_account_creation_and_tier_limits() {
     let storage = Arc::new(InMemoryStorage::new());
 
     // Create accounts with different tiers
-    storage.create_account("dev_user".to_string(), Tier::Developer).await.unwrap();
-    storage.create_account("team_user".to_string(), Tier::Team).await.unwrap();
-    storage.create_account("scale_user".to_string(), Tier::Scale).await.unwrap();
+    storage
+        .create_account("dev_user".to_string(), Tier::Developer)
+        .await
+        .unwrap();
+    storage
+        .create_account("team_user".to_string(), Tier::Team)
+        .await
+        .unwrap();
+    storage
+        .create_account("scale_user".to_string(), Tier::Scale)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -32,7 +41,10 @@ async fn test_account_creation_and_tier_limits() {
 #[tokio::test]
 async fn test_vcpu_limit_enforcement() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -43,13 +55,19 @@ async fn test_vcpu_limit_enforcement() {
     // Should fail with 65 vCPUs
     let result = tracker.check_limits("test", 65, 100).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), UsageError::LimitExceeded { .. }));
+    assert!(matches!(
+        result.unwrap_err(),
+        UsageError::LimitExceeded { .. }
+    ));
 }
 
 #[tokio::test]
 async fn test_ram_limit_enforcement() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -60,13 +78,19 @@ async fn test_ram_limit_enforcement() {
     // Should fail with 257 GB
     let result = tracker.check_limits("test", 10, 257).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), UsageError::LimitExceeded { .. }));
+    assert!(matches!(
+        result.unwrap_err(),
+        UsageError::LimitExceeded { .. }
+    ));
 }
 
 #[tokio::test]
 async fn test_instance_lifecycle_tracking() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -80,7 +104,10 @@ async fn test_instance_lifecycle_tracking() {
         stopped_at: None,
     };
 
-    tracker.start_instance("test", instance.clone()).await.unwrap();
+    tracker
+        .start_instance("test", instance.clone())
+        .await
+        .unwrap();
 
     // Verify instance is tracked
     let usage = tracker.get_usage("test").await.unwrap();
@@ -100,7 +127,10 @@ async fn test_instance_lifecycle_tracking() {
 #[tokio::test]
 async fn test_execution_recording() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -108,7 +138,7 @@ async fn test_execution_recording() {
     let execution = ExecutionRecord {
         execution_id: "exec-456".to_string(),
         account_id: "test".to_string(),
-        vcpu_seconds: 3600.0, // 1 hour
+        vcpu_seconds: 3600.0,    // 1 hour
         ram_gb_seconds: 14400.0, // 4 GB for 1 hour = 1 MCU
         mode: "ephemeral".to_string(),
         timestamp: Utc::now(),
@@ -127,7 +157,10 @@ async fn test_execution_recording() {
 #[tokio::test]
 async fn test_mcu_calculation_accuracy() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Team).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Team)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -171,7 +204,10 @@ async fn test_mcu_calculation_accuracy() {
 #[tokio::test]
 async fn test_billing_estimate() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("team_user".to_string(), Tier::Team).await.unwrap();
+    storage
+        .create_account("team_user".to_string(), Tier::Team)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -201,7 +237,10 @@ async fn test_billing_estimate() {
 #[tokio::test]
 async fn test_overage_billing() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("dev_user".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("dev_user".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -230,7 +269,10 @@ async fn test_overage_billing() {
 #[tokio::test]
 async fn test_insufficient_credits_without_pay_as_you_go() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("limited_user".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("limited_user".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -259,13 +301,19 @@ async fn test_insufficient_credits_without_pay_as_you_go() {
 
     let result = tracker.start_instance("limited_user", instance).await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), UsageError::LimitExceeded { .. }));
+    assert!(matches!(
+        result.unwrap_err(),
+        UsageError::LimitExceeded { .. }
+    ));
 }
 
 #[tokio::test]
 async fn test_snapshot_tracking() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let snapshot = SnapshotRecord {
         snapshot_id: "snap-789".to_string(),
@@ -291,7 +339,10 @@ async fn test_snapshot_tracking() {
 #[tokio::test]
 async fn test_concurrent_instance_limits() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Developer).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Developer)
+        .await
+        .unwrap();
 
     let tracker = UsageTracker::new(storage.clone());
 
@@ -339,7 +390,10 @@ async fn test_concurrent_instance_limits() {
 #[tokio::test]
 async fn test_usage_history() {
     let storage = Arc::new(InMemoryStorage::new());
-    storage.create_account("test".to_string(), Tier::Team).await.unwrap();
+    storage
+        .create_account("test".to_string(), Tier::Team)
+        .await
+        .unwrap();
 
     let start = Utc::now() - Duration::days(7);
     let end = Utc::now();
@@ -357,5 +411,8 @@ async fn test_account_not_found() {
 
     let result = tracker.get_usage("nonexistent").await;
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), UsageError::AccountNotFound(_)));
+    assert!(matches!(
+        result.unwrap_err(),
+        UsageError::AccountNotFound(_)
+    ));
 }

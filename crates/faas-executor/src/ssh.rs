@@ -1,4 +1,3 @@
-
 use chrono::{DateTime, Duration, Utc};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
@@ -101,7 +100,8 @@ impl SshKeyManager {
     ) -> Result<(String, String, String), Box<dyn std::error::Error>> {
         let rng = SystemRandom::new();
         let mut seed = [0u8; 32];
-        rng.fill(&mut seed).map_err(|e| format!("Failed to generate random seed: {:?}", e))?;
+        rng.fill(&mut seed)
+            .map_err(|e| format!("Failed to generate random seed: {:?}", e))?;
 
         let keypair = Ed25519Keypair::from_seed(&seed);
         let private_key = PrivateKey::from(keypair);

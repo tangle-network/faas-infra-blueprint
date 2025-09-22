@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use faas_blueprint_lib::context::FaaSContext;
-    use faas_blueprint_lib::jobs::*;
-    use faas_blueprint_lib::api_server::{ApiServerConfig, ApiKeyPermissions};
     use blueprint_sdk::extract::Context;
     use blueprint_sdk::tangle::extract::{CallId, TangleArg};
+    use faas_blueprint_lib::api_server::{ApiKeyPermissions, ApiServerConfig};
+    use faas_blueprint_lib::context::FaaSContext;
+    use faas_blueprint_lib::jobs::*;
     use faas_common::ExecuteFunctionArgs;
     use std::collections::HashMap;
     use tokio;
@@ -24,12 +24,7 @@ mod tests {
             payload: vec![],
         };
 
-        let result = execute_function_job(
-            Context(ctx),
-            CallId(1),
-            TangleArg(args),
-        )
-        .await;
+        let result = execute_function_job(Context(ctx), CallId(1), TangleArg(args)).await;
 
         assert!(result.is_ok());
     }
@@ -48,12 +43,7 @@ mod tests {
             timeout_secs: Some(60),
         };
 
-        let result = execute_advanced_job(
-            Context(ctx),
-            CallId(2),
-            TangleArg(args),
-        )
-        .await;
+        let result = execute_advanced_job(Context(ctx), CallId(2), TangleArg(args)).await;
 
         assert!(result.is_ok());
     }
@@ -67,12 +57,7 @@ mod tests {
             description: None,
         };
 
-        let result = create_snapshot_job(
-            Context(ctx),
-            CallId(3),
-            TangleArg(args),
-        )
-        .await;
+        let result = create_snapshot_job(Context(ctx), CallId(3), TangleArg(args)).await;
 
         // Will fail gracefully without real container
         assert!(result.is_err());
@@ -85,12 +70,7 @@ mod tests {
             snapshot_id: "test-snapshot-id".to_string(),
         };
 
-        let result = restore_snapshot_job(
-            Context(ctx),
-            CallId(4),
-            TangleArg(args),
-        )
-        .await;
+        let result = restore_snapshot_job(Context(ctx), CallId(4), TangleArg(args)).await;
 
         // Will fail gracefully without real snapshot
         assert!(result.is_err());
@@ -104,12 +84,7 @@ mod tests {
             branch_name: "test-branch".to_string(),
         };
 
-        let result = create_branch_job(
-            Context(ctx),
-            CallId(5),
-            TangleArg(args),
-        )
-        .await;
+        let result = create_branch_job(Context(ctx), CallId(5), TangleArg(args)).await;
 
         // Will fail gracefully without real snapshot
         assert!(result.is_err());
@@ -123,12 +98,7 @@ mod tests {
             merge_strategy: "latest".to_string(),
         };
 
-        let result = merge_branches_job(
-            Context(ctx),
-            CallId(6),
-            TangleArg(args),
-        )
-        .await;
+        let result = merge_branches_job(Context(ctx), CallId(6), TangleArg(args)).await;
 
         // Will fail gracefully without real branches
         assert!(result.is_err());
@@ -146,12 +116,7 @@ mod tests {
             enable_ssh: false,
         };
 
-        let result = start_instance_job(
-            Context(ctx),
-            CallId(7),
-            TangleArg(args),
-        )
-        .await;
+        let result = start_instance_job(Context(ctx), CallId(7), TangleArg(args)).await;
 
         // Will fail gracefully without real resources
         assert!(result.is_err());
@@ -164,12 +129,7 @@ mod tests {
             instance_id: "test-instance".to_string(),
         };
 
-        let result = stop_instance_job(
-            Context(ctx),
-            CallId(8),
-            TangleArg(args),
-        )
-        .await;
+        let result = stop_instance_job(Context(ctx), CallId(8), TangleArg(args)).await;
 
         // Will fail gracefully without real instance
         assert!(result.is_err());
@@ -182,12 +142,7 @@ mod tests {
             instance_id: "test-instance".to_string(),
         };
 
-        let result = pause_instance_job(
-            Context(ctx),
-            CallId(9),
-            TangleArg(args),
-        )
-        .await;
+        let result = pause_instance_job(Context(ctx), CallId(9), TangleArg(args)).await;
 
         // Will fail gracefully without real instance
         assert!(result.is_err());
@@ -201,12 +156,7 @@ mod tests {
             checkpoint_id: "checkpoint-id".to_string(),
         };
 
-        let result = resume_instance_job(
-            Context(ctx),
-            CallId(10),
-            TangleArg(args),
-        )
-        .await;
+        let result = resume_instance_job(Context(ctx), CallId(10), TangleArg(args)).await;
 
         // Will fail gracefully without real checkpoint
         assert!(result.is_err());
@@ -222,12 +172,7 @@ mod tests {
             subdomain: None,
         };
 
-        let result = expose_port_job(
-            Context(ctx),
-            CallId(11),
-            TangleArg(args),
-        )
-        .await;
+        let result = expose_port_job(Context(ctx), CallId(11), TangleArg(args)).await;
 
         // Will fail gracefully without real instance
         assert!(result.is_err());
@@ -242,12 +187,7 @@ mod tests {
             files_data: vec![1, 2, 3, 4],
         };
 
-        let result = upload_files_job(
-            Context(ctx),
-            CallId(12),
-            TangleArg(args),
-        )
-        .await;
+        let result = upload_files_job(Context(ctx), CallId(12), TangleArg(args)).await;
 
         // Will fail gracefully without real instance
         assert!(result.is_err());
@@ -267,7 +207,9 @@ mod tests {
             can_manage_instances: true,
             rate_limit: Some(100),
         };
-        config.api_keys.insert("test-api-key".to_string(), permissions.clone());
+        config
+            .api_keys
+            .insert("test-api-key".to_string(), permissions.clone());
 
         assert!(config.api_keys.contains_key("test-api-key"));
         let retrieved = config.api_keys.get("test-api-key").unwrap();
@@ -280,7 +222,7 @@ mod tests {
     #[tokio::test]
     async fn test_api_authentication() {
         use axum::http::HeaderMap;
-        use faas_blueprint_lib::api_server::{authenticate};
+        use faas_blueprint_lib::api_server::authenticate;
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
@@ -326,7 +268,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limiting() {
-        use faas_blueprint_lib::api_server::{ApiState, check_rate_limit};
+        use faas_blueprint_lib::api_server::{check_rate_limit, ApiState};
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
@@ -381,12 +323,7 @@ mod tests {
                 timeout_secs: Some(5),
             };
 
-            let _result = execute_advanced_job(
-                Context(ctx),
-                CallId(100),
-                TangleArg(args),
-            )
-            .await;
+            let _result = execute_advanced_job(Context(ctx), CallId(100), TangleArg(args)).await;
 
             // Just verify parsing doesn't panic
             assert_eq!(format!("{:?}", expected_mode).to_lowercase(), mode_str);

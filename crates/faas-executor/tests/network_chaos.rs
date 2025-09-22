@@ -1,9 +1,9 @@
 //! Network partition and chaos testing
 
+use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use anyhow::Result;
 
 /// Network conditions simulator
 pub struct NetworkChaos {
@@ -78,14 +78,14 @@ mod tests {
     #[tokio::test]
     async fn test_network_partition() {
         let chaos = NetworkChaos::new();
-        
+
         // Normal operation
         assert!(chaos.simulate_request(vec![1, 2, 3]).await.is_ok());
-        
+
         // Partition network
         chaos.partition().await;
         assert!(chaos.simulate_request(vec![1, 2, 3]).await.is_err());
-        
+
         // Heal partition
         chaos.heal().await;
         assert!(chaos.simulate_request(vec![1, 2, 3]).await.is_ok());
@@ -95,17 +95,17 @@ mod tests {
     async fn test_packet_loss() {
         let chaos = NetworkChaos::new();
         chaos.set_packet_loss(0.5).await;
-        
+
         let mut successes = 0;
         let mut failures = 0;
-        
+
         for _ in 0..100 {
             match chaos.simulate_request(vec![1]).await {
                 Ok(_) => successes += 1,
                 Err(_) => failures += 1,
             }
         }
-        
+
         // With 50% packet loss, expect roughly half to fail
         assert!(failures > 30 && failures < 70);
     }
@@ -114,10 +114,10 @@ mod tests {
     async fn test_latency_injection() {
         let chaos = NetworkChaos::new();
         chaos.add_latency(100).await;
-        
+
         let start = std::time::Instant::now();
         chaos.simulate_request(vec![1, 2, 3]).await.unwrap();
-        
+
         assert!(start.elapsed() >= Duration::from_millis(100));
     }
 
@@ -125,11 +125,11 @@ mod tests {
     async fn test_bandwidth_throttling() {
         let chaos = NetworkChaos::new();
         chaos.throttle_bandwidth(10).await; // 10 kbps
-        
+
         let large_data = vec![0u8; 10_000]; // 10KB
         let start = std::time::Instant::now();
         chaos.simulate_request(large_data).await.unwrap();
-        
+
         // 10KB at 10kbps should take ~8 seconds
         assert!(start.elapsed() >= Duration::from_secs(7));
     }
@@ -139,19 +139,17 @@ mod tests {
         let chaos = NetworkChaos::new();
         chaos.add_latency(50).await;
         chaos.set_packet_loss(0.1).await;
-        
+
         let mut results = vec![];
         for _ in 0..10 {
             let start = std::time::Instant::now();
             let result = chaos.simulate_request(vec![1, 2, 3]).await;
             results.push((result.is_ok(), start.elapsed()));
         }
-        
+
         // Some should fail, all successful ones should have latency
-        let successes: Vec<_> = results.iter()
-            .filter(|(ok, _)| *ok)
-            .collect();
-        
+        let successes: Vec<_> = results.iter().filter(|(ok, _)| *ok).collect();
+
         assert!(!successes.is_empty());
         for (_, duration) in successes {
             assert!(*duration >= Duration::from_millis(50));

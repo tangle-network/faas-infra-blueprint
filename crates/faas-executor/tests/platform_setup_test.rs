@@ -1,8 +1,8 @@
 //! Platform setup tests - replaces test-faas bash scripts
 //! Run with: cargo test --test platform_setup_test -- --ignored --nocapture
 
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 #[test]
 #[ignore = "Downloads large binaries"]
@@ -37,7 +37,11 @@ fn test_download_firecracker_binaries() {
         .expect("Failed to extract Firecracker");
 
     assert!(output.status.success());
-    assert!(Path::new(&format!("/tmp/release-{}-unknown-linux-musl/firecracker", fc_version)).exists());
+    assert!(Path::new(&format!(
+        "/tmp/release-{}-unknown-linux-musl/firecracker",
+        fc_version
+    ))
+    .exists());
 }
 
 #[test]
@@ -58,13 +62,21 @@ fn test_build_criu() {
 
     // Clone CRIU
     let output = Command::new("git")
-        .args(["clone", "--depth=1", "--branch=v3.19",
-               "https://github.com/checkpoint-restore/criu.git", "/tmp/criu"])
+        .args([
+            "clone",
+            "--depth=1",
+            "--branch=v3.19",
+            "https://github.com/checkpoint-restore/criu.git",
+            "/tmp/criu",
+        ])
         .output()
         .expect("Failed to clone CRIU");
 
     if !output.status.success() {
-        eprintln!("Failed to clone CRIU: {}", String::from_utf8_lossy(&output.stderr));
+        eprintln!(
+            "Failed to clone CRIU: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
 
@@ -85,8 +97,7 @@ fn test_build_criu() {
 async fn test_docker_setup() {
     use bollard::Docker;
 
-    let docker = Docker::connect_with_defaults()
-        .expect("Docker not available");
+    let docker = Docker::connect_with_defaults().expect("Docker not available");
 
     // Pull required images
     for image in ["alpine:latest", "ubuntu:latest"] {
@@ -119,7 +130,14 @@ fn test_platform_capabilities() {
 
     // Check KVM
     let has_kvm = Path::new("/dev/kvm").exists();
-    println!("KVM: {}", if has_kvm { "Available" } else { "Not available (required for Firecracker)" });
+    println!(
+        "KVM: {}",
+        if has_kvm {
+            "Available"
+        } else {
+            "Not available (required for Firecracker)"
+        }
+    );
 
     // Check Docker
     let has_docker = Command::new("docker")
@@ -127,7 +145,14 @@ fn test_platform_capabilities() {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
-    println!("Docker: {}", if has_docker { "Available" } else { "Not available" });
+    println!(
+        "Docker: {}",
+        if has_docker {
+            "Available"
+        } else {
+            "Not available"
+        }
+    );
 
     // Check CRIU
     let has_criu = Command::new("criu")
@@ -135,7 +160,14 @@ fn test_platform_capabilities() {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
-    println!("CRIU: {}", if has_criu { "Available" } else { "Not available" });
+    println!(
+        "CRIU: {}",
+        if has_criu {
+            "Available"
+        } else {
+            "Not available"
+        }
+    );
 
     // Check Firecracker
     let has_fc = Command::new("firecracker")
@@ -143,7 +175,10 @@ fn test_platform_capabilities() {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);
-    println!("Firecracker: {}", if has_fc { "Available" } else { "Not available" });
+    println!(
+        "Firecracker: {}",
+        if has_fc { "Available" } else { "Not available" }
+    );
 
     println!("\n=== Recommended Setup ===");
     if cfg!(target_os = "macos") {

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::instrument;
 
-use crate::api_server::{ApiError, ApiState, authenticate, check_rate_limit};
+use crate::api_server::{authenticate, check_rate_limit, ApiError, ApiState};
 use crate::jobs::*;
 use blueprint_sdk::extract::Context;
 use blueprint_sdk::tangle::extract::{CallId, TangleArg};
@@ -36,15 +36,13 @@ pub async fn list_snapshots_handler(
     let _ = authenticate(&headers, &state).await?;
 
     // TODO: Query actual snapshot store
-    let snapshots = vec![
-        SnapshotInfo {
-            id: "snap_example_1".to_string(),
-            name: "python-env".to_string(),
-            created_at: 1700000000,
-            size_bytes: 1024 * 1024 * 512, // 512MB
-            container_id: Some("container_123".to_string()),
-        },
-    ];
+    let snapshots = vec![SnapshotInfo {
+        id: "snap_example_1".to_string(),
+        name: "python-env".to_string(),
+        created_at: 1700000000,
+        size_bytes: 1024 * 1024 * 512, // 512MB
+        container_id: Some("container_123".to_string()),
+    }];
 
     Ok(Json(snapshots))
 }
@@ -403,25 +401,21 @@ pub fn build_api_router(state: ApiState) -> Router {
         .route("/api/v1/instances/:id/info", get(get_instance_info_handler))
         .route("/api/v1/logs", get(get_logs_handler))
         .route("/api/v1/usage", get(get_usage_handler))
-
         // === State-changing endpoints (call Tangle jobs) ===
         // Execution
         .route("/api/v1/execute/advanced", post(execute_advanced_handler))
-
         // Snapshots
         .route("/api/v1/snapshots", post(create_snapshot_handler))
-
         // Branching
         .route("/api/v1/branches", post(create_branch_handler))
-
         // Instances
         .route("/api/v1/instances", post(start_instance_handler))
-
         // Ports
         .route("/api/v1/ports/expose", post(expose_port_handler))
-
         // Health check
-        .route("/health", get(|| async { Json(serde_json::json!({"status": "healthy"})) }))
-
+        .route(
+            "/health",
+            get(|| async { Json(serde_json::json!({"status": "healthy"})) }),
+        )
         .with_state(state)
 }
