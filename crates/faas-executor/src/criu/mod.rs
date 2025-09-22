@@ -1,4 +1,6 @@
 
+pub mod container;
+
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -355,10 +357,9 @@ impl CriuManager {
 
     /// Validate CRIU capabilities and permissions
     async fn validate_criu_capabilities(binary_path: &Path) -> Result<()> {
-        // Check if CRIU can run
+        // Check if CRIU can run - note: --ms is deprecated in CRIU 3.19+
         let output = AsyncCommand::new(binary_path)
             .arg("check")
-            .arg("--ms") // Check if can dump/restore
             .output()
             .await?;
 

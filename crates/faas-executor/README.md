@@ -1,37 +1,44 @@
 # FaaS Executor
 
-Production-grade serverless execution engine with sub-250ms cold starts.
+Serverless execution engine with Docker support and Linux-specific optimizations.
 
 ## Features
 
-- 🐳 **Docker** containers for development
-- 🚀 **Firecracker** microVMs for production isolation  
-- 📷 **CRIU** checkpoint/restore for instant warm starts
+- 🐳 **Docker** containers (all platforms)
+- 🚀 **Firecracker** microVMs ready (Linux + KVM)
+- 📷 **CRIU** checkpoint/restore ready (Linux)
 - 🌐 **Network isolation** and security boundaries
-- ⚡ **< 250ms cold starts**, < 10ms warm starts
+- ⚡ **< 250ms cold starts** with Docker
 - 🛡️ **Resource limits** and DoS protection
 
 ## Quick Start
 
+### Prerequisites
+```bash
+# Rust nightly required
+rustup install nightly
+rustup default nightly
+```
+
 ### Development (macOS/Linux)
 ```bash
-# Setup development environment
-./scripts/setup_dev.sh
-
 # Run tests
-cargo test
+cargo +nightly test
 
-# Run benchmarks
-cargo bench
+# Run specific integration tests
+cargo +nightly test --test docker_integration -- --ignored
 ```
 
 ### Production (Linux only)
 ```bash
-# Install Firecracker
-./scripts/setup_firecracker.sh
+# Install dependencies for full features
+sudo apt-get install docker.io criu
 
-# Run with all features
-cargo run --all-features
+# Check KVM availability (required for Firecracker)
+ls /dev/kvm
+
+# Build with all features
+cargo +nightly build --release
 ```
 
 ## Architecture

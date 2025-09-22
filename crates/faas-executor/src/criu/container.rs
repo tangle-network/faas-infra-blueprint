@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 use tracing::{info, warn, error, debug};
 
 /// CRIU checkpoint/restore manager for containers
-pub struct CriuManager {
+pub struct CriuContainerManager {
     /// Base directory for storing checkpoints
     checkpoint_dir: PathBuf,
     /// CRIU options
@@ -71,7 +71,7 @@ pub struct CheckpointMetadata {
     pub container_id: Option<String>,
 }
 
-impl CriuManager {
+impl CriuContainerManager {
     /// Create a new CRIU manager
     pub fn new(checkpoint_dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&checkpoint_dir)?;
@@ -388,7 +388,7 @@ mod tests {
     #[ignore = "Requires CRIU"]
     fn test_criu_availability() {
         let temp_dir = TempDir::new().unwrap();
-        let manager = CriuManager::new(temp_dir.path().to_path_buf());
+        let manager = CriuContainerManager::new(temp_dir.path().to_path_buf());
         assert!(manager.is_ok());
 
         if let Ok(mgr) = manager {
@@ -407,7 +407,7 @@ mod tests {
         use std::time::Duration;
 
         let temp_dir = TempDir::new().unwrap();
-        let mut manager = CriuManager::new(temp_dir.path().to_path_buf()).unwrap();
+        let mut manager = CriuContainerManager::new(temp_dir.path().to_path_buf()).unwrap();
 
         // Start a simple process
         let mut child = Command::new("sleep")

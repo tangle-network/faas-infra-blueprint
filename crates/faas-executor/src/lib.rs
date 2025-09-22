@@ -123,6 +123,7 @@ async fn run_container_inner(
     let bollard_config_override = docktopus::bollard::container::Config {
         attach_stdin: Some(true),
         open_stdin: Some(true),
+        stdin_once: Some(true), // Close stdin after attach disconnects
         tty: Some(false), // Ensure TTY is false if using separate streams
         ..Default::default()
     };
@@ -143,6 +144,7 @@ async fn run_container_inner(
                 env: config.env_vars.clone(),
                 attach_stdin: Some(true),
                 open_stdin: Some(true),
+                stdin_once: Some(true),
                 tty: Some(false),
                 ..bollard_config_override // Apply other overrides if needed
             },
@@ -184,9 +186,14 @@ async fn run_container_inner(
     let payload_clone = config.payload.clone();
     let container_id_clone = container_id.clone();
     let stdin_handle = tokio::spawn(async move {
-        if let Err(e) = input.write_all(&payload_clone).await {
-            error!(error = %e, %container_id_clone, "Failed to write payload to container stdin");
+        if !payload_clone.is_empty() {
+            info!(%container_id_clone, payload_size = payload_clone.len(), "Writing payload to stdin");
+            if let Err(e) = input.write_all(&payload_clone).await {
+                error!(error = %e, %container_id_clone, "Failed to write payload to container stdin");
+            }
         }
+        // Always shutdown stdin to signal EOF, even if no payload
+        info!(%container_id_clone, "Shutting down stdin");
         if let Err(e) = input.shutdown().await {
             error!(error = %e, %container_id_clone, "Failed to shutdown container stdin stream");
         }
@@ -212,12 +219,28 @@ async fn run_container_inner(
                     // output is dropped here
     });
 
-    // Wait for container to exit
+    // Wait for container to exit with timeout
+    info!(%container_id, "Waiting for container to exit...");
     let wait_options = WaitContainerOptions {
         condition: "not-running",
     };
     let mut wait_stream = docker_client.wait_container(&container_id, Some(wait_options));
-    let wait_result = wait_stream.next().await;
+
+    let wait_result = tokio::time::timeout(
+        tokio::time::Duration::from_secs(30),
+        wait_stream.next()
+    ).await;
+
+    let wait_result = match wait_result {
+        Ok(Some(result)) => Some(result),
+        Ok(None) => None,
+        Err(_) => {
+            error!(%container_id, "Container wait timed out after 30 seconds");
+            None
+        }
+    };
+
+    info!(%container_id, "Container wait completed");
 
     // Ensure stdin task finished (it should have after container exit triggers stream close)
     if let Err(e) = stdin_handle.await {

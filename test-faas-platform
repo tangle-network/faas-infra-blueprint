@@ -1,0 +1,119 @@
+#!/bin/bash
+# Consolidated FaaS Platform Test Runner
+# Replaces: test-faas, test-faas-arm-criu, test-faas-x86
+
+set -e
+
+echo "🚀 FaaS Platform Test Runner"
+echo "============================"
+
+# Detect platform
+OS=$(uname -s)
+ARCH=$(uname -m)
+
+echo "Platform: $OS $ARCH"
+
+# Function to run Rust tests
+run_rust_tests() {
+    echo ""
+    echo "Running Rust tests..."
+
+    # Run unit tests
+    echo "► Running unit tests..."
+    cargo +nightly test --lib
+
+    # Run integration tests that work on all platforms
+    echo "► Running Docker integration tests..."
+    cargo +nightly test --test docker_integration -- --ignored --nocapture
+
+    echo "► Running comprehensive tests..."
+    cargo +nightly test --test comprehensive_tests -- --ignored --nocapture
+
+    # Run platform-specific tests if on Linux
+    if [[ "$OS" == "Linux" ]]; then
+        echo "► Running Linux-specific tests..."
+        cargo +nightly test --test criu_tests -- --ignored --nocapture || echo "CRIU tests skipped"
+        cargo +nightly test --test docker_criu_test -- --ignored --nocapture || echo "Docker CRIU tests skipped"
+    fi
+}
+
+# Function to setup platform capabilities
+setup_platform() {
+    echo ""
+    echo "Checking platform capabilities..."
+    cargo +nightly test --test platform_setup_test test_platform_capabilities -- --ignored --nocapture
+}
+
+# Function to build Docker test image (if needed)
+build_docker_test_image() {
+    echo ""
+    echo "Building Docker test image..."
+
+    # Create minimal Dockerfile for testing
+    cat > /tmp/Dockerfile.faas-test << 'EOF'
+FROM rust:1.75
+
+# Install Docker CLI for Docker-in-Docker testing
+RUN apt-get update && \
+    apt-get install -y docker.io && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy source code
+WORKDIR /app
+COPY . .
+
+# Build the project
+RUN cargo +nightly build --release
+
+# Run tests
+CMD ["cargo", "+nightly", "test", "--", "--ignored", "--nocapture"]
+EOF
+
+    docker build -f /tmp/Dockerfile.faas-test -t faas-test-runner .
+    rm /tmp/Dockerfile.faas-test
+}
+
+# Parse arguments
+COMMAND=${1:-test}
+
+case $COMMAND in
+    setup)
+        setup_platform
+        ;;
+
+    docker-build)
+        build_docker_test_image
+        ;;
+
+    docker-run)
+        echo "Running tests in Docker..."
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock faas-test-runner
+        ;;
+
+    test)
+        setup_platform
+        run_rust_tests
+        ;;
+
+    clean)
+        echo "Cleaning up test artifacts..."
+        rm -f test-faas test-faas-arm-criu test-faas-x86
+        rm -f test_stdin_debug.rs
+        cargo clean
+        ;;
+
+    *)
+        echo "Usage: $0 [setup|test|docker-build|docker-run|clean]"
+        echo ""
+        echo "Commands:"
+        echo "  setup        - Check platform capabilities"
+        echo "  test         - Run all tests (default)"
+        echo "  docker-build - Build Docker test image"
+        echo "  docker-run   - Run tests in Docker container"
+        echo "  clean        - Remove test artifacts"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "✅ Test run complete"

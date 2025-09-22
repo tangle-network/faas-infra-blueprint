@@ -40,3 +40,6 @@ dependencies/
 
 # Ignore integration tests directory during service builds
 crates/faas-integration-tests/
+
+# Ignore tools build output
+tools/firecracker-rootfs-builder/output/
