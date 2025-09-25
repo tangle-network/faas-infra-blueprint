@@ -1,0 +1,15 @@
+[package]
+name = "faas-showcase"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+faas-executor = { path = "../../crates/faas-executor" }
+faas-common = { path = "../../crates/faas-common" }
+faas-sdk = { path = "../faas-sdk" }
+bollard = "0.18"
+tokio = { version = "1.44", features = ["full"] }
+
+[[bin]]
+name = "showcase"
+path = "src/main.rs"

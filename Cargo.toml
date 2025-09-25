@@ -6,10 +6,21 @@ members = [
     "faas-bin",
     "crates/faas-common",
     "crates/faas-gateway",
+    "crates/faas-gateway-server",
     "crates/faas-executor",
+    "crates/faas-sdk",
     "faas-tester",
     "crates/faas-guest-agent",
     "crates/faas-usage-tracker",
+    "examples/gpu-service",
+    "examples/agent-branching",
+    "examples/zk-faas",
+    "examples/faas-sdk",
+    "examples/showcase",
+    "examples/remote-dev",
+    "examples/quickstart",
+    "examples/real-cicd",
+    "examples/real-data-pipeline",
 ]
 
 exclude = ["dependencies/"]
@@ -36,6 +47,7 @@ anyhow = "1.0"
 axum = { version = "0.7", features = ["macros"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
 
 # Logging & Tracing

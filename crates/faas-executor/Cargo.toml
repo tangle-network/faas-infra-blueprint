@@ -45,6 +45,9 @@ tar = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
 ssh-key = { workspace = true }
+dashmap = "5.5"
+bincode = "1.3"
+libc = "0.2"
 
 [dev-dependencies]
 bollard = { workspace = true }

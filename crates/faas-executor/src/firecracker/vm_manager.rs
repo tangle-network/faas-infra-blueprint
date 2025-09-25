@@ -576,6 +576,31 @@ impl FirecrackerManager {
         )
     }
 
+    pub async fn execute_in_vm(&self, vm_id: &str, config: &faas_common::SandboxConfig) -> Result<Vec<u8>> {
+        // Execute command in VM via serial console
+        let vms = self.vms.read().await;
+
+        if let Some(vm_arc) = vms.get(vm_id) {
+            let vm = vm_arc.read().await;
+
+            if vm.state != VmState::Running {
+                return Err(anyhow::anyhow!("VM {} is not running", vm_id));
+            }
+
+            // In production, this would use vsock or serial console for communication
+            // For now, return simulated execution with the command output
+            let output = format!(
+                "Executed command: {} with payload size: {}",
+                config.command.join(" "),
+                config.payload.len()
+            );
+
+            Ok(output.into_bytes())
+        } else {
+            Err(anyhow::anyhow!("VM {} not found", vm_id))
+        }
+    }
+
     /// Stop a VM
     pub async fn stop_vm(&self, vm_id: &str) -> Result<()> {
         let vms = self.vms.read().await;

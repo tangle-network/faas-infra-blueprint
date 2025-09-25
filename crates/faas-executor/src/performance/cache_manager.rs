@@ -217,8 +217,7 @@ impl CacheManager {
             // Clone the data first
             let data = entry.data.as_ref().clone();
 
-            // Update frequency tracking (drop mutable borrow of entry first)
-            drop(entry);
+            // Update frequency tracking
             *cache.frequency.entry(key.to_string()).or_insert(0) += 1;
 
             // Update LRU order

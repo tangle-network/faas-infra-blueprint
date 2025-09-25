@@ -5,10 +5,12 @@ use std::time::{Duration, Instant};
 use tracing::{info, instrument};
 
 use super::{fork::ForkManager, memory::MemoryPool, snapshot::SnapshotStore};
+use crate::container_pool::{ContainerPoolManager, PoolConfig};
+use crate::bollard::Docker;
 use crate::performance::metrics_collector::MetricsConfig;
 use crate::performance::predictive_scaling::ScalingConfig;
 use crate::performance::{
-    CacheManager, CacheStrategy, ContainerPool, MetricsCollector, OptimizationConfig, PoolConfig,
+    CacheManager, CacheStrategy, MetricsCollector, OptimizationConfig,
     PredictiveScaler, SnapshotOptimizer,
 };
 
@@ -50,7 +52,7 @@ pub struct Executor {
     snapshots: Arc<SnapshotStore>,
     forks: Arc<ForkManager>,
     // Performance optimizations
-    container_pool: Arc<ContainerPool>,
+    container_pool: Arc<ContainerPoolManager>,
     cache_manager: Arc<CacheManager>,
     metrics: Arc<MetricsCollector>,
     snapshot_optimizer: Arc<SnapshotOptimizer>,
@@ -61,27 +63,38 @@ impl Executor {
     pub async fn new() -> Result<Self> {
         Ok(Self {
             container: Arc::new(
-                crate::executor::Executor::new(crate::executor::ExecutionStrategy::Container(
-                    crate::executor::ContainerStrategy {
-                        warm_pools: Arc::new(tokio::sync::Mutex::new(
-                            std::collections::HashMap::new(),
-                        )),
-                        max_pool_size: 10,
-                        docker: crate::docktopus::DockerBuilder::new()
-                            .await?
-                            .client()
-                            .clone(),
-                        build_cache_volumes: Arc::new(tokio::sync::RwLock::new(
-                            std::collections::HashMap::new(),
-                        )),
-                        dependency_layers: Arc::new(tokio::sync::RwLock::new(
-                            std::collections::HashMap::new(),
-                        )),
-                        gpu_pools: Arc::new(tokio::sync::Mutex::new(
-                            std::collections::HashMap::new(),
-                        )),
-                    },
-                ))
+                {
+                    let docker = crate::docktopus::DockerBuilder::new()
+                        .await?
+                        .client()
+                        .clone();
+                    let snapshot_manager = Some(Arc::new(
+                        crate::docker_snapshot::DockerSnapshotManager::new(docker.clone()),
+                    ));
+                    crate::executor::Executor::new(crate::executor::ExecutionStrategy::Container(
+                        crate::executor::ContainerStrategy {
+                            warm_pools: Arc::new(tokio::sync::Mutex::new(
+                                std::collections::HashMap::new(),
+                            )),
+                            max_pool_size: 10,
+                            docker: docker.clone(),
+                            snapshot_manager,
+                            build_cache_volumes: Arc::new(tokio::sync::RwLock::new(
+                                std::collections::HashMap::new(),
+                            )),
+                            dependency_layers: Arc::new(tokio::sync::RwLock::new(
+                                std::collections::HashMap::new(),
+                            )),
+                            gpu_pools: Arc::new(tokio::sync::Mutex::new(
+                                std::collections::HashMap::new(),
+                            )),
+                            pool_manager: Some(Arc::new(ContainerPoolManager::new(
+                                docker.clone(),
+                                PoolConfig::default()
+                            ))),
+                        },
+                    ))
+                }
                 .await?,
             ),
             vm: if cfg!(target_os = "linux") {
@@ -89,6 +102,7 @@ impl Executor {
                     crate::firecracker::FirecrackerExecutor::new(
                         "firecracker".to_string(),
                         "/var/lib/faas/kernel".to_string(),
+                        "/var/lib/faas/rootfs.ext4".to_string(),
                     )
                     .unwrap_or_else(|_| crate::firecracker::FirecrackerExecutor::stub()),
                 )
@@ -99,7 +113,10 @@ impl Executor {
             snapshots: Arc::new(SnapshotStore::new().await?),
             forks: Arc::new(ForkManager::new()?),
             // Performance optimizations
-            container_pool: Arc::new(ContainerPool::new(PoolConfig::default())),
+            container_pool: {
+                let docker = Arc::new(Docker::connect_with_local_defaults().unwrap());
+                Arc::new(ContainerPoolManager::new(docker, PoolConfig::default()))
+            },
             cache_manager: Arc::new(CacheManager::new(CacheStrategy::default()).await?),
             metrics: Arc::new(MetricsCollector::new(MetricsConfig::default())),
             snapshot_optimizer: Arc::new(SnapshotOptimizer::new(OptimizationConfig::default())),

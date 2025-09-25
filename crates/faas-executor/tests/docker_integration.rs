@@ -3,7 +3,7 @@
 
 use bollard::Docker;
 use faas_common::{SandboxConfig, SandboxExecutor};
-use faas_executor::DockerExecutor;
+use faas_executor::{DockerExecutor, container_pool::{ContainerPoolManager, PoolConfig}};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -165,8 +165,122 @@ async fn test_faas_function_chaining() {
         .await
         .unwrap();
 
-    let result = String::from_utf8_lossy(&stage2.response.unwrap());
+    let response_bytes = stage2.response.unwrap();
+    let result = String::from_utf8_lossy(&response_bytes);
     assert!(result.contains("100"));
+}
+
+#[tokio::test]
+#[ignore = "Requires Docker"]
+async fn test_container_pool_warm_start() {
+    // Test container pool with warm starts
+    let docker = Arc::new(Docker::connect_with_defaults().unwrap());
+
+    let config = PoolConfig {
+        min_size: 2,
+        max_size: 5,
+        max_idle_time: Duration::from_secs(60),
+        max_use_count: 10,
+        pre_warm: true,
+        health_check_interval: Duration::from_secs(30),
+        predictive_warming: false,
+        target_acquisition_ms: 50,
+    };
+
+    let pool_manager = Arc::new(ContainerPoolManager::new(docker.clone(), config));
+
+    // Pre-warm the pool
+    let pool = pool_manager.get_pool("alpine:latest").await;
+    tokio::time::sleep(Duration::from_millis(500)).await; // Give time for pre-warming
+
+    // First acquisition - should be fast (warm)
+    let start = Instant::now();
+    let container1 = pool.acquire().await.unwrap();
+    let acquisition_time1 = start.elapsed();
+
+    println!("First acquisition (warm): {:?}", acquisition_time1);
+    assert!(acquisition_time1 < Duration::from_millis(100), "Warm start should be under 100ms");
+
+    // Release back to pool
+    pool.release(container1).await.unwrap();
+
+    // Second acquisition - should be even faster (reuse)
+    let start = Instant::now();
+    let container2 = pool.acquire().await.unwrap();
+    let acquisition_time2 = start.elapsed();
+
+    println!("Second acquisition (reuse): {:?}", acquisition_time2);
+    assert!(acquisition_time2 < Duration::from_millis(50), "Reused container should be under 50ms");
+
+    pool.release(container2).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "Requires Docker"]
+async fn test_predictive_warming() {
+    // Test predictive warming functionality
+    let docker = Arc::new(Docker::connect_with_defaults().unwrap());
+
+    let config = PoolConfig {
+        min_size: 1,
+        max_size: 10,
+        max_idle_time: Duration::from_secs(60),
+        max_use_count: 50,
+        pre_warm: false,
+        health_check_interval: Duration::from_secs(5),
+        predictive_warming: true,
+        target_acquisition_ms: 50,
+    };
+
+    let pool_manager = Arc::new(ContainerPoolManager::new(docker, config));
+    let pool = pool_manager.get_pool("alpine:latest").await;
+
+    // Simulate high usage to trigger predictive warming
+    for _ in 0..3 {
+        let container = pool.acquire().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        pool.release(container).await.unwrap();
+    }
+
+    // Wait for predictive warming to kick in
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // Check stats - should have pre-warmed more containers
+    let stats = pool_manager.get_stats("alpine:latest").await.unwrap();
+    println!("Pool stats after predictive warming: available={}, in_use={}",
+             stats.available, stats.in_use);
+    assert!(stats.available >= 1, "Should have at least 1 warm container");
+}
+
+#[tokio::test]
+#[ignore = "Requires Docker"]
+async fn test_cache_manager_integration() {
+    use faas_executor::performance::{CacheManager, CacheStrategy};
+
+    // Test cache manager for execution results
+    let cache_manager = CacheManager::new(CacheStrategy::default()).await.unwrap();
+
+    // Cache some execution result
+    let key = "test_execution_123";
+    let data = b"execution result data".to_vec();
+
+    cache_manager.put(key, data.clone(), None).await.unwrap();
+
+    // Retrieve from cache
+    let cached = cache_manager.get(key).await.unwrap();
+    assert!(cached.is_some());
+    assert_eq!(cached.unwrap(), data);
+
+    // Test batch operations
+    let mut keys = vec![];
+    for i in 0..5 {
+        let k = format!("batch_key_{}", i);
+        cache_manager.put(&k, vec![i; 100], None).await.unwrap();
+        keys.push(k);
+    }
+
+    let batch_results = cache_manager.get_batch(keys).await.unwrap();
+    assert_eq!(batch_results.len(), 5);
 }
 
 #[tokio::test]
@@ -196,7 +310,8 @@ async fn test_faas_event_processing() {
         .await
         .unwrap();
 
-    let response = String::from_utf8_lossy(&result.response.unwrap());
+    let response_bytes = result.response.unwrap();
+    let response = String::from_utf8_lossy(&response_bytes);
     assert!(response.contains("usr_123"));
 }
 

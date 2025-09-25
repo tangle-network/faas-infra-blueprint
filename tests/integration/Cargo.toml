@@ -1,0 +1,23 @@
+[package]
+name = "faas-integration-tests"
+version = "0.1.0"
+edition = "2021"
+
+[[test]]
+name = "e2e_test"
+path = "e2e_test.rs"
+
+[[test]]
+name = "examples_test"
+path = "examples_test.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+faas-executor = { path = "../../crates/faas-executor" }
+faas-gateway = { path = "../../crates/faas-gateway" }
+faas-common = { path = "../../crates/faas-common" }

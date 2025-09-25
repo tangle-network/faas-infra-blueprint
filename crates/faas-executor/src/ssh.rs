@@ -329,7 +329,8 @@ impl SshKeyManager {
         use sha2::{Digest, Sha256};
         let key_data = public_key.to_bytes()?;
         let hash = Sha256::digest(&key_data);
-        Ok(format!("SHA256:{}", base64::encode(hash)))
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        Ok(format!("SHA256:{}", STANDARD.encode(hash)))
     }
 
     fn calculate_fingerprint_from_string(
@@ -337,8 +338,9 @@ impl SshKeyManager {
         public_key: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
         use sha2::{Digest, Sha256};
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
         let hash = Sha256::digest(public_key.as_bytes());
-        Ok(format!("SHA256:{}", base64::encode(hash)))
+        Ok(format!("SHA256:{}", STANDARD.encode(hash)))
     }
 }
 

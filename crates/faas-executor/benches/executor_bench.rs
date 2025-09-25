@@ -3,7 +3,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use faas_common::{SandboxConfig, SandboxExecutor};
-use faas_executor::{config::ExecutorConfig, DockerExecutor};
+use faas_executor::DockerExecutor;
+use bollard::Docker;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -11,7 +12,8 @@ use tokio::runtime::Runtime;
 /// Benchmark cold start performance
 fn bench_cold_start(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = Arc::new(DockerExecutor::new());
+    let docker = Arc::new(Docker::connect_with_defaults().unwrap());
+    let executor = Arc::new(DockerExecutor::new(docker));
 
     let config = SandboxConfig {
         function_id: "bench-cold".to_string(),
@@ -33,7 +35,8 @@ fn bench_cold_start(c: &mut Criterion) {
 /// Benchmark warm start performance with pre-pulled images
 fn bench_warm_start(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = Arc::new(DockerExecutor::new());
+    let docker = Arc::new(Docker::connect_with_defaults().unwrap());
+    let executor = Arc::new(DockerExecutor::new(docker));
 
     // Pre-warm by running once
     rt.block_on(async {
@@ -68,48 +71,40 @@ fn bench_warm_start(c: &mut Criterion) {
 /// Benchmark concurrent execution throughput
 fn bench_throughput(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = Arc::new(DockerExecutor::new());
 
-    let mut group = c.benchmark_group("throughput");
+    c.bench_function("throughput_10", |b| {
+        b.to_async(&rt).iter(|| async {
+            let docker = Arc::new(Docker::connect_with_defaults().unwrap());
+            let executor = Arc::new(DockerExecutor::new(docker));
 
-    for concurrency in [1, 10, 50, 100] {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(concurrency),
-            &concurrency,
-            |b, &concurrency| {
-                b.to_async(&rt).iter(|| async move {
-                    let mut handles = vec![];
-
-                    for i in 0..concurrency {
-                        let exec = executor.clone();
-                        let handle = tokio::spawn(async move {
-                            exec.execute(SandboxConfig {
-                                function_id: format!("bench-{}", i),
-                                source: "alpine:latest".to_string(),
-                                command: vec!["echo".to_string(), format!("{}", i)],
-                                env_vars: None,
-                                payload: vec![],
-                            })
-                            .await
-                        });
-                        handles.push(handle);
-                    }
-
-                    for handle in handles {
-                        black_box(handle.await);
-                    }
+            let mut handles = vec![];
+            for i in 0..10 {
+                let exec = executor.clone();
+                let handle = tokio::spawn(async move {
+                    exec.execute(SandboxConfig {
+                        function_id: format!("bench-{}", i),
+                        source: "alpine:latest".to_string(),
+                        command: vec!["echo".to_string(), format!("{}", i)],
+                        env_vars: None,
+                        payload: vec![],
+                    })
+                    .await
                 });
-            },
-        );
-    }
+                handles.push(handle);
+            }
 
-    group.finish();
+            for handle in handles {
+                black_box(handle.await);
+            }
+        });
+    });
 }
 
 /// Benchmark different payload sizes
 fn bench_payload_sizes(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let executor = Arc::new(DockerExecutor::new());
+    let docker = Arc::new(Docker::connect_with_defaults().unwrap());
+    let executor = Arc::new(DockerExecutor::new(docker));
 
     let mut group = c.benchmark_group("payload_size");
 

@@ -28,6 +28,10 @@ pub struct InvokeResponse {
     pub output: Option<String>,
     pub logs: Option<String>,
     pub error: Option<String>,
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub duration_ms: u64,
 }
 
 impl From<InvocationResult> for InvokeResponse {
@@ -37,6 +41,34 @@ impl From<InvocationResult> for InvokeResponse {
             output: result.response.and_then(|b| String::from_utf8(b).ok()),
             logs: result.logs,
             error: result.error,
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            duration_ms: 0,
         }
     }
+}
+
+// Request/Response types for SDK compatibility
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ExecuteRequest {
+    pub command: String,
+    pub image: Option<String>,
+    pub env_vars: Option<Vec<(String, String)>>,
+    pub working_dir: Option<String>,
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateSnapshotRequest {
+    pub name: String,
+    pub container_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateInstanceRequest {
+    pub name: Option<String>,
+    pub image: String,
+    pub cpu_cores: Option<u32>,
+    pub memory_mb: Option<u32>,
 }

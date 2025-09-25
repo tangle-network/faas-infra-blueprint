@@ -20,7 +20,9 @@ pub use docktopus;
 pub use docktopus::bollard;
 pub use faas_common as common;
 
+pub mod container_pool;
 pub mod criu;
+pub mod docker_snapshot;
 pub mod environment_registry;
 pub mod executor;
 pub mod firecracker;
@@ -85,6 +87,11 @@ impl DockerExecutor {
     // Constructor
     pub fn new(docker_client: Arc<Docker>) -> Self {
         Self { docker_client }
+    }
+
+    // Expose docker client for snapshot operations
+    pub fn docker(&self) -> &Arc<Docker> {
+        &self.docker_client
     }
 }
 
