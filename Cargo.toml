@@ -21,6 +21,7 @@ members = [
     "examples/quickstart",
     "examples/real-cicd",
     "examples/real-data-pipeline",
+    "examples/opencode-cloud-dev",
 ]
 
 exclude = ["dependencies/"]
