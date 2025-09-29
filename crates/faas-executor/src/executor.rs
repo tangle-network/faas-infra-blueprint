@@ -9,9 +9,13 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
+use crate::container_pool::ContainerPoolManager;
+use crate::docker_snapshot::DockerSnapshotManager;
 use crate::environment_registry::{
     CacheMount, CacheType, ConfigurationManager, EnvironmentRegistry, EnvironmentTemplate,
 };
+use crate::performance::{CacheManager, CacheStrategy};
+use crate::Docker;
 
 // Simple hashmap macro for initialization
 macro_rules! hashmap {
@@ -32,6 +36,7 @@ pub struct Executor {
     metrics: Arc<Mutex<ExecutionMetrics>>,
     registry: Arc<RwLock<EnvironmentRegistry>>,
     config_manager: Arc<Mutex<ConfigurationManager>>,
+    cache_manager: Option<Arc<CacheManager>>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +49,7 @@ pub enum ExecutionStrategy {
     Hybrid(HybridStrategy),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ContainerStrategy {
     /// Pre-warmed container pools by environment type
     pub warm_pools: Arc<Mutex<HashMap<String, VecDeque<WarmContainer>>>>,
@@ -52,15 +57,28 @@ pub struct ContainerStrategy {
     pub max_pool_size: usize,
     /// Docker client for container operations
     pub docker: Arc<docktopus::bollard::Docker>,
+    /// Docker snapshot manager for real commit/restore operations
+    pub snapshot_manager: Option<Arc<crate::docker_snapshot::DockerSnapshotManager>>,
     /// Build cache volumes for compilation artifacts
     pub build_cache_volumes: Arc<RwLock<HashMap<String, String>>>,
     /// Shared dependency layers (e.g., cargo registry, go modules)
     pub dependency_layers: Arc<RwLock<HashMap<String, DependencyLayer>>>,
     /// GPU-enabled container pools for AI/compute workloads
     pub gpu_pools: Arc<Mutex<HashMap<String, VecDeque<WarmContainer>>>>,
+    /// High-performance container pool manager
+    pub pool_manager: Option<Arc<ContainerPoolManager>>,
 }
 
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ContainerStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ContainerStrategy")
+            .field("max_pool_size", &self.max_pool_size)
+            .field("has_snapshot_manager", &self.snapshot_manager.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
 pub struct MicroVMStrategy {
     /// Memory snapshots of pre-configured environments
     snapshots: Arc<RwLock<HashMap<String, EnvironmentSnapshot>>>,
@@ -69,14 +87,148 @@ pub struct MicroVMStrategy {
     /// Base kernel and rootfs
     kernel_path: String,
     rootfs_path: String,
+    /// Real Firecracker executor if available
+    firecracker_executor: Option<Arc<crate::firecracker::FirecrackerExecutor>>,
 }
 
-#[derive(Debug, Clone)]
+impl MicroVMStrategy {
+    /// Create a new MicroVM strategy with real Firecracker support
+    pub fn new(
+        firecracker_path: String,
+        kernel_path: String,
+        rootfs_path: String,
+    ) -> Self {
+        // Try to initialize real Firecracker executor on Linux
+        let firecracker_executor = if cfg!(target_os = "linux") {
+            match crate::firecracker::FirecrackerExecutor::new(
+                firecracker_path.clone(),
+                kernel_path.clone(),
+                rootfs_path.clone(),
+            ) {
+                Ok(executor) => Some(Arc::new(executor)),
+                Err(e) => {
+                    tracing::warn!("Failed to initialize Firecracker executor: {}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::info!("Firecracker not available on non-Linux platforms");
+            None
+        };
+
+        Self {
+            snapshots: Arc::new(RwLock::new(HashMap::new())),
+            firecracker_path,
+            kernel_path,
+            rootfs_path,
+            firecracker_executor,
+        }
+    }
+
+    /// Create a stub strategy for testing or non-Linux platforms
+    pub fn stub() -> Self {
+        Self {
+            snapshots: Arc::new(RwLock::new(HashMap::new())),
+            firecracker_path: String::new(),
+            kernel_path: String::new(),
+            rootfs_path: String::new(),
+            firecracker_executor: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for MicroVMStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MicroVMStrategy")
+            .field("firecracker_path", &self.firecracker_path)
+            .field("kernel_path", &self.kernel_path)
+            .field("has_executor", &self.firecracker_executor.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
 pub struct HybridStrategy {
     container: ContainerStrategy,
     microvm: MicroVMStrategy,
     /// Decision logic for routing executions
     routing_rules: Vec<RoutingRule>,
+}
+
+impl std::fmt::Debug for HybridStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridStrategy")
+            .field("routing_rules", &self.routing_rules)
+            .finish()
+    }
+}
+
+impl HybridStrategy {
+    /// Create a new hybrid strategy with intelligent backend selection
+    pub fn new(
+        docker: Arc<Docker>,
+        firecracker_path: Option<String>,
+        kernel_path: Option<String>,
+    ) -> Self {
+        // Initialize container strategy with pooling
+        let container = ContainerStrategy {
+            warm_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            max_pool_size: 10,
+            docker: docker.clone(),
+            snapshot_manager: Some(Arc::new(crate::docker_snapshot::DockerSnapshotManager::new(
+                docker.clone(),
+            ))),
+            pool_manager: Some(Arc::new(
+                crate::container_pool::ContainerPoolManager::new(
+                    docker.clone(),
+                    crate::container_pool::PoolConfig {
+                        min_size: 1,
+                        max_size: 10,
+                        max_idle_time: std::time::Duration::from_secs(300),
+                        max_use_count: 100,
+                        pre_warm: true,
+                        health_check_interval: std::time::Duration::from_secs(30),
+                        predictive_warming: true,
+                        target_acquisition_ms: 50,
+                    },
+                ),
+            )),
+            build_cache_volumes: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            dependency_layers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            gpu_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        };
+
+        // Initialize MicroVM strategy with Firecracker if available
+        let microvm = if let (Some(fc_path), Some(kernel)) = (firecracker_path, kernel_path) {
+            MicroVMStrategy::new(fc_path, kernel, String::new())
+        } else {
+            MicroVMStrategy::stub()
+        };
+
+        // Define intelligent routing rules
+        let routing_rules = vec![
+            // Use Firecracker for security-sensitive or high-performance workloads
+            RoutingRule {
+                condition: RoutingCondition::RequiresSecurity,
+                target_strategy: ExecutionStrategy::MicroVM(microvm.clone()),
+            },
+            RoutingRule {
+                condition: RoutingCondition::HighPerformance,
+                target_strategy: ExecutionStrategy::MicroVM(microvm.clone()),
+            },
+            // Use containers for better compatibility and warm pools
+            RoutingRule {
+                condition: RoutingCondition::RequiresWarmPool,
+                target_strategy: ExecutionStrategy::Container(container.clone()),
+            },
+        ];
+
+        Self {
+            container,
+            microvm,
+            routing_rules,
+        }
+    }
 }
 
 /// Environment cache for instant developer environment restoration
@@ -145,12 +297,22 @@ impl Executor {
 
         let registry = Arc::new(RwLock::new(config_manager.lock().await.registry.clone()));
 
+        // Initialize high-performance cache manager
+        let cache_manager = match CacheManager::new(CacheStrategy::default()).await {
+            Ok(cm) => Some(Arc::new(cm)),
+            Err(e) => {
+                warn!("Failed to initialize cache manager: {}", e);
+                None
+            }
+        };
+
         let executor = Self {
             strategy,
             environment_cache,
             metrics,
             registry,
             config_manager,
+            cache_manager,
         };
 
         // Initialize environment cache based on registry
@@ -797,6 +959,18 @@ impl SandboxExecutor for Executor {
         let start = Instant::now();
         let request_id = Uuid::new_v4().to_string();
 
+        // Check execution cache for deterministic functions
+        if let Some(cache_manager) = &self.cache_manager {
+            let cache_key = self.generate_cache_key(&config);
+            if let Ok(Some(cached_result)) = cache_manager.get(&cache_key).await {
+                // Deserialize cached result
+                if let Ok(result) = bincode::deserialize::<InvocationResult>(&cached_result) {
+                    info!("Execution cache hit for {}", cache_key);
+                    return Ok(result);
+                }
+            }
+        }
+
         // Record execution attempt
         {
             let mut metrics = self.metrics.lock().await;
@@ -807,6 +981,9 @@ impl SandboxExecutor for Executor {
                 .or_insert(0) += 1;
         }
 
+        // Select the optimal strategy for this workload
+        let selected_strategy = self.select_strategy(&config);
+
         // Check if we have a cached environment for instant start
         let cache_hit = self
             .check_environment_cache(&config)
@@ -815,10 +992,10 @@ impl SandboxExecutor for Executor {
 
         let result = if cache_hit {
             info!("Cache hit - executing with warm environment");
-            self.execute_from_cache(&config, &request_id).await
+            self.execute_from_cache_with_strategy(&config, &request_id, &selected_strategy).await
         } else {
             info!("Cache miss - cold start execution");
-            self.execute_cold_start(&config, &request_id).await
+            self.execute_cold_start_with_strategy(&config, &request_id, &selected_strategy).await
         };
 
         // Record metrics
@@ -839,14 +1016,91 @@ impl SandboxExecutor for Executor {
             duration, cache_hit
         );
 
+        // Cache successful execution results for deterministic functions
+        if let Ok(ref invocation_result) = result {
+            if self.is_deterministic(&config) {
+                if let Some(cache_manager) = &self.cache_manager {
+                    let cache_key = self.generate_cache_key(&config);
+                    if let Ok(serialized) = bincode::serialize(invocation_result) {
+                        let _ = cache_manager.put(&cache_key, serialized, None).await;
+                        info!("Cached execution result for {}", cache_key);
+                    }
+                }
+            }
+        }
+
         result.map_err(|e| faas_common::FaasError::Executor(e.to_string()))
     }
 }
 
 impl Executor {
+    /// Generate cache key for deterministic function execution
+    fn generate_cache_key(&self, config: &SandboxConfig) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&config.source);
+        hasher.update(&config.function_id);
+        for cmd in &config.command {
+            hasher.update(cmd.as_bytes());
+        }
+        if let Some(ref env_vars) = config.env_vars {
+            for var in env_vars {
+                hasher.update(var.as_bytes());
+            }
+        }
+        format!("exec:{:x}", hasher.finalize())
+    }
+
+    /// Check if function is deterministic (can be cached)
+    fn is_deterministic(&self, config: &SandboxConfig) -> bool {
+        // Functions are deterministic if they don't:
+        // - Access network
+        // - Use random numbers
+        // - Access current time
+        // - Have side effects
+
+        // For now, only cache specific whitelisted patterns
+        config.source.contains("compiler") ||
+        config.source.contains("transformer") ||
+        config.source.contains("parser") ||
+        config.source.contains("validator")
+    }
+
     async fn check_environment_cache(&self, config: &SandboxConfig) -> anyhow::Result<bool> {
         let cache = self.environment_cache.read().await;
         Ok(cache.dev_environments.contains_key(&config.source))
+    }
+
+    async fn execute_from_cache_with_strategy(
+        &self,
+        config: &SandboxConfig,
+        _request_id: &str,
+        strategy: &ExecutionStrategy,
+    ) -> anyhow::Result<InvocationResult> {
+        // Ultra-fast execution using pre-warmed containers
+        info!("Using warm container for instant execution...");
+
+        match strategy {
+            ExecutionStrategy::Container(container_strategy) => {
+                self.execute_with_warm_container(config, container_strategy)
+                    .await
+            }
+            ExecutionStrategy::MicroVM(microvm_strategy) => {
+                // MicroVMs don't support warm pools in the same way, use cold start
+                if let Some(firecracker) = &microvm_strategy.firecracker_executor {
+                    info!("Executing with Firecracker microVM (from cache)");
+                    firecracker
+                        .execute(config.clone())
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                } else {
+                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                }
+            }
+            ExecutionStrategy::Hybrid(_) => {
+                unreachable!("Hybrid strategy should select concrete strategy before execution")
+            }
+        }
     }
 
     async fn execute_from_cache(
@@ -862,14 +1116,75 @@ impl Executor {
                 self.execute_with_warm_container(config, container_strategy)
                     .await
             }
-            _ => {
-                // Fallback for other strategies
-                Ok(InvocationResult {
-                    request_id: Uuid::new_v4().to_string(),
-                    response: Some(b"Warm execution result".to_vec()),
-                    logs: Some("Executed from cached environment".to_string()),
-                    error: None,
-                })
+            ExecutionStrategy::MicroVM(microvm_strategy) => {
+                // MicroVMs don't support warm pools in the same way, use cold start
+                if let Some(firecracker) = &microvm_strategy.firecracker_executor {
+                    info!("Executing with Firecracker microVM (from cache)");
+                    firecracker
+                        .execute(config.clone())
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                } else {
+                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                }
+            }
+            ExecutionStrategy::Hybrid(_) => {
+                unreachable!("Hybrid strategy should select concrete strategy before execution")
+            }
+        }
+    }
+
+    async fn execute_cold_start_with_strategy(
+        &self,
+        config: &SandboxConfig,
+        _request_id: &str,
+        strategy: &ExecutionStrategy,
+    ) -> anyhow::Result<InvocationResult> {
+        info!("Performing cold start execution...");
+
+        match strategy {
+            ExecutionStrategy::Container(container_strategy) => {
+                // Try to get a warm container first, fall back to cold start
+                match self
+                    .try_get_warm_container(&config.source, container_strategy)
+                    .await
+                {
+                    Some(warm_container) => {
+                        info!("Found warm container, using it for 'cold' start");
+                        self.execute_with_existing_container(
+                            config,
+                            &warm_container.container_id,
+                            container_strategy,
+                        )
+                        .await
+                    }
+                    None => {
+                        // True cold start - delegate to DockerExecutor
+                        info!("No warm container available, creating new one");
+                        let docker_executor =
+                            crate::DockerExecutor::new(container_strategy.docker.clone());
+                        docker_executor
+                            .execute(config.clone())
+                            .await
+                            .map_err(|e| anyhow::anyhow!("Execution failed: {}", e))
+                    }
+                }
+            }
+            ExecutionStrategy::MicroVM(microvm_strategy) => {
+                // Use Firecracker if available, otherwise return error
+                if let Some(firecracker) = &microvm_strategy.firecracker_executor {
+                    info!("Executing with Firecracker microVM");
+                    firecracker
+                        .execute(config.clone())
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                } else {
+                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                }
+            }
+            ExecutionStrategy::Hybrid(_) => {
+                // Hybrid should have already selected a specific strategy
+                unreachable!("Hybrid strategy should select concrete strategy before execution")
             }
         }
     }
@@ -909,12 +1224,22 @@ impl Executor {
                     }
                 }
             }
-            _ => Ok(InvocationResult {
-                request_id: Uuid::new_v4().to_string(),
-                response: Some(b"Cold execution result".to_vec()),
-                logs: Some("Executed via cold start".to_string()),
-                error: None,
-            }),
+            ExecutionStrategy::MicroVM(microvm_strategy) => {
+                // Use Firecracker if available, otherwise return error
+                if let Some(firecracker) = &microvm_strategy.firecracker_executor {
+                    info!("Executing with Firecracker microVM");
+                    firecracker
+                        .execute(config.clone())
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                } else {
+                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                }
+            }
+            ExecutionStrategy::Hybrid(_) => {
+                // Hybrid should have already selected a specific strategy
+                unreachable!("Hybrid strategy should select concrete strategy before execution")
+            }
         }
     }
 
@@ -924,7 +1249,33 @@ impl Executor {
         config: &SandboxConfig,
         strategy: &ContainerStrategy,
     ) -> anyhow::Result<InvocationResult> {
-        // Try to get a warm container
+        // Use high-performance pool manager if available
+        if let Some(pool_manager) = &strategy.pool_manager {
+            match pool_manager.acquire(&config.source).await {
+                Ok(pooled_container) => {
+                    info!("Acquired pooled container {} in {}ms",
+                          pooled_container.container_id,
+                          pooled_container.startup_time_ms);
+
+                    let result = self.execute_with_existing_container(
+                        config,
+                        &pooled_container.container_id,
+                        strategy
+                    ).await;
+
+                    // Release container back to pool
+                    let _ = pool_manager.release(pooled_container).await;
+
+                    return result;
+                }
+                Err(e) => {
+                    warn!("Failed to acquire from pool: {}", e);
+                    // Fall through to legacy warm pool
+                }
+            }
+        }
+
+        // Fallback to legacy warm pool
         match self.try_get_warm_container(&config.source, strategy).await {
             Some(warm_container) => {
                 info!("Reusing warm container: {}", warm_container.container_id);
@@ -1173,6 +1524,9 @@ enum RoutingCondition {
     CommandContains(String),
     PayloadSizeAbove(usize),
     RequiresIsolation(bool),
+    RequiresSecurity,
+    HighPerformance,
+    RequiresWarmPool,
 }
 
 impl RoutingRule {
@@ -1184,6 +1538,23 @@ impl RoutingRule {
             }
             RoutingCondition::PayloadSizeAbove(size) => config.payload.len() > *size,
             RoutingCondition::RequiresIsolation(_) => false, // Implement based on security requirements
+            RoutingCondition::RequiresSecurity => {
+                // Security-sensitive workloads: crypto, auth, sensitive data processing
+                config.source.contains("secure") ||
+                config.function_id.contains("auth") ||
+                config.function_id.contains("crypto")
+            }
+            RoutingCondition::HighPerformance => {
+                // High-performance workloads: compute-intensive, ML inference
+                config.source.contains("gpu") ||
+                config.source.contains("ml") ||
+                config.function_id.contains("compute")
+            }
+            RoutingCondition::RequiresWarmPool => {
+                // Workloads that benefit from warm pools: frequent calls, low latency
+                !config.function_id.contains("batch") &&
+                !config.function_id.contains("cron")
+            }
         }
     }
 }

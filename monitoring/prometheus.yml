@@ -1,0 +1,98 @@
+# Prometheus configuration for FaaS Platform monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'faas-production'
+    environment: 'prod'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "faas_alerts.yml"
+  - "system_alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # FaaS Platform metrics
+  - job_name: 'faas-platform'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    params:
+      format: ['prometheus']
+
+  # FaaS Gateway metrics
+  - job_name: 'faas-gateway'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['faas-gateway-1:8080', 'faas-gateway-2:8080', 'faas-gateway-3:8080']
+    metrics_path: /api/v1/metrics/prometheus
+    scrape_timeout: 10s
+
+  # FaaS Executor metrics
+  - job_name: 'faas-executor'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['faas-executor-1:9091', 'faas-executor-2:9091', 'faas-executor-3:9091']
+    metrics_path: /metrics
+
+  # Docker daemon metrics
+  - job_name: 'docker'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['docker-exporter:9323']
+
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # cAdvisor for container metrics
+  - job_name: 'cadvisor'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['cadvisor:8080']
+    metrics_path: /metrics
+
+  # Application health checks
+  - job_name: 'faas-health'
+    scrape_interval: 30s
+    metrics_path: /health
+    static_configs:
+      - targets: ['faas-gateway-1:8080', 'faas-gateway-2:8080', 'faas-gateway-3:8080']
+
+  # Redis metrics (if using Redis for caching)
+  - job_name: 'redis'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # PostgreSQL metrics (if using PostgreSQL for persistence)
+  - job_name: 'postgres'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+# Remote write configuration for long-term storage
+remote_write:
+  - url: "https://prometheus-remote-write-endpoint/api/v1/write"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500
+
+# Storage configuration
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 50GB

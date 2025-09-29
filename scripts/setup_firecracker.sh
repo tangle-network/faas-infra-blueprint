@@ -68,14 +68,48 @@ sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 sudo iptables -A FORWARD -i tap0 -o eth0 -j ACCEPT
 
-# Check KVM access
+# Install KVM if not present
 if [ ! -e /dev/kvm ]; then
-    echo "❌ /dev/kvm not found. KVM acceleration required."
-    echo "Enable virtualization in BIOS and run: sudo modprobe kvm"
-    exit 1
+    echo "📦 Installing KVM..."
+
+    # Detect distribution
+    if [ -f /etc/debian_version ]; then
+        # Debian/Ubuntu
+        sudo apt-get update
+        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils cpu-checker
+    elif [ -f /etc/redhat-release ]; then
+        # RHEL/CentOS/Fedora
+        sudo yum install -y qemu-kvm libvirt libvirt-python libguestfs-tools virt-install
+    elif [ -f /etc/arch-release ]; then
+        # Arch Linux
+        sudo pacman -S --noconfirm qemu libvirt virt-manager
+    else
+        echo "⚠️  Unsupported distribution. Please install KVM manually:"
+        echo "   Ubuntu/Debian: apt-get install qemu-kvm"
+        echo "   RHEL/Fedora: yum install qemu-kvm"
+        echo "   Arch: pacman -S qemu"
+    fi
+
+    # Load KVM modules
+    sudo modprobe kvm
+    sudo modprobe kvm_intel 2>/dev/null || sudo modprobe kvm_amd 2>/dev/null
+
+    # Verify KVM is available
+    if [ ! -e /dev/kvm ]; then
+        echo "❌ KVM installation failed. Check if virtualization is enabled in BIOS."
+        echo "   Run: egrep -c '(vmx|svm)' /proc/cpuinfo"
+        echo "   If output is 0, virtualization is disabled in BIOS."
+        exit 1
+    fi
+fi
+
+# Check KVM acceleration
+if command -v kvm-ok &> /dev/null; then
+    kvm-ok || echo "⚠️  KVM acceleration may not be fully functional"
 fi
 
 sudo chmod 666 /dev/kvm
+echo "✅ KVM is available and configured"
 
 # Verify installation
 if /usr/local/bin/firecracker --version; then

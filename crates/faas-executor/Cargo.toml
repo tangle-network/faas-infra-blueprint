@@ -42,9 +42,15 @@ ignore = { workspace = true }
 glob = { workspace = true }
 filetime = { workspace = true }
 tar = { workspace = true }
+bloom = "0.3"
 rand = { workspace = true }
 ring = { workspace = true }
 ssh-key = { workspace = true }
+dashmap = "5.5"
+bincode = "1.3"
+lz4_flex = "0.11"
+md5 = "0.7"
+libc = "0.2"
 
 [dev-dependencies]
 bollard = { workspace = true }

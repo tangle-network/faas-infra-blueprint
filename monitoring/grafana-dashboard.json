@@ -1,0 +1,402 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "FaaS Platform Dashboard",
+    "tags": ["faas", "serverless", "production"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "schemaVersion": 30,
+    "version": 1,
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Platform Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"faas-platform\"}",
+            "legendFormat": "Platform Status"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            },
+            "mappings": [
+              {"options": {"0": {"text": "Down"}}, "type": "value"},
+              {"options": {"1": {"text": "Up"}}, "type": "value"}
+            ]
+          }
+        },
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Total Executions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(faas_executions_total)",
+            "legendFormat": "Total Executions"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Execution Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(faas_executions_total[5m])",
+            "legendFormat": "Executions/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Error Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(faas_executions_total{status=\"failed\"}[5m]) / rate(faas_executions_total[5m]) * 100",
+            "legendFormat": "Error Rate %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Average Latency",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, rate(faas_execution_duration_seconds_bucket[5m]))",
+            "legendFormat": "P50 Latency"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0}
+      },
+      {
+        "id": 6,
+        "title": "Cache Hit Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "faas_cache_hit_rate * 100",
+            "legendFormat": "Cache Hit Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 30},
+                {"color": "green", "value": 70}
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0}
+      },
+      {
+        "id": 7,
+        "title": "Execution Rate Over Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(faas_executions_total[5m])",
+            "legendFormat": "{{instance}} - Total"
+          },
+          {
+            "expr": "rate(faas_executions_total{status=\"success\"}[5m])",
+            "legendFormat": "{{instance}} - Success"
+          },
+          {
+            "expr": "rate(faas_executions_total{status=\"failed\"}[5m])",
+            "legendFormat": "{{instance}} - Failed"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Executions per second",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "id": 8,
+        "title": "Execution Latency Distribution",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(faas_execution_duration_seconds_bucket[5m]))",
+            "legendFormat": "P50"
+          },
+          {
+            "expr": "histogram_quantile(0.90, rate(faas_execution_duration_seconds_bucket[5m]))",
+            "legendFormat": "P90"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(faas_execution_duration_seconds_bucket[5m]))",
+            "legendFormat": "P95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(faas_execution_duration_seconds_bucket[5m]))",
+            "legendFormat": "P99"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Latency (seconds)",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "id": 9,
+        "title": "Resource Utilization",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "faas_cpu_usage_percent",
+            "legendFormat": "{{instance}} - CPU %"
+          },
+          {
+            "expr": "faas_memory_usage_percent",
+            "legendFormat": "{{instance}} - Memory %"
+          },
+          {
+            "expr": "faas_disk_usage_percent",
+            "legendFormat": "{{instance}} - Disk %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "min": 0,
+            "max": 100
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "id": 10,
+        "title": "Container Pool Status",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "faas_total_containers",
+            "legendFormat": "Total Containers"
+          },
+          {
+            "expr": "faas_available_containers",
+            "legendFormat": "Available Containers"
+          },
+          {
+            "expr": "faas_active_containers",
+            "legendFormat": "Active Containers"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Count",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      },
+      {
+        "id": 11,
+        "title": "Runtime Distribution",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (runtime) (increase(faas_executions_total[1h]))",
+            "legendFormat": "{{runtime}}"
+          }
+        ],
+        "options": {
+          "pieType": "pie",
+          "displayLabels": ["name", "percent"]
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 20}
+      },
+      {
+        "id": 12,
+        "title": "Top Images by Usage",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(10, sum by (image) (increase(faas_executions_total[1h])))",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "displayMode": "basic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 20}
+      },
+      {
+        "id": 13,
+        "title": "Queue Depth",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "faas_execution_queue_depth",
+            "legendFormat": "{{instance}} - Queue Depth"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Queue Size",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 20}
+      },
+      {
+        "id": 14,
+        "title": "Security Metrics",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(faas_auth_failures_total[5m])",
+            "legendFormat": "Auth Failures/sec"
+          },
+          {
+            "expr": "rate(faas_rate_limit_exceeded_total[5m])",
+            "legendFormat": "Rate Limit Exceeded/sec"
+          },
+          {
+            "expr": "rate(faas_security_violations_total[5m])",
+            "legendFormat": "Security Violations/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Events per second",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28}
+      },
+      {
+        "id": 15,
+        "title": "Network Metrics",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(faas_network_bytes_transmitted_total[5m])",
+            "legendFormat": "Bytes Transmitted/sec"
+          },
+          {
+            "expr": "rate(faas_network_bytes_received_total[5m])",
+            "legendFormat": "Bytes Received/sec"
+          },
+          {
+            "expr": "faas_network_latency_seconds",
+            "legendFormat": "Network Latency"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Bytes per second / Latency",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28}
+      }
+    ],
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "Prometheus",
+          "enable": true,
+          "expr": "resets(faas_build_info[5m])",
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "titleFormat": "Deployment"
+        }
+      ]
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(faas_executions_total, instance)",
+          "refresh": 1,
+          "includeAll": true,
+          "allValue": ".*"
+        },
+        {
+          "name": "runtime",
+          "type": "query",
+          "query": "label_values(faas_executions_total, runtime)",
+          "refresh": 1,
+          "includeAll": true,
+          "allValue": ".*"
+        }
+      ]
+    }
+  }
+}

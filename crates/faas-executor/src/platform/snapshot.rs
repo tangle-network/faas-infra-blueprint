@@ -34,17 +34,30 @@ struct FirecrackerSnapshots {
 
 impl SnapshotStore {
     pub async fn new() -> Result<Self> {
-        let storage_path = PathBuf::from("/var/lib/faas/snapshots");
-        tokio::fs::create_dir_all(&storage_path).await?;
+        // Use temp directory if /var/lib/faas is not writable (e.g., in tests)
+        let storage_path = if tokio::fs::create_dir_all("/var/lib/faas/snapshots").await.is_ok() {
+            PathBuf::from("/var/lib/faas/snapshots")
+        } else {
+            let temp_dir = std::env::temp_dir().join("faas-snapshots");
+            tokio::fs::create_dir_all(&temp_dir).await?;
+            temp_dir
+        };
 
-        // Initialize real CRIU manager
+        // Initialize real CRIU manager (optional - fallback to stub if CRIU not available)
         let criu_config = CriuConfig {
             images_directory: storage_path.join("criu/images"),
             log_file: Some(storage_path.join("criu/logs")),
             ..Default::default()
         };
 
-        let criu = Arc::new(CriuManager::new(criu_config).await?);
+        let criu = match CriuManager::new(criu_config).await {
+            Ok(manager) => Arc::new(manager),
+            Err(e) => {
+                tracing::warn!("CRIU not available: {}, using stub implementation", e);
+                // Create a stub that will return errors when used
+                Arc::new(CriuManager::stub())
+            }
+        };
 
         Ok(Self {
             snapshots: Arc::new(RwLock::new(HashMap::new())),

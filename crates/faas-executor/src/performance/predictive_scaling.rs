@@ -4,12 +4,20 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
+use tracing::info;
 
 /// Predictive scaling system using ML-based load forecasting
 pub struct PredictiveScaler {
     patterns: Arc<RwLock<HashMap<String, UsagePattern>>>,
     config: ScalingConfig,
     predictor: LoadPredictor,
+    history: HashMap<String, HashMap<String, Vec<HistoryEntry>>>,
+}
+
+#[derive(Debug, Clone)]
+struct HistoryEntry {
+    timestamp: Instant,
+    count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +116,7 @@ impl PredictiveScaler {
             patterns: Arc::new(RwLock::new(HashMap::new())),
             config,
             predictor: LoadPredictor::new(),
+            history: HashMap::new(),
         }
     }
 
@@ -396,10 +405,59 @@ impl PredictiveScaler {
         Ok(())
     }
 
-    async fn calculate_historical_accuracy(&self, _pattern: &UsagePattern) -> Result<f64> {
-        // Calculate how accurate past predictions were
-        // For now, return a placeholder value
-        Ok(0.85) // 85% accuracy
+    async fn calculate_historical_accuracy(&self, pattern: &UsagePattern) -> Result<f64> {
+        let history = &self.history;
+
+        if history.is_empty() {
+            return Ok(0.0); // No history to calculate accuracy from
+        }
+
+        let mut correct_predictions = 0;
+        let mut total_predictions = 0;
+        let now = Instant::now();
+
+        // Look at patterns from the last hour to calculate accuracy
+        for (env, data) in history.iter() {
+            if let Some(latest_entries) = data.get(pattern.environment.as_str()) {
+                for entry in latest_entries.iter().rev().take(12) { // Last 12 5-minute intervals
+                    if now.duration_since(entry.timestamp) < Duration::from_secs(3600) {
+                        total_predictions += 1;
+
+                        // Compare predicted vs actual load
+                        let predicted_load = entry.count as f64;
+                        let actual_load = self.get_current_load_for_env(&pattern.environment).await.unwrap_or(0.0);
+
+                        // Consider prediction correct if within 25% of actual
+                        let error_rate = (predicted_load - actual_load).abs() / actual_load.max(1.0);
+                        if error_rate <= 0.25 {
+                            correct_predictions += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if total_predictions == 0 {
+            Ok(0.5) // Default 50% accuracy for new environments
+        } else {
+            let accuracy = correct_predictions as f64 / total_predictions as f64;
+            info!("Historical accuracy for {}: {:.2}% ({}/{})",
+                pattern.environment, accuracy * 100.0, correct_predictions, total_predictions);
+            Ok(accuracy)
+        }
+    }
+
+    /// Get current load for a specific environment
+    async fn get_current_load_for_env(&self, env: &str) -> Result<f64> {
+        // In production this would query actual metrics
+        // For now, simulate based on environment activity
+        let load = match env {
+            env_name if env_name.contains("prod") => 0.8,
+            env_name if env_name.contains("dev") => 0.3,
+            env_name if env_name.contains("test") => 0.1,
+            _ => 0.5,
+        };
+        Ok(load)
     }
 
     async fn get_current_instances(&self, _environment: &str) -> Result<usize> {

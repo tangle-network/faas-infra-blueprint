@@ -1,0 +1,8 @@
+[package]
+name = "quickstart-advanced"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+faas-client-sdk = { path = "../../crates/faas-sdk" }
+tokio = { version = "1.44", features = ["full"] }

@@ -60,6 +60,15 @@ impl Default for CriuConfig {
 }
 
 impl CriuManager {
+    /// Create a stub CRIU manager for when CRIU is not available
+    pub fn stub() -> Self {
+        Self {
+            binary_path: PathBuf::from("criu-stub"),
+            work_directory: std::env::temp_dir().join("criu-stub"),
+            config: CriuConfig::default(),
+        }
+    }
+
     /// Create new CRIU manager with real binary validation
     pub async fn new(config: CriuConfig) -> Result<Self> {
         let binary_path = Self::find_criu_binary().await?;

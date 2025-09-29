@@ -475,16 +475,66 @@ impl MetricsCollector {
     }
 
     async fn collect_system_resources() -> Result<ResourcePoint> {
-        // In production, this would use system APIs to get actual resource usage
-        // For now, we'll simulate with realistic values
+        // Collect real system metrics
+        let mut cpu_percent = 0.0;
+        let mut memory_mb = 0;
+
+        // Get CPU usage (macOS and Linux compatible)
+        #[cfg(unix)]
+        {
+            if let Ok(output) = tokio::process::Command::new("ps")
+                .args(&["aux"])
+                .output()
+                .await
+            {
+                let text = String::from_utf8_lossy(&output.stdout);
+                // Sum up CPU percentages for our process and Docker
+                for line in text.lines() {
+                    if line.contains("docker") || line.contains("faas") {
+                        if let Some(cpu_str) = line.split_whitespace().nth(2) {
+                            cpu_percent += cpu_str.parse::<f64>().unwrap_or(0.0);
+                        }
+                    }
+                }
+            }
+
+            // Get memory usage
+            if let Ok(output) = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg("ps aux | grep -E 'docker|faas' | awk '{sum+=$6} END {print sum/1024}'")
+                .output()
+                .await
+            {
+                let text = String::from_utf8_lossy(&output.stdout);
+                memory_mb = text.trim().parse::<u64>().unwrap_or(0);
+            }
+        }
+
+        // Get Docker container count
+        let active_containers = if let Ok(output) = tokio::process::Command::new("docker")
+            .args(&["ps", "-q"])
+            .output()
+            .await
+        {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter(|l| !l.is_empty())
+                .count() as u32
+        } else {
+            0
+        };
+
+        // Get disk and network I/O metrics from /proc/diskstats and /proc/net/dev on Linux
+        let disk_io_mb = Self::get_disk_io_mb_static().await;
+        let network_io_mb = Self::get_network_io_mb_static().await;
 
         Ok(ResourcePoint {
             timestamp: SystemTime::now(),
-            cpu_percent: 15.0, // 15% CPU usage
-            memory_mb: 512,    // 512MB memory usage
-            disk_io_mb: 5,     // 5MB/s disk I/O
-            network_io_mb: 2,  // 2MB/s network I/O
-            active_containers: 3,
+            cpu_percent,
+            memory_mb,
+            disk_io_mb,
+            network_io_mb,
+            active_containers,
         })
     }
 
@@ -573,6 +623,82 @@ impl MetricsCollector {
     {
         let cutoff = SystemTime::now() - retention;
         history.retain(|item| item.timestamp() > cutoff);
+    }
+
+    async fn get_disk_io_mb(&self) -> u64 {
+        // Read disk I/O stats from /proc/diskstats on Linux
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(contents) = tokio::fs::read_to_string("/proc/diskstats").await {
+                let mut total_sectors = 0u64;
+                for line in contents.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 14 {
+                        // Sum up read and write sectors (columns 5 and 9)
+                        if let (Ok(read_sectors), Ok(write_sectors)) =
+                            (parts[5].parse::<u64>(), parts[9].parse::<u64>())
+                        {
+                            total_sectors += read_sectors + write_sectors;
+                        }
+                    }
+                }
+                // Convert sectors to MB (typically 512 bytes per sector)
+                return total_sectors * 512 / (1024 * 1024);
+            }
+        }
+        0
+    }
+
+    async fn get_network_io_mb(&self) -> u64 {
+        Self::get_network_io_mb_static().await
+    }
+
+    async fn get_disk_io_mb_static() -> u64 {
+        // Read disk I/O stats from /proc/diskstats on Linux
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(contents) = tokio::fs::read_to_string("/proc/diskstats").await {
+                let mut total_sectors = 0u64;
+                for line in contents.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 14 {
+                        // Sum up read and write sectors (columns 5 and 9)
+                        if let (Ok(read_sectors), Ok(write_sectors)) =
+                            (parts[5].parse::<u64>(), parts[9].parse::<u64>())
+                        {
+                            total_sectors += read_sectors + write_sectors;
+                        }
+                    }
+                }
+                // Convert sectors to MB (typically 512 bytes per sector)
+                return total_sectors * 512 / (1024 * 1024);
+            }
+        }
+        0
+    }
+
+    async fn get_network_io_mb_static() -> u64 {
+        // Read network I/O stats from /proc/net/dev on Linux
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(contents) = tokio::fs::read_to_string("/proc/net/dev").await {
+                let mut total_bytes = 0u64;
+                for line in contents.lines().skip(2) {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 10 {
+                        // Sum up received and transmitted bytes (columns 1 and 9)
+                        if let (Ok(rx_bytes), Ok(tx_bytes)) =
+                            (parts[1].parse::<u64>(), parts[9].parse::<u64>())
+                        {
+                            total_bytes += rx_bytes + tx_bytes;
+                        }
+                    }
+                }
+                // Convert to MB
+                return total_bytes / (1024 * 1024);
+            }
+        }
+        0
     }
 }
 

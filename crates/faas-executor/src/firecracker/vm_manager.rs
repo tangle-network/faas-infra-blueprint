@@ -83,6 +83,7 @@ pub struct VmInstance {
     pub api_socket: PathBuf,
     pub metrics: VmMetrics,
     pub state: VmState,
+    pub vsock_cid: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -358,6 +359,9 @@ impl FirecrackerManager {
         // Configure VM via API
         self.configure_vm_api(&api_socket, &config).await?;
 
+        // Assign vsock CID for real VM communication (incremental starting from 3)
+        let vsock_cid = 3 + (self.vms.read().await.len() as u32);
+
         // Create VM instance
         let instance = VmInstance {
             id: vm_id.clone(),
@@ -372,6 +376,7 @@ impl FirecrackerManager {
                 network_tx_bytes: 0,
             },
             state: VmState::Running,
+            vsock_cid: Some(vsock_cid),
         };
 
         // Store VM
@@ -574,6 +579,46 @@ impl FirecrackerManager {
             rng.gen::<u8>(),
             rng.gen::<u8>()
         )
+    }
+
+    pub async fn execute_in_vm(&self, vm_id: &str, config: &faas_common::SandboxConfig) -> Result<Vec<u8>> {
+        // Execute command in VM via serial console
+        let vms = self.vms.read().await;
+
+        if let Some(vm_arc) = vms.get(vm_id) {
+            let vm = vm_arc.read().await;
+
+            if vm.state != VmState::Running {
+                return Err(anyhow::anyhow!("VM {} is not running", vm_id));
+            }
+
+            // Use real vsock/serial communication instead of simulation
+            let comm_config = crate::firecracker::communication::CommunicationConfig {
+                vsock_cid: vm.vsock_cid,
+                serial_device: Some(format!("/tmp/firecracker-{}-console.sock", vm_id)),
+                ssh_config: None,
+                timeout: std::time::Duration::from_secs(30),
+                retry_attempts: 3,
+                retry_delay: std::time::Duration::from_millis(100),
+            };
+
+            let executor = crate::firecracker::communication::VmCommandExecutor::new(comm_config);
+
+            // Execute command via real VM communication
+            match executor.execute(config).await {
+                Ok(output) => {
+                    info!("Command executed successfully in VM {} via real communication", vm_id);
+                    Ok(output)
+                },
+                Err(e) => {
+                    warn!("VM communication failed for {}, error: {}", vm_id, e);
+                    // Return error instead of fallback simulation
+                    Err(anyhow::anyhow!("VM communication failed: {}", e))
+                }
+            }
+        } else {
+            Err(anyhow::anyhow!("VM {} not found", vm_id))
+        }
     }
 
     /// Stop a VM

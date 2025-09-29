@@ -1,11 +1,12 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher, DefaultHasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
+use bloom::{BloomFilter, ASMS};
 
 /// Multi-layer cache manager for maximum performance
 /// Implements L1 (memory) -> L2 (disk) -> L3 (distributed) hierarchy
@@ -14,6 +15,8 @@ pub struct CacheManager {
     l2_cache: Arc<RwLock<DiskCache>>,
     strategy: CacheStrategy,
     metrics: Arc<RwLock<CacheMetrics>>,
+    bloom_filter: Arc<RwLock<BloomFilter>>,
+    semantic_cache: Arc<RwLock<HashMap<u64, Vec<u8>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -115,12 +118,23 @@ impl CacheManager {
             )?)),
             strategy,
             metrics: Arc::new(RwLock::new(CacheMetrics::default())),
+            bloom_filter: Arc::new(RwLock::new(BloomFilter::with_rate(0.01, 100_000))),
+            semantic_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
-    /// Get data from cache with automatic promotion from L2 to L1
+    /// Get data from cache with Bloom filter pre-filtering
     pub async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
         let start = Instant::now();
+
+        // Check Bloom filter first to avoid expensive lookups
+        {
+            let bloom = self.bloom_filter.read().await;
+            if !bloom.contains(&key) {
+                self.record_miss(start.elapsed()).await;
+                return Ok(None);
+            }
+        }
 
         // Try L1 cache first
         if let Some(data) = self.get_from_l1(key).await? {
@@ -140,7 +154,26 @@ impl CacheManager {
         Ok(None)
     }
 
-    /// Put data into cache with intelligent placement
+    /// Get from semantic cache by content hash
+    pub async fn get_semantic(&self, content_hash: u64) -> Result<Option<Vec<u8>>> {
+        let semantic_cache = self.semantic_cache.read().await;
+        Ok(semantic_cache.get(&content_hash).cloned())
+    }
+
+    /// Compute semantic hash for request
+    pub fn compute_semantic_hash(&self, code: &str, env: &str, deps: &[String]) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        // Hash normalized code (remove whitespace differences)
+        let normalized_code = code.trim().replace([' ', '\t', '\n'], "");
+        normalized_code.hash(&mut hasher);
+        env.hash(&mut hasher);
+        for dep in deps {
+            dep.hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// Put data into cache with Bloom filter and semantic caching
     pub async fn put(
         &self,
         key: &str,
@@ -148,6 +181,12 @@ impl CacheManager {
         metadata: Option<CacheMetadata>,
     ) -> Result<()> {
         let metadata = metadata.unwrap_or_else(|| self.generate_metadata(&data));
+
+        // Update Bloom filter
+        {
+            let mut bloom = self.bloom_filter.write().await;
+            bloom.insert(&key);
+        }
 
         // Always put in L1 for immediate access
         self.put_to_l1_with_metadata(key, &data, metadata.clone())
@@ -161,6 +200,13 @@ impl CacheManager {
             let _ = l2_cache.write().await.put(&key, data_clone, metadata).await;
         });
 
+        Ok(())
+    }
+
+    /// Put data into semantic cache
+    pub async fn put_semantic(&self, content_hash: u64, data: Vec<u8>) -> Result<()> {
+        let mut semantic_cache = self.semantic_cache.write().await;
+        semantic_cache.insert(content_hash, data);
         Ok(())
     }
 
@@ -217,8 +263,7 @@ impl CacheManager {
             // Clone the data first
             let data = entry.data.as_ref().clone();
 
-            // Update frequency tracking (drop mutable borrow of entry first)
-            drop(entry);
+            // Update frequency tracking
             *cache.frequency.entry(key.to_string()).or_insert(0) += 1;
 
             // Update LRU order
@@ -442,6 +487,8 @@ impl Clone for CacheManager {
             l2_cache: self.l2_cache.clone(),
             strategy: self.strategy.clone(),
             metrics: self.metrics.clone(),
+            bloom_filter: self.bloom_filter.clone(),
+            semantic_cache: self.semantic_cache.clone(),
         }
     }
 }

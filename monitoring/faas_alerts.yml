@@ -1,0 +1,286 @@
+# FaaS Platform specific alerting rules
+
+groups:
+  - name: faas_platform_alerts
+    rules:
+      # High-level service availability
+      - alert: FaaSPlatformDown
+        expr: up{job="faas-platform"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "FaaS Platform is down"
+          description: "FaaS Platform {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: FaaSGatewayDown
+        expr: up{job="faas-gateway"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "FaaS Gateway is down"
+          description: "FaaS Gateway {{ $labels.instance }} has been down for more than 30 seconds."
+
+      # Performance alerts
+      - alert: HighExecutionLatency
+        expr: faas_execution_duration_seconds{quantile="0.95"} > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High execution latency detected"
+          description: "95th percentile execution latency is {{ $value }}s for more than 5 minutes."
+
+      - alert: VeryHighExecutionLatency
+        expr: faas_execution_duration_seconds{quantile="0.95"} > 30
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Very high execution latency detected"
+          description: "95th percentile execution latency is {{ $value }}s for more than 2 minutes."
+
+      # Error rate alerts
+      - alert: HighErrorRate
+        expr: rate(faas_executions_total{status="failed"}[5m]) / rate(faas_executions_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for more than 3 minutes."
+
+      - alert: CriticalErrorRate
+        expr: rate(faas_executions_total{status="failed"}[5m]) / rate(faas_executions_total[5m]) > 0.15
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for more than 1 minute."
+
+      # Resource utilization alerts
+      - alert: HighCPUUsage
+        expr: faas_cpu_usage_percent > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }} for more than 10 minutes."
+
+      - alert: CriticalCPUUsage
+        expr: faas_cpu_usage_percent > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }} for more than 2 minutes."
+
+      - alert: HighMemoryUsage
+        expr: faas_memory_usage_percent > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }} for more than 5 minutes."
+
+      - alert: CriticalMemoryUsage
+        expr: faas_memory_usage_percent > 95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }} for more than 1 minute."
+
+      # Container/VM pool alerts
+      - alert: LowContainerPoolSize
+        expr: faas_available_containers < 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low container pool size"
+          description: "Available containers: {{ $value }}. Pool size is critically low."
+
+      - alert: NoContainersAvailable
+        expr: faas_available_containers == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "No containers available"
+          description: "No containers available in the pool. New executions will be delayed."
+
+      - alert: HighContainerCreationFailures
+        expr: rate(faas_container_creation_failures_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High container creation failure rate"
+          description: "Container creation failure rate is {{ $value }} failures/sec for more than 3 minutes."
+
+      # Execution queue alerts
+      - alert: HighExecutionQueueDepth
+        expr: faas_execution_queue_depth > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High execution queue depth"
+          description: "Execution queue depth is {{ $value }} for more than 2 minutes."
+
+      - alert: CriticalExecutionQueueDepth
+        expr: faas_execution_queue_depth > 500
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical execution queue depth"
+          description: "Execution queue depth is {{ $value }}. System is severely overloaded."
+
+      # Cache performance alerts
+      - alert: LowCacheHitRate
+        expr: faas_cache_hit_rate < 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} for more than 10 minutes."
+
+      - alert: CacheSystemDown
+        expr: faas_cache_available == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Cache system is down"
+          description: "Cache system is unavailable. Performance will be degraded."
+
+      # Security alerts
+      - alert: HighAuthenticationFailures
+        expr: rate(faas_auth_failures_total[1m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Authentication failure rate is {{ $value }} failures/min for more than 1 minute."
+
+      - alert: SecurityViolation
+        expr: increase(faas_security_violations_total[1m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Security violation detected"
+          description: "{{ $value }} security violation(s) detected in the last minute."
+
+      - alert: RateLimitExceeded
+        expr: rate(faas_rate_limit_exceeded_total[1m]) > 50
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate limit violations"
+          description: "Rate limit exceeded {{ $value }} times/min for more than 2 minutes."
+
+      # Storage alerts
+      - alert: HighDiskUsage
+        expr: faas_disk_usage_percent > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }} for more than 5 minutes."
+
+      - alert: CriticalDiskUsage
+        expr: faas_disk_usage_percent > 95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk usage"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}. Immediate action required."
+
+      # Runtime-specific alerts
+      - alert: DockerDaemonDown
+        expr: faas_docker_daemon_available == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Docker daemon is down"
+          description: "Docker daemon is not available. Container executions will fail."
+
+      - alert: FirecrackerUnavailable
+        expr: faas_firecracker_available == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Firecracker runtime unavailable"
+          description: "Firecracker runtime is not available. Falling back to Docker."
+
+      # Network alerts
+      - alert: HighNetworkLatency
+        expr: faas_network_latency_seconds > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High network latency"
+          description: "Network latency is {{ $value }}s for more than 5 minutes."
+
+      - alert: NetworkConnectivityIssues
+        expr: rate(faas_network_errors_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network connectivity issues"
+          description: "Network error rate is {{ $value }} errors/sec for more than 3 minutes."
+
+  - name: faas_business_metrics
+    rules:
+      # Business metric alerts
+      - alert: LowThroughput
+        expr: rate(faas_executions_total[5m]) < 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low execution throughput"
+          description: "Execution throughput is {{ $value }} executions/sec for more than 10 minutes."
+
+      - alert: UnusualTrafficPattern
+        expr: |
+          (
+            rate(faas_executions_total[5m]) >
+            (avg_over_time(rate(faas_executions_total[5m])[1h:5m]) + 3 * stddev_over_time(rate(faas_executions_total[5m])[1h:5m]))
+          ) or (
+            rate(faas_executions_total[5m]) <
+            (avg_over_time(rate(faas_executions_total[5m])[1h:5m]) - 3 * stddev_over_time(rate(faas_executions_total[5m])[1h:5m]))
+          )
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusual traffic pattern detected"
+          description: "Current execution rate {{ $value }} deviates significantly from historical average."
+
+      - alert: ZeroExecutions
+        expr: rate(faas_executions_total[10m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No executions detected"
+          description: "No executions have been processed for more than 5 minutes."
