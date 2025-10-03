@@ -188,6 +188,10 @@ impl VmCommandExecutor {
             command: vec!["echo".to_string(), "test".to_string()],
             env_vars: None,
             payload: vec![],
+            runtime: Some(faas_common::Runtime::Firecracker),
+            execution_mode: None,
+            memory_limit: None,
+            timeout: Some(5000),  // 5 second timeout for test
         };
 
         match self.execute(&test_config).await {

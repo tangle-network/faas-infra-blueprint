@@ -1,11 +1,11 @@
 [package]
-name = "faas-showcase"
+name = "api-showcase"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-faas-client-sdk = { path = "../../crates/faas-sdk" }
-tokio = { version = "1.44", features = ["full"] }
+faas-sdk = { path = "../../crates/faas-sdk" }
+tokio = { workspace = true }
 
 [[bin]]
 name = "showcase"

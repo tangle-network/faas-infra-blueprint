@@ -657,7 +657,7 @@ export class FaaSClient extends EventEmitter {
     command: string,
     options?: Partial<Parameters<typeof this.execute>[0]>
   ): Promise<ExecutionResult> {
-    const response = await this.client.post('/api/v1/execute/advanced', {
+    const response = await this.client.post('/api/v1/execute', {
       command,
       mode: 'branched',
       branch_from: parentId,

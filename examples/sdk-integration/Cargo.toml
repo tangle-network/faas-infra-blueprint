@@ -1,18 +1,18 @@
 [package]
-name = "high-level-sdk"
+name = "sdk-integration"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 faas-executor = { path = "../../crates/faas-executor" }
 faas-common = { path = "../../crates/faas-common" }
-bollard = "0.18"
-tokio = { version = "1.44", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-uuid = { version = "1.10", features = ["v4"] }
+bollard = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
 futures = "0.3"
 
 [lib]
-name = "faas_sdk"
+name = "sdk_integration"
 path = "src/lib.rs"

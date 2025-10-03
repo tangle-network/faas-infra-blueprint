@@ -1,6 +1,6 @@
 //! Quickstart example - minimal working demo
 
-use faas_client_sdk::{FaasClient, ExecuteRequest};
+use faas_sdk::{FaasClient, ExecuteRequest};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,11 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = client.execute(ExecuteRequest {
         command: "echo Hello from FaaS!".to_string(),
         image: Some("alpine:latest".to_string()),
-        runtime: None,
-        env_vars: None,
-        working_dir: None,
-        timeout_ms: None,
-        cache_key: None,
+        ..Default::default()
     }).await?;
 
     println!("   Output: {}", result.stdout);
@@ -28,11 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = client.execute(ExecuteRequest {
         command: "wc -l".to_string(),
         image: Some("alpine:latest".to_string()),
-        runtime: None,
-        env_vars: None,
-        working_dir: None,
-        timeout_ms: None,
-        cache_key: None,
+        ..Default::default()
     }).await?;
 
     println!("   Line count: {}", result.stdout.trim());
@@ -42,11 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = client.execute(ExecuteRequest {
         command: "sh -c 'echo $MESSAGE'".to_string(),
         image: Some("alpine:latest".to_string()),
-        runtime: None,
         env_vars: Some(vec![("MESSAGE".to_string(), "FaaS Platform Works!".to_string())]),
-        working_dir: None,
-        timeout_ms: None,
-        cache_key: None,
+        ..Default::default()
     }).await?;
 
     println!("   Env output: {}", result.stdout);

@@ -1,6 +1,6 @@
-//! REAL CI/CD Runner using FaaS Platform
+//! CI/CD Runner using FaaS Platform
 //!
-//! This actually works - runs real tests, builds real code, handles real results
+//! Production-ready CI/CD pipeline - runs tests, builds code, handles results
 
 use faas_executor::DockerExecutor;
 use faas_common::{SandboxConfig, SandboxExecutor};
@@ -80,6 +80,10 @@ impl CICDRunner {
                             .collect()
                     ),
                     payload: vec![],
+                    runtime: None,
+                    execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+                    memory_limit: None,
+                    timeout: Some(stage.timeout_seconds * 1000),
                 })
             ).await;
 

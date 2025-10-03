@@ -3,7 +3,7 @@
 //! Demonstrates how to build complex, production-ready services
 //! using the actual FaaS platform APIs.
 
-use faas_client_sdk::{
+use faas_sdk::{
     FaasClient, ExecuteRequest, Runtime, ForkBranch,
 };
 use std::time::Instant;
@@ -97,6 +97,12 @@ async fn api_service_example(client: &FaasClient) -> Result<(), Box<dyn std::err
             working_dir: None,
             timeout_ms: Some(1000),
             cache_key: Some(format!("api-{}", endpoint)),
+            memory_mb: None,
+            cpu_cores: None,
+            snapshot_id: None,
+            branch_from: None,
+            mode: None,
+            payload: None,
         }).await?;
 
         println!("/{}: {} ({}ms, cached: {})",
@@ -125,11 +131,7 @@ console.log(JSON.stringify({ valid, input }));
     let base_execution = client.execute(ExecuteRequest {
         command: "echo 'base execution completed'".to_string(),
         image: Some("alpine:latest".to_string()),
-        runtime: None,
-        env_vars: None,
-        working_dir: None,
-        timeout_ms: None,
-        cache_key: None,
+        ..Default::default()
     }).await?;
 
     let payment_fork = client.fork_execution(&base_execution.request_id, "echo 'payment processed'").await?;
@@ -195,6 +197,12 @@ async fn performance_example(client: &FaasClient) -> Result<(), Box<dyn std::err
             working_dir: None,
             timeout_ms: Some(1000),
             cache_key: Some("warm-start-test".to_string()),
+            memory_mb: None,
+            cpu_cores: None,
+            snapshot_id: None,
+            branch_from: None,
+            mode: None,
+            payload: None,
         }).await?;
 
         println!("  Run {}: {}ms (cached: {})",
@@ -221,7 +229,7 @@ async fn monitoring_example(client: &FaasClient) -> Result<(), Box<dyn std::erro
     println!("  Memory usage: {}MB", metrics.memory_usage_mb);
 
     // Check platform health
-    let health = client.health().await?;
+    let health = client.health_check().await?;
     println!("\nHealth Status: {}", health.status);
 
     if let Some(components) = health.components {

@@ -1,18 +1,14 @@
-use crate::executor_wrapper::{ExecutionConfig, ExecutionResult};
 use crate::types::{Instance, Snapshot};
-use crate::{create_app, AppState};
+use crate::{AppState, ExecuteRequest, InvokeResponse, create_app};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
     Router,
 };
-use bollard::Docker;
 use dashmap::DashMap;
-use faas_executor::DockerExecutor;
-use faas_gateway::{ExecuteRequest, InvokeResponse};
+use faas_executor::platform::executor::Executor;
 use serde_json::json;
 use std::sync::Arc;
-use tower::ServiceExt;
 
 #[cfg(test)]
 mod gateway_tests {
@@ -88,7 +84,7 @@ mod gateway_tests {
                 .oneshot(
                     Request::builder()
                         .method("POST")
-                        .uri("/api/v1/execute/advanced")
+                        .uri("/api/v1/execute")
                         .header("content-type", "application/json")
                         .body(Body::from(request_body.to_string()))
                         .unwrap(),
@@ -315,14 +311,9 @@ mod gateway_tests {
 
     // Helper function to create test app
     async fn create_test_app() -> Router {
-        use crate::executor_wrapper::ExecutorWrapper;
-
-        let docker = Docker::connect_with_local_defaults().unwrap();
-        let executor = Arc::new(DockerExecutor::new(Arc::new(docker)));
-        let executor_wrapper = Arc::new(ExecutorWrapper::new(executor.clone()));
+        let executor = Arc::new(Executor::new().await.expect("Failed to create executor"));
 
         let state = AppState {
-            executor_wrapper,
             executor,
             instances: Arc::new(DashMap::new()),
             snapshots: Arc::new(DashMap::new()),
@@ -337,35 +328,43 @@ mod unit_tests {
     use super::*;
 
     #[test]
-    fn test_execution_config_creation() {
-        let config = ExecutionConfig {
-            image: "alpine:latest".to_string(),
+    fn test_execute_request_creation() {
+        let request = ExecuteRequest {
             command: "echo test".to_string(),
-            env_vars: vec![("KEY".to_string(), "value".to_string())],
-            working_dir: Some("/app".to_string()),
-            timeout: std::time::Duration::from_secs(30),
-            memory_limit: Some(1024),
-            cpu_limit: Some(1.5),
+            image: Some("alpine:latest".to_string()),
+            runtime: None,
+            mode: None,
+            timeout_ms: Some(30000),
+            memory_mb: None,
+            cpu_cores: None,
+            env_vars: None,
+            working_dir: None,
+            cache_key: None,
+            snapshot_id: None,
+            branch_from: None,
         };
 
-        assert_eq!(config.image, "alpine:latest");
-        assert_eq!(config.command, "echo test");
-        assert_eq!(config.env_vars.len(), 1);
-        assert_eq!(config.timeout.as_secs(), 30);
+        assert_eq!(request.image, Some("alpine:latest".to_string()));
+        assert_eq!(request.command, "echo test");
+        assert_eq!(request.timeout_ms, Some(30000));
     }
 
     #[test]
-    fn test_execution_result_creation() {
-        let result = ExecutionResult {
+    fn test_invoke_response_creation() {
+        let response = InvokeResponse {
+            request_id: "test-123".to_string(),
             exit_code: 0,
             stdout: "output".to_string(),
             stderr: String::new(),
-            duration: std::time::Duration::from_millis(100),
+            duration_ms: 100,
+            output: Some("output".to_string()),
+            logs: None,
+            error: None,
         };
 
-        assert_eq!(result.exit_code, 0);
-        assert_eq!(result.stdout, "output");
-        assert!(result.stderr.is_empty());
-        assert_eq!(result.duration.as_millis(), 100);
+        assert_eq!(response.exit_code, 0);
+        assert_eq!(response.stdout, "output");
+        assert!(response.stderr.is_empty());
+        assert_eq!(response.duration_ms, 100);
     }
 }

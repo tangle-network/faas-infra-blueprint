@@ -465,6 +465,10 @@ impl VmForkManager {
             command: vec![command.to_string()],
             payload: payload.to_vec(),
             env_vars: None,
+            runtime: Some(faas_common::Runtime::Firecracker),
+            execution_mode: Some(faas_common::ExecutionMode::Branched),
+            memory_limit: None,
+            timeout: Some(30000),  // 30 second timeout
         };
 
         executor.execute(&config).await

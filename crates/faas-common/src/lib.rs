@@ -54,6 +54,14 @@ pub enum ExecutionMode {
     Persistent,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Runtime {
+    Docker,
+    Firecracker,
+    Auto,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionDefinition {
     pub name: String,
@@ -103,13 +111,17 @@ pub struct ExecuteFunctionArgs {
 }
 
 // Configuration for a sandbox execution request
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct SandboxConfig {
     pub function_id: String,
     pub source: String,
     pub command: Vec<String>,
     pub env_vars: Option<Vec<String>>,
     pub payload: Vec<u8>,
+    pub runtime: Option<Runtime>,
+    pub execution_mode: Option<ExecutionMode>,
+    pub memory_limit: Option<u32>,  // MB
+    pub timeout: Option<u64>,        // milliseconds
 }
 
 // Define the SandboxExecutor trait

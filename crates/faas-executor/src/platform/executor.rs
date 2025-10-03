@@ -33,6 +33,7 @@ pub struct Request {
     pub timeout: Duration,
     pub checkpoint: Option<String>,
     pub branch_from: Option<String>,
+    pub runtime: Option<faas_common::Runtime>,
 }
 
 #[derive(Debug)]
@@ -153,16 +154,31 @@ impl Executor {
             command: vec!["sh".to_string(), "-c".to_string(), req.code],
             payload: Vec::new(),
             env_vars: None,
+            runtime: req.runtime,
+            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+            memory_limit: None,
+            timeout: Some(req.timeout.as_millis() as u64),
         };
 
-        // Use Firecracker on Linux for 125ms cold starts vs Docker's 500ms
-        let result = if cfg!(target_os = "linux") {
-            match self.vm.execute(config.clone()).await {
-                Ok(res) => res,
-                Err(_) => self.container.execute(config).await?,
+        // Runtime selection based on request preference or auto-select
+        let result = match req.runtime {
+            Some(faas_common::Runtime::Docker) => {
+                self.container.execute(config).await?
+            },
+            Some(faas_common::Runtime::Firecracker) => {
+                self.vm.execute(config).await?
+            },
+            Some(faas_common::Runtime::Auto) | None => {
+                // Use Firecracker on Linux for 125ms cold starts vs Docker's 500ms
+                if cfg!(target_os = "linux") {
+                    match self.vm.execute(config.clone()).await {
+                        Ok(res) => res,
+                        Err(_) => self.container.execute(config).await?,
+                    }
+                } else {
+                    self.container.execute(config).await?
+                }
             }
-        } else {
-            self.container.execute(config).await?
         };
 
         Ok(Response {
@@ -207,6 +223,10 @@ impl Executor {
             command: vec!["sh".to_string(), "-c".to_string(), req.code.clone()],
             payload: Vec::new(),
             env_vars: None,
+            runtime: req.runtime,
+            execution_mode: Some(faas_common::ExecutionMode::Cached),
+            memory_limit: None,
+            timeout: Some(req.timeout.as_millis() as u64),
         };
 
         // Try to get optimized container from stratified pool
@@ -300,6 +320,10 @@ impl Executor {
                 command: vec!["sh".to_string(), "-c".to_string(), req.code.clone()],
                 payload: Vec::new(),
                 env_vars: None,
+                runtime: Some(faas_common::Runtime::Firecracker),  // Use Firecracker for VM forking
+                execution_mode: Some(faas_common::ExecutionMode::Branched),
+                memory_limit: None,
+                timeout: Some(req.timeout.as_millis() as u64),
             };
 
             // Execute with VM forking
@@ -339,6 +363,10 @@ impl Executor {
                     command: vec!["sh".to_string(), "-c".to_string(), "sleep 3600".to_string()], // Keep alive
                     payload: Vec::new(),
                     env_vars: None,
+                    runtime: Some(faas_common::Runtime::Docker),  // Use Docker for container forking
+                    execution_mode: Some(faas_common::ExecutionMode::Branched),
+                    memory_limit: None,
+                    timeout: Some(3600000),  // 1 hour in milliseconds
                 };
 
                 // Execute to create the parent container
@@ -374,15 +402,47 @@ impl Executor {
     }
 
     async fn run_persistent(&self, req: Request) -> Result<Response> {
+        // For persistent mode, prefer Firecracker on Linux, Docker on other platforms
+        let runtime = req.runtime.unwrap_or_else(|| {
+            if cfg!(target_os = "linux") {
+                faas_common::Runtime::Firecracker
+            } else {
+                faas_common::Runtime::Docker
+            }
+        });
+
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
             source: req.env,
             command: vec!["sh".to_string(), "-c".to_string(), req.code],
             payload: Vec::new(),
             env_vars: None,
+            runtime: Some(runtime),
+            execution_mode: Some(faas_common::ExecutionMode::Persistent),
+            memory_limit: None,
+            timeout: Some(req.timeout.as_millis() as u64),
         };
 
-        let result = self.vm.execute(config).await?;
+        // Runtime selection for persistent mode
+        let result = match config.runtime {
+            Some(faas_common::Runtime::Docker) => {
+                self.container.execute(config).await?
+            },
+            Some(faas_common::Runtime::Firecracker) => {
+                self.vm.execute(config).await?
+            },
+            Some(faas_common::Runtime::Auto) | None => {
+                // Prefer Firecracker for persistent workloads on Linux, fallback to Docker
+                if cfg!(target_os = "linux") {
+                    match self.vm.execute(config.clone()).await {
+                        Ok(res) => res,
+                        Err(_) => self.container.execute(config).await?,
+                    }
+                } else {
+                    self.container.execute(config).await?
+                }
+            }
+        };
 
         Ok(Response {
             id: req.id,

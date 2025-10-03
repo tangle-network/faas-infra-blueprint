@@ -51,16 +51,16 @@
 //! ```rust
 //! use faas_sdk::{FaasClient, AdvancedExecuteRequest, ExecutionMode};
 //!
-//! let result = client.execute_advanced(AdvancedExecuteRequest {
+//! let result = client.execute(ExecuteRequest {
 //!     command: "python ml_inference.py".to_string(),
-//!     image: "pytorch/pytorch:latest".to_string(),
-//!     mode: ExecutionMode::Cached,
+//!     image: Some("pytorch/pytorch:latest".to_string()),
+//!     mode: Some("cached".to_string()),
 //!     env_vars: Some(vec![
 //!         ("MODEL_PATH".to_string(), "/models/bert".to_string())
 //!     ]),
 //!     memory_mb: Some(2048),
 //!     cpu_cores: Some(2),
-//!     use_snapshots: Some(true),
+//!     ..Default::default()
 //! }).await?;
 //! ```
 //!
@@ -118,6 +118,7 @@ pub enum SdkError {
 /// - `Firecracker`: Best for production and multi-tenant environments (~125ms cold start)
 /// - `Auto`: Platform automatically selects based on workload characteristics
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Runtime {
     /// Docker containers - fastest iteration, rich ecosystem
     ///
@@ -201,32 +202,25 @@ struct ClientMetrics {
 }
 
 /// Function execution request with runtime selection
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default, Clone)]
 pub struct ExecuteRequest {
     pub command: String,
     pub image: Option<String>,
     pub runtime: Option<Runtime>,
+    pub mode: Option<String>,
     pub env_vars: Option<Vec<(String, String)>>,
     pub working_dir: Option<String>,
     pub timeout_ms: Option<u64>,
+    pub memory_mb: Option<u32>,
+    pub cpu_cores: Option<u8>,
     pub cache_key: Option<String>,
+    pub snapshot_id: Option<String>,
+    pub branch_from: Option<String>,
+    pub payload: Option<Vec<u8>>,
 }
 
-/// Advanced execution with performance optimizations
-#[derive(Debug, Serialize)]
-pub struct AdvancedExecuteRequest {
-    pub command: String,
-    pub image: String,
-    pub runtime: Runtime,
-    pub mode: ExecutionMode,
-    pub env_vars: Option<Vec<(String, String)>>,
-    pub memory_mb: Option<u32>,
-    pub cpu_cores: Option<u32>,
-    pub use_snapshots: Option<bool>,
-    pub branch_from: Option<String>,
-    pub checkpoint_id: Option<String>,
-    pub enable_gpu: Option<bool>,
-}
+/// Advanced execution request (now uses same structure as ExecuteRequest)
+pub type AdvancedExecuteRequest = ExecuteRequest;
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -498,7 +492,22 @@ impl FaasClient {
         }
 
         let url = format!("{}/api/v1/execute", self.base_url);
-        let response = self.client.post(&url).json(&request).send().await?;
+
+        // Handle payload by sending as stdin directly in the JSON request
+        let response = if let Some(_payload) = &request.payload {
+            // For now, just use JSON and let the server handle stdin
+            self.client.post(&url)
+                .header("Content-Type", "application/json")
+                .json(&request)
+                .send()
+                .await?
+        } else {
+            self.client.post(&url)
+                .header("Content-Type", "application/json")
+                .json(&request)
+                .send()
+                .await?
+        };
 
         // Update metrics
         let mut metrics = self.metrics.write().await;
@@ -545,7 +554,7 @@ impl FaasClient {
     /// let result = client.execute_advanced(AdvancedExecuteRequest {
     ///     command: "python train_model.py".to_string(),
     ///     image: "pytorch/pytorch:latest".to_string(),
-    ///     mode: ExecutionMode::Cached,
+    ///     mode: Some("cached".to_string()),
     ///     env_vars: Some(vec![
     ///         ("GPU_MEMORY".to_string(), "8GB".to_string())
     ///     ]),
@@ -559,7 +568,7 @@ impl FaasClient {
     /// # }
     /// ```
     pub async fn execute_advanced(&self, request: AdvancedExecuteRequest) -> Result<ExecuteResponse, SdkError> {
-        let url = format!("{}/api/v1/execute/advanced", self.base_url);
+        let url = format!("{}/api/v1/execute", self.base_url);
         let response = self.client.post(&url).json(&request).send().await?;
 
         if !response.status().is_success() {
@@ -779,27 +788,29 @@ impl FaasClient {
     /// - **Output Capture**: Both stdout and stderr captured
     /// - **Timeout Protection**: Prevents runaway executions
     pub async fn run_python(&self, code: &str) -> Result<ExecuteResponse, SdkError> {
+        // Send code via stdin to avoid quoting issues
         self.execute(ExecuteRequest {
-            command: format!("python -c \"{}\"", code),
+            command: "python".to_string(),
             image: Some("python:3.11-slim".to_string()),
             runtime: Some(self.runtime.clone()),
-            env_vars: None,
-            working_dir: None,
             timeout_ms: Some(30000),
             cache_key: Some(format!("{:x}", md5::compute(code.as_bytes()))),
+            payload: Some(code.as_bytes().to_vec()),
+            ..Default::default()
         }).await
     }
 
     /// Execute JavaScript/Node.js code
     pub async fn run_javascript(&self, code: &str) -> Result<ExecuteResponse, SdkError> {
+        // Send code via stdin to avoid quoting issues
         self.execute(ExecuteRequest {
-            command: format!("node -e \"{}\"", code),
+            command: "node".to_string(),
             image: Some("node:20-slim".to_string()),
             runtime: Some(self.runtime.clone()),
-            env_vars: None,
-            working_dir: None,
             timeout_ms: Some(30000),
             cache_key: Some(format!("{:x}", md5::compute(code.as_bytes()))),
+            payload: Some(code.as_bytes().to_vec()),
+            ..Default::default()
         }).await
     }
 
@@ -809,27 +820,28 @@ impl FaasClient {
             command: format!("bash -c \"{}\"", script),
             image: Some("alpine:latest".to_string()),
             runtime: Some(self.runtime.clone()),
-            env_vars: None,
-            working_dir: None,
             timeout_ms: Some(30000),
             cache_key: Some(format!("{:x}", md5::compute(script.as_bytes()))),
+            ..Default::default()
         }).await
     }
 
     /// Fork execution from parent for A/B testing
     pub async fn fork_execution(&self, parent_id: &str, command: &str) -> Result<ExecuteResponse, SdkError> {
-        self.execute_advanced(AdvancedExecuteRequest {
+        self.execute(ExecuteRequest {
             command: command.to_string(),
-            image: "alpine:latest".to_string(),
-            runtime: self.runtime.clone(),
-            mode: ExecutionMode::Branched,
+            image: Some("alpine:latest".to_string()),
+            runtime: Some(self.runtime.clone()),
+            mode: Some("branched".to_string()),
             branch_from: Some(parent_id.to_string()),
             env_vars: None,
             memory_mb: None,
             cpu_cores: None,
-            use_snapshots: Some(true),
-            checkpoint_id: None,
-            enable_gpu: None,
+            working_dir: None,
+            timeout_ms: Some(30000),
+            cache_key: None,
+            snapshot_id: None,
+            payload: None,
         }).await
     }
 
@@ -902,11 +914,7 @@ impl FaasClient {
         let request = ExecuteRequest {
             command: command.to_string(),
             image: Some("alpine:latest".to_string()),
-            runtime: None,
-            env_vars: None,
-            working_dir: None,
-            timeout_ms: None,
-            cache_key: None,
+            ..Default::default()
         };
 
         let response = self.execute(request).await?;
@@ -918,11 +926,7 @@ impl FaasClient {
         let request = ExecuteRequest {
             command: command.to_string(),
             image: Some(image.to_string()),
-            runtime: None,
-            env_vars: None,
-            working_dir: None,
-            timeout_ms: None,
-            cache_key: None,
+            ..Default::default()
         };
 
         let response = self.execute(request).await?;
@@ -931,21 +935,23 @@ impl FaasClient {
 
     /// Execute with caching for repeated operations
     pub async fn run_cached(&self, command: &str, image: &str) -> Result<String, SdkError> {
-        let request = AdvancedExecuteRequest {
+        let request = ExecuteRequest {
             command: command.to_string(),
-            image: image.to_string(),
-            runtime: Runtime::Auto,
-            mode: ExecutionMode::Cached,
+            image: Some(image.to_string()),
+            runtime: Some(Runtime::Auto),
+            mode: Some("cached".to_string()),
             env_vars: None,
             memory_mb: None,
             cpu_cores: None,
-            use_snapshots: Some(true),
+            working_dir: None,
+            timeout_ms: Some(30000),
+            cache_key: Some(format!("{:x}", md5::compute(command.as_bytes()))),
+            snapshot_id: None,
             branch_from: None,
-            checkpoint_id: None,
-            enable_gpu: None,
+            payload: None,
         };
 
-        let response = self.execute_advanced(request).await?;
+        let response = self.execute(request).await?;
         Ok(response.stdout)
     }
 

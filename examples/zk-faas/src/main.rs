@@ -114,6 +114,10 @@ echo "=== Proof generation complete ==="
                 format!("COMPUTATION_ID={}", computation.id),
             ]),
             payload: vec![],
+            runtime: None,
+            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+            memory_limit: None,
+            timeout: Some(300000),
         }).await?;
 
         // Parse proof from output
@@ -181,6 +185,10 @@ EOF
             command: vec!["bash".to_string(), "-c".to_string(), verify_script],
             env_vars: None,
             payload: vec![],
+            runtime: None,
+            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+            memory_limit: None,
+            timeout: Some(60000),
         }).await?;
 
         println!("✅ Verification complete");

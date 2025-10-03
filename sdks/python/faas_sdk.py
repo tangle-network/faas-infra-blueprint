@@ -157,6 +157,9 @@ class ExecutionResult:
     duration_ms: int
     cache_hit: bool = False
     runtime_used: Optional[Runtime] = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    exit_code: Optional[int] = None
 
 
 @dataclass
@@ -423,6 +426,9 @@ class FaaSClient:
                         duration_ms=data.get("duration_ms", elapsed_ms),
                         cache_hit=cache_hit,
                         runtime_used=Runtime(runtime.value) if runtime else None,
+                        stdout=data.get("stdout"),
+                        stderr=data.get("stderr"),
+                        exit_code=data.get("exit_code"),
                     )
 
             except Exception as e:
@@ -514,7 +520,7 @@ class FaaSClient:
         }
 
         async with self.session.post(
-            f"{self.config.base_url}/api/v1/execute/advanced",
+            f"{self.config.base_url}/api/v1/execute",
             json=payload,
             timeout=aiohttp.ClientTimeout(total=self.config.timeout)
         ) as response:
@@ -528,6 +534,9 @@ class FaaSClient:
                 logs=data.get("logs"),
                 error=data.get("error"),
                 duration_ms=data.get("duration_ms", 0),
+                stdout=data.get("stdout"),
+                stderr=data.get("stderr"),
+                exit_code=data.get("exit_code"),
             )
 
     async def create_snapshot(

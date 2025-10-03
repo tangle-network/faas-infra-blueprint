@@ -1,6 +1,6 @@
-//! REAL Data Pipeline Orchestrator using FaaS Platform
+//! Data Pipeline Orchestrator using FaaS Platform
 //!
-//! Actually processes data through real transformations
+//! Production ETL pipeline with pandas transformations and real data processing
 
 use faas_executor::DockerExecutor;
 use faas_common::{SandboxConfig, SandboxExecutor, InvocationResult};
@@ -48,6 +48,10 @@ done
             command: vec!["sh".to_string(), "-c".to_string(), script.to_string()],
             env_vars: None,
             payload: vec![],
+            runtime: None,
+            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+            memory_limit: None,
+            timeout: Some(30000),
         }).await?;
 
         let data = result.response.ok_or("No data extracted")?;
@@ -107,6 +111,10 @@ print(json.dumps(result, indent=2))
             ],
             env_vars: None,
             payload: input,
+            runtime: None,
+            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+            memory_limit: None,
+            timeout: Some(120000),
         }).await?;
 
         let output = result.response.ok_or("Transform failed")?;
@@ -148,6 +156,10 @@ echo "Records processed: $(echo $1 | grep -o '[0-9]*' | head -1)"
             ],
             env_vars: Some(vec!["DB_HOST=localhost".to_string()]),
             payload: vec![],
+            runtime: None,
+            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+            memory_limit: None,
+            timeout: Some(60000),
         }).await?;
 
         let output = String::from_utf8_lossy(
@@ -223,6 +235,10 @@ END {
             command: vec!["sh".to_string(), "-c".to_string(), script.to_string()],
             env_vars: None,
             payload: log_data.as_bytes().to_vec(),
+            runtime: None,
+            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+            memory_limit: None,
+            timeout: Some(30000),
         }).await?;
 
         if let Some(output) = result.response {

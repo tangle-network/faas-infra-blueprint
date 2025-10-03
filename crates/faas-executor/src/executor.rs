@@ -1383,12 +1383,40 @@ impl Executor {
     ) -> anyhow::Result<InvocationResult> {
         let request_id = Uuid::new_v4().to_string();
 
+        // Build the command with environment variables if present
+        let mut full_cmd = Vec::new();
+
+        // If we have environment variables, wrap the command with env
+        if let Some(env_vars) = &config.env_vars {
+            if !env_vars.is_empty() {
+                // Use sh -c to properly handle environment variables
+                full_cmd.push("sh".to_string());
+                full_cmd.push("-c".to_string());
+
+                // Build the command with environment variables
+                let env_prefix = env_vars
+                    .iter()
+                    .map(|e| e.clone())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                // Combine env vars and command
+                let cmd_string = config.command.join(" ");
+                full_cmd.push(format!("{} {}", env_prefix, cmd_string));
+            } else {
+                full_cmd.extend(config.command.clone());
+            }
+        } else {
+            // No env vars, use command directly
+            full_cmd.extend(config.command.clone());
+        }
+
         // Create an exec instance
         let exec_config = docktopus::bollard::exec::CreateExecOptions {
             attach_stdout: Some(true),
             attach_stderr: Some(true),
-            attach_stdin: Some(false), // Simplify for now
-            cmd: Some(config.command.clone()),
+            attach_stdin: Some(!config.payload.is_empty()), // Enable stdin if we have payload
+            cmd: Some(full_cmd),
             ..Default::default()
         };
 
@@ -1409,8 +1437,15 @@ impl Executor {
             .start_exec(&exec_result.id, Some(start_config))
             .await?
         {
-            docktopus::bollard::exec::StartExecResults::Attached { mut output, .. } => {
+            docktopus::bollard::exec::StartExecResults::Attached { mut output, mut input } => {
                 let mut result_output = Vec::new();
+
+                // Write payload to stdin if we have data
+                if !config.payload.is_empty() {
+                    use tokio::io::AsyncWriteExt;
+                    let _ = input.write_all(&config.payload).await;
+                    let _ = input.shutdown().await; // Signal EOF
+                }
 
                 // Collect output
                 use futures::StreamExt;
