@@ -13,15 +13,10 @@ members = [
     "crates/faas-guest-agent",
     "crates/faas-usage-tracker",
     "examples/advanced-features",
-    "examples/api-showcase",
     "examples/cicd",
     "examples/data-pipeline",
-    "examples/distributed-agents",
-    "examples/gpu-service",
     "examples/opencode-cloud-dev",
     "examples/quickstart",
-    "examples/remote-dev",
-    "examples/sdk-integration",
     "examples/zk-faas",
 ]
 

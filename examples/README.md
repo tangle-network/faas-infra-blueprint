@@ -1,170 +1,193 @@
 # FaaS Platform Examples
 
-Production-ready services and comprehensive examples demonstrating the full capabilities of the FaaS platform.
+Complete collection of examples demonstrating FaaS capabilities across multiple SDKs and use cases.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# Start the FaaS gateway server
-cargo run --package faas-gateway-server &
+# 1. Start the FaaS gateway server
+cargo run --release --package faas-gateway-server
 
-# Run specific examples
-cargo run --package quickstart
-cargo run --package gpu-service
-cargo run --package distributed-agents
-cargo run --package opencode-cloud-dev
+# 2. Run any example
+cargo run --release --package quickstart
 ```
 
-## 📚 All Examples
+## Rust SDK Examples
 
-### Core Functionality
-- **[quickstart](./quickstart)** - Simple getting started example with basic function execution
-- **[advanced-features](./advanced-features)** - Advanced platform features (caching, persistence, optimization)
-- **[api-showcase](./api-showcase)** - Complete demonstration of all API endpoints
-- **[comprehensive-demo](./comprehensive-demo)** - Full-stack application with all features
+All Rust examples use the `faas-sdk` crate and build successfully.
 
-### Development Environments
-- **[opencode-cloud-dev](./opencode-cloud-dev)** - Cloud-based AI agent development with OpenCode Server
-- **[remote-dev](./remote-dev)** - Remote development with code-server, Jupyter, desktop environments
-- **[remote_desktop.rs](./remote_desktop.rs)** - Virtual desktop environment in containers
+| Example | Lines | Features | Use Case |
+|---------|-------|----------|----------|
+| [quickstart](./quickstart/) | 44 | Basic execution | Getting started |
+| [advanced-features](./advanced-features/) | 112 | Forking, snapshots, multi-lang | Complete SDK tour |
+| [cicd](./cicd/) | 357 | Parallel testing, security | CI/CD pipelines |
+| [data-pipeline](./data-pipeline/) | 292 | ETL workflow | Data processing |
+| [opencode-cloud-dev](./opencode-cloud-dev/) | 173 | OpenCode integration | AI code generation |
+| [zk-faas](./zk-faas/) | 295 | ZK proofs | Privacy computation |
 
-### AI & Machine Learning
-- **[ai_sandbox.rs](./ai_sandbox.rs)** - Sandboxed AI model execution environment
-- **[gpu-service](./gpu-service)** - GPU-accelerated ML model serving (<100ms warm starts)
-- **[distributed-agents](./distributed-agents)** - Multi-agent systems with branching (50x speedup)
+## Python SDK Examples
 
-### SDK Examples
-- **[sdk-integration](./sdk-integration)** - Rust SDK integration patterns
-- **[python](./python)** - Python SDK quickstart and advanced examples
-- **[typescript](./typescript)** - TypeScript SDK examples
-- **[rust](./rust)** - Advanced Rust SDK patterns
+Located in `python/`:
 
-### Infrastructure & DevOps
-- **[real-cicd](./real-cicd)** - CI/CD pipeline integration
-- **[real-data-pipeline](./real-data-pipeline)** - Data processing with streaming and batch
-- **[browser_automation.rs](./browser_automation.rs)** - Headless browser automation
+- **quickstart.py** (116 lines): Basic operations, caching, metrics
+- **advanced.py** (305 lines): Forking, ML workflows, data pipelines, Firecracker security, streaming logs
 
-### Specialized Use Cases
-- **[zk-faas](./zk-faas)** - Zero-knowledge proof generation and verification
-
-## 💻 Running Examples
-
-### Basic Execution
 ```bash
-# Quickstart example
-cargo run --package quickstart
-
-# With custom configuration
-FAAS_ENDPOINT=http://localhost:8080 cargo run --package advanced-features
+cd examples/python
+python3 quickstart.py
+python3 advanced.py
 ```
 
-### Python Examples
-```bash
-# Install dependencies
-cd sdks/python
-pip install -r requirements.txt
+## TypeScript SDK Examples
 
-# Run examples
-python examples/python/quickstart.py
-python examples/python/advanced.py
-```
+Located in `typescript/`:
 
-### TypeScript Examples
+- **quickstart.ts** (171 lines): Multi-language execution, caching, events, method chaining
+
 ```bash
-# Install dependencies
-cd sdks/typescript
+cd examples/typescript
 npm install
-
-# Run examples
-npm run example:quickstart
+npm start
 ```
 
-## 🏆 Featured Examples
+## Feature Coverage Matrix
 
-### 1. **OpenCode Cloud Development**
-Complete cloud IDE with AI agent support
+| Feature | Rust | Python | TypeScript |
+|---------|:----:|:------:|:----------:|
+| Basic execution | ✅ | ✅ | ✅ |
+| Multi-language | ✅ | ✅ | ✅ |
+| Caching | ✅ | ✅ | ✅ |
+| Pre-warming | ✅ | ✅ | ✅ |
+| Forking/Branching | ✅ | ✅ | ❌ |
+| Snapshots | ✅ | ❌ | ❌ |
+| Execution modes | ✅ | ✅ | ❌ |
+| Firecracker VMs | ❌ | ✅ | ✅ |
+| Log streaming | ❌ | ✅ | ❌ |
+| ML workflows | ❌ | ✅ | ❌ |
+| Data pipelines | ✅ | ✅ | ❌ |
+| CI/CD | ✅ | ❌ | ❌ |
+| ZK proofs | ✅ | ❌ | ❌ |
+
+## Learning Path
+
+1. **Start Here**: `quickstart/` - Basic SDK usage
+2. **Core Features**: `advanced-features/` - Forking, snapshots, caching
+3. **Real Workflows**: Choose based on your use case:
+   - CI/CD: `cicd/`
+   - Data: `data-pipeline/`
+   - AI: `opencode-cloud-dev/`
+   - Privacy: `zk-faas/`
+
+## SDK-Specific Examples
+
+### For Python Developers
 ```bash
-cargo run --package opencode-cloud-dev
-# Access at: http://localhost:4096
+cd examples/python
+python3 quickstart.py    # Basic features
+python3 advanced.py      # ML, pipelines, security
 ```
 
-### 2. **GPU Service**
-ML model serving with GPU acceleration
+### For TypeScript Developers
 ```bash
-cargo run --package gpu-service
-# 30s cold start → <100ms warm (300x speedup)
+cd examples/typescript
+npm install
+ts-node quickstart.ts    # Comprehensive demo
 ```
 
-### 3. **Distributed Agents**
-Multi-agent parallel exploration
+### For Rust Developers
 ```bash
-cargo run --package distributed-agents
-# 550s setup → 10s restore (50x speedup)
+cargo run --release --package quickstart          # Start here
+cargo run --release --package advanced-features   # Deep dive
+cargo run --release --package cicd                # Production workflow
 ```
 
-### 4. **Remote Development**
-Full development environment in the cloud
-```bash
-cargo run --package remote-dev
-# Jupyter: http://localhost:8888
-# VSCode: http://localhost:3000
-# Desktop: http://localhost:6080
-```
-
-## 📊 Performance Benchmarks
-
-| Example | Cold Start | Warm Start | Speedup |
-|---------|------------|------------|---------|
-| GPU Service | 30s | <100ms | 300x |
-| Agent Branching | 550s | 10s | 50x |
-| Quickstart | 500ms | 24μs | 20,000x |
-| Data Pipeline | 2s | 50ms | 40x |
-
-## 🔧 Requirements
-
-- Docker or Podman
-- Rust nightly (`rustup install nightly`)
-- Optional: CUDA toolkit for GPU examples
-- Optional: Node.js 18+ for TypeScript examples
-- Optional: Python 3.9+ for Python examples
-
-## 🧪 Testing
+## Building All Examples
 
 ```bash
-# Run all example tests
-./examples/test_examples.sh
-
-# Test specific example
-cargo test --package quickstart
-
-# Run with real Docker (no mocks)
-cargo test --package gpu-service -- --ignored
+# Test all Rust examples build
+cargo build --release \
+  --package quickstart \
+  --package advanced-features \
+  --package cicd \
+  --package data-pipeline \
+  --package opencode-cloud-dev \
+  --package zk-faas-example
 ```
 
-## 📖 Documentation
+## Architecture
 
-Each example includes:
-- Comprehensive README with usage instructions
-- Inline code documentation
-- Performance benchmarks
-- Security considerations
-- Scaling guidelines
+All examples follow this pattern:
 
-## 🤝 Contributing
+1. **Create client**: Connect to FaaS gateway (default: http://localhost:8080)
+2. **Execute commands**: Use SDK methods (run, execute, fork, etc.)
+3. **Handle results**: Process stdout, stderr, metrics
+4. **Cleanup**: Automatic resource management
 
-To add a new example:
-1. Create directory under `examples/`
-2. Add `Cargo.toml` with dependencies
-3. Implement in `src/main.rs`
-4. Add comprehensive `README.md`
-5. Update this file
-6. Add tests
-7. Submit PR
+## Advanced Use Cases
 
-## 🔐 Security Notes
+### Forking for A/B Testing
+```rust
+let base = client.execute(base_request).await?;
+let variant_a = client.fork_execution(&base.request_id, "variant A").await?;
+let variant_b = client.fork_execution(&base.request_id, "variant B").await?;
+```
 
-- All examples run in isolated containers
-- Resource limits enforced by default
-- Network policies configurable
-- Secrets managed via environment variables
-- Audit logging available
+### Snapshot-Based Development
+```rust
+// Create snapshot once
+let snapshot = client.create_snapshot(dev_env_config).await?;
+
+// Reuse instantly
+let result = client.execute_from_snapshot(snapshot.id).await?;
+```
+
+### Multi-Language Pipeline
+```rust
+let python_result = client.run_python("import pandas as pd").await?;
+let js_result = client.run_javascript("console.log('Processing')").await?;
+let bash_result = client.run_bash("./deploy.sh").await?;
+```
+
+## SDK Documentation
+
+- **Rust SDK**: `crates/faas-sdk/src/lib.rs`
+- **Python SDK**: `sdks/python/faas_sdk.py`
+- **TypeScript SDK**: `sdks/typescript/src/index.ts`
+
+## Troubleshooting
+
+### Server Not Running
+```bash
+# Start the gateway first
+cargo run --release --package faas-gateway-server
+```
+
+### Docker Permission Errors
+```bash
+# Add user to docker group
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+### Port Already in Use
+```bash
+# Kill existing server
+pkill -f faas-gateway-server
+
+# Or use different port
+FAAS_PORT=8081 cargo run --release --package faas-gateway-server
+```
+
+## Contributing
+
+When adding new examples:
+
+1. ✅ Ensure example builds successfully
+2. ✅ Add README.md with features and usage
+3. ✅ Add to workspace Cargo.toml
+4. ✅ Update this README with the new example
+5. ✅ Test end-to-end functionality
+
+## License
+
+MIT OR Apache-2.0
