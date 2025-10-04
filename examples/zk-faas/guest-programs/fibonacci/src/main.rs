@@ -1,35 +1,27 @@
 //! Fibonacci Guest Program for SP1 zkVM
-//! 
-//! Computes Fibonacci numbers and commits results to public outputs.
-//! This is the code that runs inside the zkVM and gets proven.
 
 #![no_main]
 sp1_zkvm::entrypoint!(main);
 
 pub fn main() {
-    // Read input (n) from stdin
+    // Read input
     let n = sp1_zkvm::io::read::<u32>();
-    
-    // Commit input to public outputs
+
+    // Commit public input
     sp1_zkvm::io::commit(&n);
 
     // Compute Fibonacci
-    let mut a: u32 = 0;
-    let mut b: u32 = 1;
-    
+    let mut a: u64 = 0;
+    let mut b: u64 = 1;
+
     for _ in 0..n {
-        let mut c = a.wrapping_add(b);
+        let mut c = a + b;
         c %= 7919; // Modulus to prevent overflow
         a = b;
         b = c;
     }
 
-    // Commit results to public outputs
+    // Commit result
     sp1_zkvm::io::commit(&a);
     sp1_zkvm::io::commit(&b);
-    
-    println!("cycle-tracker-start: fibonacci-computation");
-    // Additional computation to show cycle tracking
-    let _sum = a.wrapping_add(b);
-    println!("cycle-tracker-end: fibonacci-computation");
 }

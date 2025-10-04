@@ -7,4 +7,4 @@ publish = false
 [workspace]
 
 [dependencies]
-sp1-zkvm = "4.0.0"
+sp1-zkvm = { version = "5.2", default-features = false, features = ["lib"] }
