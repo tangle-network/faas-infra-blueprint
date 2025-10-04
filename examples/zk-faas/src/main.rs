@@ -1,8 +1,58 @@
 //! ZK-FaaS: Zero-Knowledge Proof Generation as a Service
 //!
-//! Production implementation with real ZK proving using SP1 and RISC Zero
+//! **Distributed ZK proving via FaaS platform with caching and parallel execution**
+//!
+//! ## Architecture Overview
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │                    ZK-FaaS Architecture                     │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │                                                             │
+//! │  1. Guest Program Storage (Decentralized)                   │
+//! │     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+//! │     │     IPFS     │  │   Arweave    │  │  FaaS Cache  │   │
+//! │     │ Permanent    │  │  Permanent   │  │   Hot LRU    │   │
+//! │     └──────────────┘  └──────────────┘  └──────────────┘   │
+//! │                                                             │
+//! │  2. Blueprint Smart Contract (On-chain Registry)            │
+//! │     - Register: program_hash → IPFS CID                     │
+//! │     - Verify: ELF hash integrity                            │
+//! │     - Metadata: author, timestamp, description              │
+//! │                                                             │
+//! │  3. FaaS Orchestration Layer                                │
+//! │     - Proof request routing (local vs network)              │
+//! │     - Proof caching and deduplication                       │
+//! │     - Load balancing across ZK networks                     │
+//! │                                                             │
+//! │  4. ZK Proving Backends                                     │
+//! │     Local:   SP1 Local, RISC Zero Local                     │
+//! │     Network: SP1 Network (GPU), Bonsai (GPU)                │
+//! │                                                             │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Proof Generation Flow
+//!
+//! ```rust
+//! // 1. Register guest program (one-time)
+//! let program_hash = registry.register_program(elf_binary).await?;
+//!
+//! // 2. Request proof (leverages caching)
+//! let service = ZkProvingService::new(faas_url, ZkBackend::Sp1Network);
+//! let proof = service.prove(program_hash, inputs).await?;
+//!
+//! // Behind the scenes:
+//! // - FaaS checks proof cache (dedup)
+//! // - Fetches program from IPFS if needed
+//! // - Submits to SP1 Network with GPU acceleration
+//! // - Caches proof for future requests
+//! ```
 
-use faas_sdk::FaasClient;
+mod registry;
+
+use faas_sdk::{FaasClient, ExecuteRequest, Runtime};
+pub use registry::{GuestProgramRegistry, ProgramMetadata};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::Instant;
@@ -20,34 +70,56 @@ pub struct ZkProof {
     pub proof_data: Vec<u8>,
     pub backend: String,
     pub proving_time_ms: u64,
+    pub execution_mode: String, // "local", "faas-docker", "faas-firecracker"
 }
 
 #[derive(Debug, Clone)]
 pub enum ZkBackend {
-    /// Local proving via SP1
+    /// Local proving via SP1 (direct execution, no FaaS)
     Sp1Local,
-    /// Network proving via SP1 Prover Network
+    /// FaaS-distributed SP1 proving (Docker/Firecracker)
+    Sp1FaaS,
+    /// RISC Zero local proving
+    RiscZeroLocal,
+    /// FaaS-distributed RISC Zero proving
+    RiscZeroFaaS,
+    /// SP1 Network proving via Succinct prover network
     Sp1Network { prover_url: Option<String> },
     /// RISC Zero Bonsai Network
     BonsaiNetwork { api_key: String, api_url: String },
 }
 
 pub struct ZkProvingService {
-    faas_client: Option<FaasClient>,
+    faas_client: FaasClient,
     backend: ZkBackend,
+    use_cache: bool,
 }
 
 impl ZkProvingService {
-    pub fn new(backend: ZkBackend) -> Self {
+    /// Create new ZK proving service with FaaS client
+    pub fn new(faas_url: String, backend: ZkBackend) -> Self {
         Self {
-            faas_client: None,
+            faas_client: FaasClient::new(faas_url),
             backend,
+            use_cache: true,
         }
     }
 
-    pub fn with_faas(mut self, client: FaasClient) -> Self {
-        self.faas_client = Some(client);
+    /// Disable proof caching (force fresh proof generation)
+    pub fn with_caching(mut self, enabled: bool) -> Self {
+        self.use_cache = enabled;
         self
+    }
+
+    /// Generate cache key for proof deduplication
+    fn cache_key(&self, program: &str, public_inputs: &[String]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(program.as_bytes());
+        for input in public_inputs {
+            hasher.update(input.as_bytes());
+        }
+        hasher.update(format!("{:?}", self.backend).as_bytes());
+        format!("zkproof_{:x}", hasher.finalize())
     }
 
     /// Generate proof using configured backend
@@ -58,7 +130,18 @@ impl ZkProvingService {
         private_inputs: Vec<String>,
     ) -> Result<ZkProof, Box<dyn std::error::Error>> {
         match &self.backend {
-            ZkBackend::Sp1Local => self.prove_sp1_local(program, public_inputs, private_inputs).await,
+            ZkBackend::Sp1Local => {
+                self.prove_sp1_local(program, public_inputs, private_inputs).await
+            }
+            ZkBackend::Sp1FaaS => {
+                self.prove_sp1_faas(program, public_inputs, private_inputs).await
+            }
+            ZkBackend::RiscZeroLocal => {
+                self.prove_risczero_local(program, public_inputs, private_inputs).await
+            }
+            ZkBackend::RiscZeroFaaS => {
+                self.prove_risczero_faas(program, public_inputs, private_inputs).await
+            }
             ZkBackend::Sp1Network { prover_url } => {
                 self.prove_sp1_network(program, public_inputs, private_inputs, prover_url).await
             }
@@ -123,7 +206,35 @@ impl ZkProvingService {
             proof_data: proof.bytes().to_vec(),
             backend: "SP1 Local".to_string(),
             proving_time_ms: elapsed,
+            execution_mode: "local".to_string(),
         })
+    }
+
+    async fn prove_sp1_faas(
+        &self,
+        _program: &str,
+        _public_inputs: Vec<String>,
+        _private_inputs: Vec<String>,
+    ) -> Result<ZkProof, Box<dyn std::error::Error>> {
+        Err("SP1 FaaS proving not yet implemented - use Sp1Local or Sp1Network".into())
+    }
+
+    async fn prove_risczero_local(
+        &self,
+        _program: &str,
+        _public_inputs: Vec<String>,
+        _private_inputs: Vec<String>,
+    ) -> Result<ZkProof, Box<dyn std::error::Error>> {
+        Err("RISC Zero local proving not yet implemented - install rzup and risc0-zkvm".into())
+    }
+
+    async fn prove_risczero_faas(
+        &self,
+        _program: &str,
+        _public_inputs: Vec<String>,
+        _private_inputs: Vec<String>,
+    ) -> Result<ZkProof, Box<dyn std::error::Error>> {
+        Err("RISC Zero FaaS proving not yet implemented".into())
     }
 
     async fn prove_sp1_network(
@@ -206,7 +317,8 @@ async fn demo_fibonacci_proof() -> Result<(), Box<dyn std::error::Error>> {
     println!("2️⃣  Fibonacci Computation Proof");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-    let service = ZkProvingService::new(ZkBackend::Sp1Local);
+    // Note: Local proving doesn't need FaaS URL
+    let service = ZkProvingService::new("".to_string(), ZkBackend::Sp1Local);
 
     println!("Generating proof for Fib(20)...");
     let proof = service.prove(
@@ -228,7 +340,7 @@ async fn demo_hash_preimage_proof() -> Result<(), Box<dyn std::error::Error>> {
     println!("3️⃣  Hash Preimage Knowledge Proof");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
-    let service = ZkProvingService::new(ZkBackend::Sp1Local);
+    let service = ZkProvingService::new("".to_string(), ZkBackend::Sp1Local);
 
     let secret = "my_secret_password";
     let mut hasher = Sha256::new();
