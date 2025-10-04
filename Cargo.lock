@@ -20469,12 +20469,15 @@ dependencies = [
 name = "zk-faas-example"
 version = "0.1.0"
 dependencies = [
- "bollard",
- "faas-common",
- "faas-executor",
+ "anyhow",
+ "faas-sdk",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.20",
 ]
 
 [[package]]

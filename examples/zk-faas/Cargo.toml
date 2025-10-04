@@ -4,12 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-faas-executor = { path = "../../crates/faas-executor" }
-faas-common = { path = "../../crates/faas-common" }
-bollard = "0.18"
-tokio = { version = "1.44", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# FaaS SDK
+faas-sdk = { path = "../../crates/faas-sdk" }
+
+# Async runtime
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+
+# For demonstration (not actual ZK proving yet)
+sha2 = "0.10"
+hex = "0.4"
 
 [[bin]]
 name = "zk-faas"
