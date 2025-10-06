@@ -55,3 +55,6 @@ __pycache__/
 # Test artifacts and temp files
 *.tmp
 *.temp
+
+# Guest programs (built via build.rs)
+crates/faas-zk-prover/sp1-guest-examples/*/Cargo.lock

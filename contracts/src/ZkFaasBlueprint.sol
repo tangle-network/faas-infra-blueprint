@@ -1,0 +1,351 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+pragma solidity ^0.8.20;
+
+import "tnt-core/BlueprintServiceManagerBase.sol";
+
+/**
+ * @title ZkFaasBlueprint
+ * @author Tangle Network
+ * @notice Blueprint for Zero-Knowledge Proof Generation as a Service
+ *
+ * @dev This contract manages ZK guest program registration and proof generation requests.
+ *
+ * Architecture:
+ * 1. Guest programs stored on IPFS (decentralized)
+ * 2. Program metadata registered on-chain (this contract)
+ * 3. Proof requests submitted as Blueprint jobs
+ * 4. Operators generate proofs using SP1/RISC Zero
+ * 5. Results verified and stored on-chain
+ *
+ * Jobs:
+ * - Job 0: Register ZK Program
+ * - Job 1: Generate Proof (SP1)
+ * - Job 2: Generate Proof (RISC Zero)
+ * - Job 3: Verify Proof On-chain
+ */
+contract ZkFaasBlueprint is BlueprintServiceManagerBase {
+    /// @notice Program metadata stored on-chain
+    struct ProgramMetadata {
+        string ipfsCid;         // IPFS content identifier for ELF binary
+        bytes32 elfHash;        // SHA256 hash of ELF binary for integrity
+        address author;         // Program creator
+        uint256 timestamp;      // Registration timestamp
+        string description;     // Human-readable description
+        ZkVmType zkvm;          // Which zkVM this program targets
+        bool verified;          // Whether program has been verified
+    }
+
+    /// @notice Proof metadata stored on-chain
+    struct ProofMetadata {
+        bytes32 programHash;    // Hash of the guest program
+        bytes32 inputHash;      // Hash of public inputs
+        bytes32 proofHash;      // Hash of the generated proof
+        address requester;      // Who requested the proof
+        address operator;       // Who generated the proof
+        uint256 timestamp;      // When proof was generated
+        ZkVmType zkvm;          // Which zkVM was used
+        bool verified;          // Whether proof has been verified on-chain
+    }
+
+    /// @notice Supported zkVM types
+    enum ZkVmType {
+        SP1,
+        RISCZero,
+        Unknown
+    }
+
+    /// @notice Mapping of program hash to metadata
+    mapping(bytes32 => ProgramMetadata) public programs;
+
+    /// @notice Mapping of proof ID to metadata
+    mapping(bytes32 => ProofMetadata) public proofs;
+
+    /// @notice Mapping of program hash to proof count
+    mapping(bytes32 => uint256) public programProofCount;
+
+    /// @notice Events
+    event ProgramRegistered(
+        bytes32 indexed programHash,
+        string ipfsCid,
+        address indexed author,
+        ZkVmType zkvm
+    );
+
+    event ProofRequested(
+        bytes32 indexed proofId,
+        bytes32 indexed programHash,
+        address indexed requester,
+        ZkVmType zkvm
+    );
+
+    event ProofGenerated(
+        bytes32 indexed proofId,
+        bytes32 indexed programHash,
+        address indexed operator,
+        bool verified
+    );
+
+    event ProofVerified(
+        bytes32 indexed proofId,
+        bool valid
+    );
+
+    /// @notice Constructor
+    constructor() BlueprintServiceManagerBase() {}
+
+    /**
+     * @dev Hook for service operator registration
+     * @param operator The operator's details
+     * @param registrationInputs Inputs required for registration
+     *
+     * Registration inputs (bytes):
+     * - bytes32: Operator public key hash
+     * - string: Operator metadata URI
+     * - uint8[]: Supported zkVM types (0=SP1, 1=RISCZero)
+     */
+    function onRegister(
+        ServiceOperators.OperatorPreferences calldata operator,
+        bytes calldata registrationInputs
+    )
+        external
+        payable
+        virtual
+        override
+        onlyFromMaster
+    {
+        // Decode registration inputs
+        (bytes32 publicKeyHash, string memory metadataUri, uint8[] memory supportedZkVms) =
+            abi.decode(registrationInputs, (bytes32, string, uint8[]));
+
+        // Validate operator has at least one supported zkVM
+        require(supportedZkVms.length > 0, "Must support at least one zkVM");
+
+        // Store operator capabilities (would extend with custom storage)
+        // For now, we rely on the base contract's operator management
+
+        emit OperatorRegistered(operator, publicKeyHash, metadataUri);
+    }
+
+    /**
+     * @dev Hook for service instance requests
+     * @param params The parameters for the service request
+     *
+     * Service can be requested for:
+     * - Dedicated proving service
+     * - Shared proving pool
+     */
+    function onRequest(
+        ServiceOperators.RequestParams calldata params
+    )
+        external
+        payable
+        virtual
+        override
+        onlyFromMaster
+    {
+        // Service request validated by base contract
+        // Additional validation can be added here
+
+        emit ServiceRequested(params.requestId, params.requester);
+    }
+
+    /**
+     * @dev Hook for handling job results
+     * @param serviceId The ID of the service
+     * @param job The job identifier (0=Register, 1=ProveSP1, 2=ProveRISCZero, 3=Verify)
+     * @param jobCallId The unique ID for the job call
+     * @param operator The operator sending the result
+     * @param inputs Inputs used for the job
+     * @param outputs Outputs from the job execution
+     */
+    function onJobResult(
+        uint64 serviceId,
+        uint8 job,
+        uint64 jobCallId,
+        ServiceOperators.OperatorPreferences calldata operator,
+        bytes calldata inputs,
+        bytes calldata outputs
+    )
+        external
+        payable
+        virtual
+        override
+        onlyFromMaster
+    {
+        if (job == 0) {
+            // Job 0: Register ZK Program
+            _handleProgramRegistration(operator, inputs, outputs);
+        } else if (job == 1) {
+            // Job 1: Generate Proof (SP1)
+            _handleProofGeneration(operator, inputs, outputs, ZkVmType.SP1);
+        } else if (job == 2) {
+            // Job 2: Generate Proof (RISC Zero)
+            _handleProofGeneration(operator, inputs, outputs, ZkVmType.RISCZero);
+        } else if (job == 3) {
+            // Job 3: Verify Proof On-chain
+            _handleProofVerification(inputs, outputs);
+        } else {
+            revert("Unknown job type");
+        }
+
+        emit JobResultProcessed(serviceId, job, jobCallId, operator);
+    }
+
+    /**
+     * @dev Handle program registration job result
+     * @param operator The operator who registered the program
+     * @param inputs Job inputs (ELF binary hash, IPFS CID, description, zkVM type)
+     * @param outputs Job outputs (verification status)
+     */
+    function _handleProgramRegistration(
+        ServiceOperators.OperatorPreferences calldata operator,
+        bytes calldata inputs,
+        bytes calldata outputs
+    ) internal {
+        // Decode inputs
+        (bytes32 elfHash, string memory ipfsCid, string memory description, uint8 zkvmType) =
+            abi.decode(inputs, (bytes32, string, string, uint8));
+
+        // Decode outputs (operator should have verified ELF integrity)
+        (bool verified) = abi.decode(outputs, (bool));
+
+        // Calculate program hash (deterministic identifier)
+        bytes32 programHash = keccak256(abi.encodePacked(elfHash, zkvmType));
+
+        // Ensure program doesn't already exist
+        require(programs[programHash].author == address(0), "Program already registered");
+
+        // Store program metadata
+        programs[programHash] = ProgramMetadata({
+            ipfsCid: ipfsCid,
+            elfHash: elfHash,
+            author: operatorToAddress(operator),
+            timestamp: block.timestamp,
+            description: description,
+            zkvm: ZkVmType(zkvmType),
+            verified: verified
+        });
+
+        emit ProgramRegistered(programHash, ipfsCid, operatorToAddress(operator), ZkVmType(zkvmType));
+    }
+
+    /**
+     * @dev Handle proof generation job result
+     * @param operator The operator who generated the proof
+     * @param inputs Job inputs (program hash, public inputs)
+     * @param outputs Job outputs (proof data, verification status)
+     * @param zkvm The zkVM type used
+     */
+    function _handleProofGeneration(
+        ServiceOperators.OperatorPreferences calldata operator,
+        bytes calldata inputs,
+        bytes calldata outputs,
+        ZkVmType zkvm
+    ) internal {
+        // Decode inputs
+        (bytes32 programHash, bytes memory publicInputs, address requester) =
+            abi.decode(inputs, (bytes32, bytes, address));
+
+        // Decode outputs
+        (bytes memory proofData, bool verified) = abi.decode(outputs, (bytes, bool));
+
+        // Ensure program exists
+        require(programs[programHash].author != address(0), "Program not registered");
+
+        // Calculate proof ID
+        bytes32 inputHash = keccak256(publicInputs);
+        bytes32 proofHash = keccak256(proofData);
+        bytes32 proofId = keccak256(abi.encodePacked(programHash, inputHash, zkvm));
+
+        // Store proof metadata
+        proofs[proofId] = ProofMetadata({
+            programHash: programHash,
+            inputHash: inputHash,
+            proofHash: proofHash,
+            requester: requester,
+            operator: operatorToAddress(operator),
+            timestamp: block.timestamp,
+            zkvm: zkvm,
+            verified: verified
+        });
+
+        // Increment proof count for program
+        programProofCount[programHash]++;
+
+        emit ProofGenerated(proofId, programHash, operatorToAddress(operator), verified);
+    }
+
+    /**
+     * @dev Handle proof verification job result
+     * @param inputs Job inputs (proof ID)
+     * @param outputs Job outputs (verification result)
+     */
+    function _handleProofVerification(
+        bytes calldata inputs,
+        bytes calldata outputs
+    ) internal {
+        // Decode inputs
+        (bytes32 proofId) = abi.decode(inputs, (bytes32));
+
+        // Decode outputs
+        (bool valid) = abi.decode(outputs, (bool));
+
+        // Ensure proof exists
+        require(proofs[proofId].requester != address(0), "Proof not found");
+
+        // Update verification status
+        proofs[proofId].verified = valid;
+
+        emit ProofVerified(proofId, valid);
+    }
+
+    /**
+     * @dev Get program metadata
+     * @param programHash The program hash
+     * @return Program metadata
+     */
+    function getProgram(bytes32 programHash) external view returns (ProgramMetadata memory) {
+        require(programs[programHash].author != address(0), "Program not found");
+        return programs[programHash];
+    }
+
+    /**
+     * @dev Get proof metadata
+     * @param proofId The proof ID
+     * @return Proof metadata
+     */
+    function getProof(bytes32 proofId) external view returns (ProofMetadata memory) {
+        require(proofs[proofId].requester != address(0), "Proof not found");
+        return proofs[proofId];
+    }
+
+    /**
+     * @dev Convert operator preferences to address
+     * @param operator The operator preferences
+     * @return Operator address
+     */
+    function operatorToAddress(ServiceOperators.OperatorPreferences calldata operator)
+        internal
+        pure
+        returns (address)
+    {
+        // Simplified: derive address from public key
+        return address(uint160(uint256(keccak256(abi.encodePacked(operator.ecdsaPublicKey)))));
+    }
+
+    /// @notice Custom events
+    event OperatorRegistered(
+        ServiceOperators.OperatorPreferences operator,
+        bytes32 publicKeyHash,
+        string metadataUri
+    );
+
+    event ServiceRequested(uint64 indexed requestId, address indexed requester);
+
+    event JobResultProcessed(
+        uint64 indexed serviceId,
+        uint8 indexed job,
+        uint64 jobCallId,
+        ServiceOperators.OperatorPreferences operator
+    );
+}

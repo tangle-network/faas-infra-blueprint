@@ -49,11 +49,12 @@
 //! // - Caches proof for future requests
 //! ```
 
-mod registry;
+mod blueprint_service;
 
-use faas_sdk::{FaasClient, ExecuteRequest, Runtime};
-pub use registry::{GuestProgramRegistry, ProgramMetadata};
-use serde::{Deserialize, Serialize};
+use faas_sdk::FaasClient;
+// Import types from faas-zkvm library
+use faas_zkvm::{ZkBackend, ZkProof};
+pub use blueprint_service::{BlueprintServiceManager, JobId, JobRequest, JobResult};
 use sha2::{Digest, Sha256};
 use std::time::Instant;
 use sp1_sdk::{include_elf, ProverClient, SP1Stdin, SP1ProofWithPublicValues};
@@ -61,33 +62,6 @@ use sp1_sdk::{include_elf, ProverClient, SP1Stdin, SP1ProofWithPublicValues};
 // Include generated ELF binaries from guest programs
 const FIBONACCI_ELF: &[u8] = include_elf!("fibonacci-guest");
 const HASH_PREIMAGE_ELF: &[u8] = include_elf!("hash-preimage-guest");
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZkProof {
-    pub proof_id: String,
-    pub program: String,
-    pub public_inputs: Vec<String>,
-    pub proof_data: Vec<u8>,
-    pub backend: String,
-    pub proving_time_ms: u64,
-    pub execution_mode: String, // "local", "faas-docker", "faas-firecracker"
-}
-
-#[derive(Debug, Clone)]
-pub enum ZkBackend {
-    /// Local proving via SP1 (direct execution, no FaaS)
-    Sp1Local,
-    /// FaaS-distributed SP1 proving (Docker/Firecracker)
-    Sp1FaaS,
-    /// RISC Zero local proving
-    RiscZeroLocal,
-    /// FaaS-distributed RISC Zero proving
-    RiscZeroFaaS,
-    /// SP1 Network proving via Succinct prover network
-    Sp1Network { prover_url: Option<String> },
-    /// RISC Zero Bonsai Network
-    BonsaiNetwork { api_key: String, api_url: String },
-}
 
 pub struct ZkProvingService {
     faas_client: FaasClient,
@@ -275,89 +249,69 @@ impl ZkProvingService {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .init();
 
-    println!("🔐 ZK-FaaS: Zero-Knowledge Proof Generation");
-    println!("═══════════════════════════════════════════════════\n");
+    let app = axum::Router::new()
+        .route("/v1/prove", axum::routing::post(prove_handler))
+        .route("/health", axum::routing::get(health_handler));
 
-    demo_architecture().await?;
-    demo_fibonacci_proof().await?;
-    demo_hash_preimage_proof().await?;
+    let addr = "0.0.0.0:8081";
+    tracing::info!("🔐 faas-zk-prover starting on {}", addr);
 
-    println!("\n✅ ZK-FaaS Demonstrations Complete!");
-    println!("\n📋 Next Steps:");
-    println!("   1. Integrate RISC Zero Bonsai for network proving");
-    println!("   2. Add GPU acceleration for local proving");
-    println!("   3. Implement proof caching via FaaS snapshots");
-    println!("   4. Add parallel batch proving");
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
 
-async fn demo_architecture() -> Result<(), Box<dyn std::error::Error>> {
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("1️⃣  ZK Proving Architecture");
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-
-    println!("Available Backends:\n");
-    println!("  📦 LOCAL PROVING:");
-    println!("     • SP1 zkVM        - RISC-V, LLVM, production-ready ✅");
-    println!("     • RISC Zero zkVM  - RISC-V, STARKs (requires rzup)");
-    println!("     • Brevis Pico     - RISC-V, 84% faster (external)\n");
-    println!("  🌐 NETWORK PROVING:");
-    println!("     • SP1 Network     - Decentralized provers ✅");
-    println!("     • Bonsai Network  - RISC Zero API (requires setup)");
-    println!("     • Brevis Network  - zkCoprocessor (external)\n");
-
-    Ok(())
+#[derive(serde::Deserialize)]
+struct ProveRequest {
+    program: String,
+    public_inputs: Vec<String>,
+    #[serde(default)]
+    private_inputs: Vec<String>,
 }
 
-async fn demo_fibonacci_proof() -> Result<(), Box<dyn std::error::Error>> {
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("2️⃣  Fibonacci Computation Proof");
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-
-    // Note: Local proving doesn't need FaaS URL
-    let service = ZkProvingService::new("".to_string(), ZkBackend::Sp1Local);
-
-    println!("Generating proof for Fib(20)...");
-    let proof = service.prove(
-        "fibonacci",
-        vec!["20".to_string()],
-        vec![],
-    ).await?;
-
-    println!("  Proof ID: {}", &proof.proof_id[..16]);
-    println!("  Proof size: {} bytes", proof.proof_data.len());
-    println!("  Backend: {}", proof.backend);
-    println!();
-
-    Ok(())
+#[derive(serde::Serialize)]
+struct ProveResponse {
+    proof_id: String,
+    program: String,
+    public_inputs: Vec<String>,
+    proof_data: String,  // base64 encoded
+    backend: String,
+    proving_time_ms: u64,
 }
 
-async fn demo_hash_preimage_proof() -> Result<(), Box<dyn std::error::Error>> {
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!("3️⃣  Hash Preimage Knowledge Proof");
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+async fn prove_handler(
+    axum::Json(req): axum::Json<ProveRequest>,
+) -> Result<axum::Json<ProveResponse>, (axum::http::StatusCode, String)> {
+    tracing::info!("Proving request for program: {}", req.program);
 
     let service = ZkProvingService::new("".to_string(), ZkBackend::Sp1Local);
 
-    let secret = "my_secret_password";
-    let mut hasher = Sha256::new();
-    hasher.update(secret.as_bytes());
-    let hash = hex::encode(hasher.finalize());
+    let proof = service
+        .prove(&req.program, req.public_inputs.clone(), req.private_inputs)
+        .await
+        .map_err(|e| (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Proving failed: {}", e),
+        ))?;
 
-    println!("Proving knowledge of preimage for hash: {}...", &hash[..16]);
-    let proof = service.prove(
-        "hash_preimage",
-        vec![secret.to_string()],
-        vec![],
-    ).await?;
+    Ok(axum::Json(ProveResponse {
+        proof_id: proof.proof_id,
+        program: proof.program,
+        public_inputs: proof.public_inputs,
+        proof_data: base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &proof.proof_data,
+        ),
+        backend: proof.backend,
+        proving_time_ms: proof.proving_time_ms,
+    }))
+}
 
-    println!("  Proof ID: {}", &proof.proof_id[..16]);
-    println!("  Public Hash: {}...", &hash[..32]);
-    println!("  Secret: <never revealed>");
-    println!();
-
-    Ok(())
+async fn health_handler() -> &'static str {
+    "ok"
 }

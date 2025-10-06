@@ -1,0 +1,51 @@
+[package]
+name = "faas-zk-prover"
+version = "0.1.0"
+edition = "2021"
+
+# NOTE: Excluded from workspace - sp1-sdk conflicts with blueprint-sdk (c-kzg)
+# Build: cd crates/faas-zk-prover && cargo build
+
+[dependencies]
+# FaaS platform
+faas-sdk = { path = "../faas-sdk" }
+faas-zkvm = { path = "../faas-zkvm" }
+
+# Web server
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.5", features = ["trace"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# ZK Proving - SP1
+sp1-sdk = "5.2"
+
+# Crypto
+sha2 = "0.10"
+hex = "0.4"
+md5 = "0.7"
+base64 = "0.21"
+
+# UUID for proof IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[build-dependencies]
+sp1-build = "5.2"
+
+[[bin]]
+name = "faas-zk-prover"
+path = "src/main.rs"

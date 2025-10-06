@@ -9,6 +9,7 @@ members = [
     "crates/faas-gateway-server",
     "crates/faas-executor",
     "crates/faas-sdk",
+    "crates/faas-zkvm",
     "faas-tester",
     "crates/faas-guest-agent",
     "crates/faas-usage-tracker",
@@ -17,10 +18,12 @@ members = [
     "examples/data-pipeline",
     "examples/opencode-cloud-dev",
     "examples/quickstart",
-    "examples/zk-faas",
 ]
 
-exclude = ["dependencies/"]
+exclude = [
+    "dependencies/",
+    "crates/faas-zk-prover",  # Excluded: sp1-sdk conflicts with blueprint-sdk (both link to c-kzg)
+]
 
 # Define common dependencies for the workspace
 [workspace.dependencies]
