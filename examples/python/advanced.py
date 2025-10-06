@@ -11,7 +11,7 @@ import os
 # Fix the SDK path - use the correct location
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../sdks/python')))
 
-from faas_sdk import FaaSClient, Runtime, ExecutionMode, ForkStrategy
+from faas_sdk import FaaSClient, Runtime, ExecutionMode
 
 
 async def example_forking():
