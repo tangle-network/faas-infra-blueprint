@@ -32,6 +32,7 @@ pub mod platform;
 pub mod readiness;
 pub mod snapshot;
 pub mod ssh;
+pub mod storage;
 pub mod sync;
 
 // Re-export for tests
