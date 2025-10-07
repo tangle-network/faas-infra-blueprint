@@ -35,6 +35,7 @@ pub struct FirecrackerExecutor {
     rootfs_path: String,
     api_socket_base: String,
     vsock_enabled: bool,
+    vm_manager: Option<Arc<FirecrackerManager>>,
     snapshot_manager: Option<Arc<VmSnapshotManager>>,
     cache: Option<Arc<MultiLevelVmCache>>,
     fork_manager: Option<Arc<VmForkManager>>,
@@ -54,7 +55,26 @@ impl FirecrackerExecutor {
         }
 
         // Initialize optimization components only on Linux
-        let (snapshot_manager, cache, fork_manager, scaler) = if cfg!(target_os = "linux") {
+        let (vm_manager, snapshot_manager, cache, fork_manager, scaler) = if cfg!(target_os = "linux") {
+            let vm_mgr = match FirecrackerManager::new(PathBuf::from("/var/lib/firecracker")) {
+                Ok(mgr) => Arc::new(mgr),
+                Err(e) => {
+                    warn!("Failed to initialize VM manager: {}", e);
+                    return Ok(Self {
+                        fc_binary_path,
+                        kernel_image_path,
+                        rootfs_path,
+                        api_socket_base: "/tmp/firecracker".to_string(),
+                        vsock_enabled: cfg!(target_os = "linux"),
+                        vm_manager: None,
+                        snapshot_manager: None,
+                        cache: None,
+                        fork_manager: None,
+                        scaler: None,
+                    });
+                }
+            };
+
             let snapshot_mgr = match VmSnapshotManager::new(
                 PathBuf::from("/var/lib/firecracker/snapshots")
             ) {
@@ -67,6 +87,7 @@ impl FirecrackerExecutor {
                         rootfs_path,
                         api_socket_base: "/tmp/firecracker".to_string(),
                         vsock_enabled: cfg!(target_os = "linux"),
+                        vm_manager: Some(vm_mgr),
                         snapshot_manager: None,
                         cache: None,
                         fork_manager: None,
@@ -86,6 +107,7 @@ impl FirecrackerExecutor {
 
             let fork_mgr = VmForkManager::new(
                 snapshot_mgr.clone(),
+                vm_mgr.clone(),
                 vm_fork::ForkConfig::default()
             );
             let fork_mgr = Arc::new(fork_mgr);
@@ -105,9 +127,9 @@ impl FirecrackerExecutor {
                 scaling_config,
             ));
 
-            (Some(snapshot_mgr), Some(vm_cache), Some(fork_mgr), Some(scaler))
+            (Some(vm_mgr), Some(snapshot_mgr), Some(vm_cache), Some(fork_mgr), Some(scaler))
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None)
         };
 
         Ok(Self {
@@ -116,6 +138,7 @@ impl FirecrackerExecutor {
             rootfs_path,
             api_socket_base: "/tmp/firecracker".to_string(),
             vsock_enabled: cfg!(target_os = "linux"),
+            vm_manager,
             snapshot_manager,
             cache,
             fork_manager,
@@ -143,6 +166,7 @@ impl FirecrackerExecutor {
             rootfs_path: String::new(),
             api_socket_base: String::new(),
             vsock_enabled: false,
+            vm_manager: None,
             snapshot_manager: None,
             cache: None,
             fork_manager: None,

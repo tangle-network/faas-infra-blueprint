@@ -1,7 +1,11 @@
-//! VM Snapshot Management for Firecracker
+//! VM Snapshot Management for Firecracker using firecracker-rs-sdk
 //! Provides full snapshot/restore capabilities with memory and disk state preservation
 
 use anyhow::{anyhow, Context, Result};
+use firecracker_rs_sdk::{
+    instance::Instance as FcInstance,
+    models::{SnapshotCreateParams, SnapshotLoadParams, SnapshotType},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -71,14 +75,14 @@ impl VmSnapshotManager {
         })
     }
 
-    /// Create a snapshot of a running VM using Firecracker API
+    /// Create a snapshot of a running VM using firecracker-rs-sdk
     pub async fn create_snapshot(
         &self,
         vm_id: &str,
         snapshot_id: &str,
-        api_socket: &str,
+        fc_instance: &mut FcInstance,
     ) -> Result<VmSnapshot> {
-        info!("Creating VM snapshot: {} for VM: {}", snapshot_id, vm_id);
+        info!("Creating VM snapshot via SDK: {} for VM: {}", snapshot_id, vm_id);
         let start = Instant::now();
 
         let snapshot_path = self.snapshot_dir.join(snapshot_id);
@@ -87,21 +91,22 @@ impl VmSnapshotManager {
         let memory_file = snapshot_path.join("memory.snap");
         let state_file = snapshot_path.join("state.snap");
 
-        // Use Firecracker API to create snapshot
+        // Use firecracker-rs-sdk to create snapshot
         #[cfg(target_os = "linux")]
         {
-            // Send snapshot request via Firecracker API
-            let client = FirecrackerApiClient::new(api_socket);
-
+            // Create snapshot using SDK instance
             let snapshot_params = SnapshotCreateParams {
-                snapshot_type: SnapshotType::Full,
-                snapshot_path: state_file.to_string_lossy().to_string(),
-                mem_file_path: memory_file.to_string_lossy().to_string(),
+                snapshot_type: Some(SnapshotType::Full),
+                snapshot_path: state_file.clone(),
+                mem_file_path: memory_file.clone(),
                 version: Some("1.0.0".to_string()),
             };
 
-            client.create_snapshot(snapshot_params).await
-                .context("Failed to create VM snapshot via API")?;
+            fc_instance
+                .create_snapshot(&snapshot_params)
+                .map_err(|e| anyhow!("Failed to create VM snapshot via SDK: {:?}", e))?;
+
+            info!("Snapshot created via SDK in {}ms", start.elapsed().as_millis());
         }
 
         // For non-Linux, create placeholder files
@@ -155,15 +160,15 @@ impl VmSnapshotManager {
         Ok(snapshot)
     }
 
-    /// Create incremental snapshot based on parent
+    /// Create incremental snapshot based on parent using SDK
     pub async fn create_incremental_snapshot(
         &self,
         vm_id: &str,
         snapshot_id: &str,
         parent_id: &str,
-        api_socket: &str,
+        fc_instance: &mut FcInstance,
     ) -> Result<VmSnapshot> {
-        info!("Creating incremental snapshot: {} (parent: {})", snapshot_id, parent_id);
+        info!("Creating incremental snapshot via SDK: {} (parent: {})", snapshot_id, parent_id);
 
         // Verify parent exists
         let snapshots = self.snapshots.read().await;
@@ -181,20 +186,21 @@ impl VmSnapshotManager {
 
         #[cfg(target_os = "linux")]
         {
-            // Use Firecracker's diff snapshot feature
-            let client = FirecrackerApiClient::new(api_socket);
-
+            // Use Firecracker SDK's diff snapshot feature
             let snapshot_params = SnapshotCreateParams {
-                snapshot_type: SnapshotType::Diff,
-                snapshot_path: state_file.to_string_lossy().to_string(),
-                mem_file_path: memory_file.to_string_lossy().to_string(),
+                snapshot_type: Some(SnapshotType::Diff),
+                snapshot_path: state_file.clone(),
+                mem_file_path: memory_file.clone(),
                 version: Some("1.0.0".to_string()),
             };
 
-            client.create_snapshot(snapshot_params).await?;
+            fc_instance.create_snapshot(&snapshot_params)
+                .map_err(|e| anyhow!("Failed to create incremental snapshot via SDK: {:?}", e))?;
 
             // Create memory diff using our optimization
             self.create_memory_diff(&parent.memory_file, &memory_file).await?;
+
+            info!("Incremental snapshot created via SDK");
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -645,56 +651,8 @@ pub struct SnapshotStats {
     pub cache_size_mb: usize,
 }
 
-/// Firecracker API client for snapshot operations
-struct FirecrackerApiClient {
-    socket_path: String,
-}
-
-impl FirecrackerApiClient {
-    fn new(socket_path: &str) -> Self {
-        Self {
-            socket_path: socket_path.to_string(),
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    async fn create_snapshot(&self, params: SnapshotCreateParams) -> Result<()> {
-        // Use firecracker-rs-sdk or HTTP API
-        let url = format!("http://localhost/snapshot/create");
-
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
-
-        let response = client.put(&url)
-            .unix_socket(&self.socket_path)
-            .json(&params)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(anyhow!("Snapshot API failed: {}", response.status()));
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    async fn create_snapshot(&self, _params: SnapshotCreateParams) -> Result<()> {
-        Ok(()) // Stub for Mac
-    }
-}
-
-#[derive(Serialize)]
-struct SnapshotCreateParams {
-    snapshot_type: SnapshotType,
-    snapshot_path: String,
-    mem_file_path: String,
-    version: Option<String>,
-}
-
-#[derive(Serialize)]
-enum SnapshotType {
-    Full,
-    Diff,
-}
+// Note: Custom FirecrackerApiClient, SnapshotCreateParams, and SnapshotType removed
+// These are now provided by firecracker-rs-sdk:
+// - firecracker_rs_sdk::instance::Instance (replaces FirecrackerApiClient)
+// - firecracker_rs_sdk::models::SnapshotCreateParams
+// - firecracker_rs_sdk::models::SnapshotType

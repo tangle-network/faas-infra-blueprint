@@ -11,11 +11,13 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::vm_snapshot::{VmSnapshotManager, VmSnapshot};
+use super::vm_manager::FirecrackerManager;
 
 
 /// VM Fork Manager for instant VM branching
 pub struct VmForkManager {
     snapshot_manager: Arc<VmSnapshotManager>,
+    vm_manager: Arc<FirecrackerManager>,
     forks: Arc<RwLock<HashMap<String, VmFork>>>,
     fork_tree: Arc<RwLock<ForkTree>>,
     config: ForkConfig,
@@ -74,10 +76,12 @@ impl Default for ForkConfig {
 impl VmForkManager {
     pub fn new(
         snapshot_manager: Arc<VmSnapshotManager>,
+        vm_manager: Arc<FirecrackerManager>,
         config: ForkConfig,
     ) -> Self {
         Self {
             snapshot_manager,
+            vm_manager,
             forks: Arc::new(RwLock::new(HashMap::new())),
             fork_tree: Arc::new(RwLock::new(ForkTree {
                 nodes: HashMap::new(),
@@ -103,11 +107,19 @@ impl VmForkManager {
 
         // Create initial snapshot
         let snapshot_id = format!("base-snapshot-{}", base_id);
-        let api_socket = format!("/tmp/firecracker-{}.sock", vm_id);
+
+        // Get FcInstance from vm_manager
+        let vms = self.vm_manager.vms.read().await;
+        let vm_arc = vms.get(&vm_id)
+            .ok_or_else(|| anyhow!("VM {} not found in manager", vm_id))?;
+        let mut vm = vm_arc.write().await;
 
         self.snapshot_manager
-            .create_snapshot(&vm_id, &snapshot_id, &api_socket)
+            .create_snapshot(&vm_id, &snapshot_id, &mut vm.fc_instance)
             .await?;
+
+        drop(vm);
+        drop(vms);
 
         // Pre-warm snapshot for fast forking
         self.snapshot_manager.prewarm_snapshot(&snapshot_id).await?;
@@ -251,16 +263,24 @@ impl VmForkManager {
                 &snapshot_id,
             ).await?;
 
+            // Get FcInstance from vm_manager
+            let vms = self.vm_manager.vms.read().await;
+            let vm_arc = vms.get(&parent.vm_id)
+                .ok_or_else(|| anyhow!("VM {} not found in manager", parent.vm_id))?;
+            let mut vm = vm_arc.write().await;
+
             // Create incremental snapshot
-            let api_socket = format!("/tmp/firecracker-{}.sock", parent.vm_id);
             self.snapshot_manager
                 .create_incremental_snapshot(
                     &parent.vm_id,
                     &snapshot_id,
                     &parent.snapshot_id,
-                    &api_socket,
+                    &mut vm.fc_instance,
                 )
                 .await?;
+
+            drop(vm);
+            drop(vms);
 
             Ok((snapshot_id, cow_pages))
         }
@@ -368,11 +388,19 @@ impl VmForkManager {
         fork_id: &str,
     ) -> Result<(String, usize)> {
         let snapshot_id = format!("full-fork-{}", fork_id);
-        let api_socket = format!("/tmp/firecracker-{}.sock", parent.vm_id);
+
+        // Get FcInstance from vm_manager
+        let vms = self.vm_manager.vms.read().await;
+        let vm_arc = vms.get(&parent.vm_id)
+            .ok_or_else(|| anyhow!("VM {} not found in manager", parent.vm_id))?;
+        let mut vm = vm_arc.write().await;
 
         self.snapshot_manager
-            .create_snapshot(&parent.vm_id, &snapshot_id, &api_socket)
+            .create_snapshot(&parent.vm_id, &snapshot_id, &mut vm.fc_instance)
             .await?;
+
+        drop(vm);
+        drop(vms);
 
         Ok((snapshot_id, 0))
     }

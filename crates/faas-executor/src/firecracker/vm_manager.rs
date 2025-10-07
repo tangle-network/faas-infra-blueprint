@@ -1,13 +1,21 @@
-//! Firecracker VM Manager with full microVM orchestration
-//! This provides complete Firecracker integration with proper error handling
+//! Firecracker VM Manager with full microVM orchestration using firecracker-rs-sdk
+//! This provides complete Firecracker integration with proper SDK usage
 
 use anyhow::{Context, Result};
+use firecracker_rs_sdk::{
+    firecracker::FirecrackerOption,
+    instance::Instance as FcInstance,
+    models::{
+        BootSource, Drive, MachineConfiguration, NetworkInterface as FcNetworkInterface,
+        SnapshotCreateParams, SnapshotLoadParams, Vsock as FcVsock,
+    },
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -75,11 +83,11 @@ pub struct JailerConfig {
     pub daemonize: bool,
 }
 
-/// Represents a running Firecracker VM
+/// Represents a running Firecracker VM with SDK instance
 pub struct VmInstance {
     pub id: String,
     pub config: VmConfig,
-    pub process: Option<Child>,
+    pub fc_instance: FcInstance,
     pub api_socket: PathBuf,
     pub metrics: VmMetrics,
     pub state: VmState,
@@ -112,8 +120,8 @@ pub struct FirecrackerManager {
     firecracker_bin: PathBuf,
     /// Binary path to jailer (optional)
     jailer_bin: Option<PathBuf>,
-    /// Running VMs
-    vms: Arc<RwLock<HashMap<String, Arc<RwLock<VmInstance>>>>>,
+    /// Running VMs (public for snapshot/fork operations)
+    pub(crate) vms: Arc<RwLock<HashMap<String, Arc<RwLock<VmInstance>>>>>,
     /// Network configuration
     network_cfg: NetworkConfig,
 }
@@ -302,13 +310,13 @@ impl FirecrackerManager {
         Ok(tap_name)
     }
 
-    /// Launch a new VM
+    /// Launch a new VM using firecracker-rs-sdk
     pub async fn launch_vm(&self, mut config: VmConfig) -> Result<String> {
         let vm_id = Uuid::new_v4().to_string();
         let vm_dir = self.base_dir.join(&vm_id);
         fs::create_dir_all(&vm_dir)?;
 
-        info!("Launching Firecracker VM: {}", vm_id);
+        info!("Launching Firecracker VM via SDK: {}", vm_id);
 
         // Verify kernel and rootfs exist
         if !config.kernel_path.exists() {
@@ -339,34 +347,117 @@ impl FirecrackerManager {
             });
         }
 
-        // Create VM configuration file
-        let vm_config_path = vm_dir.join("vm_config.json");
-        let config_json = self.create_vm_config_json(&config)?;
-        fs::write(&vm_config_path, config_json)?;
+        // Build Firecracker instance using SDK
+        let mut fc_opt = FirecrackerOption::new(&self.firecracker_bin);
+        fc_opt
+            .api_sock(&api_socket)
+            .id(&vm_id)
+            .log_path(Some(vm_dir.join("firecracker.log")));
 
-        // Launch Firecracker
-        let mut cmd = if config.enable_jailer && self.jailer_bin.is_some() {
-            self.create_jailer_command(&vm_id, &config, &api_socket)?
-        } else {
-            self.create_firecracker_command(&api_socket)?
-        };
+        // Create SDK instance
+        let mut fc_instance = fc_opt
+            .build()
+            .context("Failed to create Firecracker instance")?;
 
-        let process = cmd.spawn().context("Failed to spawn Firecracker process")?;
+        // Start VMM process (SDK methods are synchronous)
+        fc_instance
+            .start_vmm()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start VMM process: {:?}", e))?;
+
+        info!("VMM started for {}, configuring via SDK API", vm_id);
 
         // Wait for API socket
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
-        // Configure VM via API
-        self.configure_vm_api(&api_socket, &config).await?;
+        // Configure machine using SDK models
+        let machine_config = MachineConfiguration {
+            vcpu_count: config.vcpu_count as isize,
+            mem_size_mib: config.mem_size_mib as isize,
+            smt: Some(false),
+            cpu_template: None,
+            track_dirty_pages: Some(true), // Enable for snapshots
+            huge_pages: None,
+        };
 
-        // Assign vsock CID for real VM communication (incremental starting from 3)
+        fc_instance
+            .put_machine_configuration(&machine_config)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to configure machine: {:?}", e))?;
+
+        // Configure boot source using SDK models
+        let boot_source = BootSource {
+            kernel_image_path: config.kernel_path.clone(),
+            boot_args: Some(config.kernel_args.clone()),
+            initrd_path: None,
+        };
+
+        fc_instance
+            .put_guest_boot_source(&boot_source)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to configure boot source: {:?}", e))?;
+
+        // Configure rootfs drive using SDK models
+        let rootfs_drive = Drive {
+            drive_id: "rootfs".to_string(),
+            path_on_host: config.rootfs_path.clone(),
+            is_root_device: true,
+            is_read_only: false,
+            partuuid: None,
+            cache_type: None,
+            rate_limiter: None,
+            io_engine: None,
+            socket: None,
+        };
+
+        fc_instance
+            .put_guest_drive_by_id(&rootfs_drive)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to configure rootfs drive: {:?}", e))?;
+
+        // Configure network interfaces using SDK models
+        for (idx, net_iface) in config.network_interfaces.iter().enumerate() {
+            let fc_net_iface = FcNetworkInterface {
+                iface_id: net_iface.iface_id.clone(),
+                host_dev_name: net_iface.host_dev_name.clone().into(),
+                guest_mac: Some(net_iface.guest_mac.clone()),
+                rx_rate_limiter: None,
+                tx_rate_limiter: None,
+            };
+
+            fc_instance
+                .put_guest_network_interface_by_id(&fc_net_iface)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to configure network interface {}: {:?}", idx, e))?;
+        }
+
+        // Configure vsock if requested
         let vsock_cid = 3 + (self.vms.read().await.len() as u32);
+        if let Some(ref vsock_cfg) = config.vsock {
+            let fc_vsock = FcVsock {
+                guest_cid: vsock_cfg.guest_cid,
+                uds_path: vsock_cfg.uds_path.clone().into(),
+                vsock_id: None,
+            };
 
-        // Create VM instance
+            fc_instance
+                .put_guest_vsock(&fc_vsock)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to configure vsock: {:?}", e))?;
+        }
+
+        // Start the VM using SDK
+        fc_instance.start()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start VM: {:?}", e))?;
+
+        info!("VM {} started successfully via SDK", vm_id);
+
+        // Create VM instance with SDK handle
         let instance = VmInstance {
             id: vm_id.clone(),
             config,
-            process: Some(process),
+            fc_instance,
             api_socket,
             metrics: VmMetrics {
                 start_time: std::time::Instant::now(),
@@ -383,190 +474,15 @@ impl FirecrackerManager {
         let mut vms = self.vms.write().await;
         vms.insert(vm_id.clone(), Arc::new(RwLock::new(instance)));
 
-        info!("VM {} launched successfully", vm_id);
+        info!("VM {} fully operational", vm_id);
         Ok(vm_id)
     }
 
-    fn create_firecracker_command(&self, api_socket: &Path) -> Result<Command> {
-        let mut cmd = Command::new(&self.firecracker_bin);
-        cmd.arg("--api-sock")
-            .arg(api_socket)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        Ok(cmd)
-    }
-
-    fn create_jailer_command(
-        &self,
-        vm_id: &str,
-        config: &VmConfig,
-        api_socket: &Path,
-    ) -> Result<Command> {
-        let jailer_bin = self
-            .jailer_bin
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Jailer not available"))?;
-
-        let jailer_cfg = config
-            .jailer_cfg
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Jailer config required"))?;
-
-        let mut cmd = Command::new(jailer_bin);
-        cmd.arg("--id")
-            .arg(&jailer_cfg.id)
-            .arg("--exec-file")
-            .arg(&self.firecracker_bin)
-            .arg("--uid")
-            .arg(jailer_cfg.uid.to_string())
-            .arg("--gid")
-            .arg(jailer_cfg.gid.to_string())
-            .arg("--chroot-base-dir")
-            .arg(&jailer_cfg.chroot_base_dir);
-
-        if jailer_cfg.daemonize {
-            cmd.arg("--daemonize");
-        }
-
-        cmd.arg("--").arg("--api-sock").arg(api_socket);
-
-        Ok(cmd)
-    }
-
-    fn create_vm_config_json(&self, config: &VmConfig) -> Result<String> {
-        let config_obj = serde_json::json!({
-            "boot-source": {
-                "kernel_image_path": config.kernel_path,
-                "boot_args": config.kernel_args
-            },
-            "drives": [{
-                "drive_id": "rootfs",
-                "path_on_host": config.rootfs_path,
-                "is_root_device": true,
-                "is_read_only": false
-            }],
-            "machine-config": {
-                "vcpu_count": config.vcpu_count,
-                "mem_size_mib": config.mem_size_mib,
-                "smt": false,
-                "track_dirty_pages": false
-            },
-            "network-interfaces": config.network_interfaces.iter().map(|iface| {
-                serde_json::json!({
-                    "iface_id": iface.iface_id,
-                    "host_dev_name": iface.host_dev_name,
-                    "guest_mac": iface.guest_mac
-                })
-            }).collect::<Vec<_>>()
-        });
-
-        Ok(serde_json::to_string_pretty(&config_obj)?)
-    }
-
-    async fn configure_vm_api(&self, api_socket: &Path, config: &VmConfig) -> Result<()> {
-        // Wait for socket to be ready
-        let max_retries = 10;
-        for i in 0..max_retries {
-            if api_socket.exists() {
-                break;
-            }
-            if i == max_retries - 1 {
-                return Err(anyhow::anyhow!("API socket not ready"));
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        }
-
-        // Use curl to configure the VM via API
-        // In production, you'd use an HTTP client library
-
-        // Set boot source
-        let boot_source = serde_json::json!({
-            "kernel_image_path": config.kernel_path.to_str().unwrap(),
-            "boot_args": config.kernel_args
-        });
-
-        self.api_request(api_socket, "PUT", "/boot-source", &boot_source)
-            .await?;
-
-        // Set machine config
-        let machine_config = serde_json::json!({
-            "vcpu_count": config.vcpu_count,
-            "mem_size_mib": config.mem_size_mib,
-            "smt": false
-        });
-
-        self.api_request(api_socket, "PUT", "/machine-config", &machine_config)
-            .await?;
-
-        // Add rootfs drive
-        let drive = serde_json::json!({
-            "drive_id": "rootfs",
-            "path_on_host": config.rootfs_path.to_str().unwrap(),
-            "is_root_device": true,
-            "is_read_only": false
-        });
-
-        self.api_request(api_socket, "PUT", "/drives/rootfs", &drive)
-            .await?;
-
-        // Configure network interfaces
-        for iface in &config.network_interfaces {
-            let net_config = serde_json::json!({
-                "iface_id": iface.iface_id,
-                "host_dev_name": iface.host_dev_name,
-                "guest_mac": iface.guest_mac
-            });
-
-            self.api_request(
-                api_socket,
-                "PUT",
-                &format!("/network-interfaces/{}", iface.iface_id),
-                &net_config,
-            )
-            .await?;
-        }
-
-        // Start the VM
-        let action = serde_json::json!({
-            "action_type": "InstanceStart"
-        });
-
-        self.api_request(api_socket, "PUT", "/actions", &action)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn api_request(
-        &self,
-        socket: &Path,
-        method: &str,
-        path: &str,
-        body: &serde_json::Value,
-    ) -> Result<()> {
-        let socket_path = socket.to_str().unwrap();
-        let body_str = serde_json::to_string(body)?;
-
-        let output = Command::new("curl")
-            .arg("--unix-socket")
-            .arg(socket_path)
-            .arg("-X")
-            .arg(method)
-            .arg("-H")
-            .arg("Content-Type: application/json")
-            .arg("-d")
-            .arg(body_str)
-            .arg(format!("http://localhost{}", path))
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("API request failed: {}", stderr));
-        }
-
-        Ok(())
-    }
+    // Note: Obsolete methods removed - SDK handles all API communication directly
+    // - create_jailer_command: SDK has built-in jailer support via JailerOption
+    // - create_vm_config_json: SDK uses API calls, not config files
+    // - configure_vm_api: Replaced by SDK instance methods (put_machine_configuration, etc.)
+    // - api_request: SDK Instance has direct HTTP client for unix socket communication
 
     fn generate_mac() -> String {
         use rand::Rng;
@@ -621,32 +537,23 @@ impl FirecrackerManager {
         }
     }
 
-    /// Stop a VM
+    /// Stop a VM using SDK
     pub async fn stop_vm(&self, vm_id: &str) -> Result<()> {
         let vms = self.vms.read().await;
 
         if let Some(vm_arc) = vms.get(vm_id) {
             let mut vm = vm_arc.write().await;
 
-            // Send shutdown action via API
-            let action = serde_json::json!({
-                "action_type": "SendCtrlAltDel"
-            });
-
-            self.api_request(&vm.api_socket, "PUT", "/actions", &action)
-                .await?;
+            // Use SDK's stop method
+            vm.fc_instance.stop()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to stop VM via SDK: {:?}", e))?;
 
             // Wait a bit for graceful shutdown
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-            // Force kill if still running
-            if let Some(mut process) = vm.process.take() {
-                let _ = process.kill();
-                let _ = process.wait();
-            }
-
             vm.state = VmState::Stopped;
-            info!("VM {} stopped", vm_id);
+            info!("VM {} stopped via SDK", vm_id);
         }
 
         Ok(())
