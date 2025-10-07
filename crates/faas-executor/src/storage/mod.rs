@@ -8,14 +8,20 @@
 //! Storage is content-addressed using SHA256 hashing for automatic deduplication.
 //! Supports local NVMe storage with optional remote object store backends.
 
+mod adapters;
 mod blob;
 mod cache;
+mod integration;
 mod manifest;
 mod tier;
 
+pub use adapters::{DockerSnapshotAdapter, VmSnapshotAdapter, VmSnapshotInfo};
+#[cfg(target_os = "linux")]
+pub use adapters::CriuCheckpointAdapter;
 pub use blob::{BlobId, BlobMeta, BlobStore};
 pub use cache::BlobCache;
-pub use manifest::{Manifest, ManifestEntry};
+pub use integration::{StorageManager, StorageStats};
+pub use manifest::{Manifest, ManifestEntry, ManifestKind};
 pub use tier::{StorageTier, TieredStore};
 
 use anyhow::Result;
