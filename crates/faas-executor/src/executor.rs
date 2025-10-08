@@ -10,7 +10,6 @@ use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::container_pool::ContainerPoolManager;
-use crate::docker_snapshot::DockerSnapshotManager;
 use crate::environment_registry::{
     CacheMount, CacheType, ConfigurationManager, EnvironmentRegistry, EnvironmentTemplate,
 };
@@ -332,7 +331,7 @@ impl Executor {
             for template in registry.environments.values() {
                 for layer in &template.layers {
                     for cache_mount in &layer.cache_mounts {
-                        self.ensure_cache_volume(container_strategy, &cache_mount)
+                        self.ensure_cache_volume(container_strategy, cache_mount)
                             .await?;
                     }
                 }
@@ -340,7 +339,7 @@ impl Executor {
                 // Pre-warm containers based on resource requirements
                 // Only pre-warm Alpine for now to speed up tests
                 if template.id == "alpine-fast" {
-                    let pool_size = self.calculate_pool_size(&template);
+                    let pool_size = self.calculate_pool_size(template);
                     if pool_size > 0 {
                         info!(
                             "Pre-warming {} containers for environment: {}",
@@ -516,7 +515,7 @@ impl Executor {
 
             // Add environment variables from layers
             for (key, value) in &layer.env_vars {
-                env_vars.push(format!("{}={}", key, value));
+                env_vars.push(format!("{key}={value}"));
             }
         }
 
@@ -1092,7 +1091,7 @@ impl Executor {
                     firecracker
                         .execute(config.clone())
                         .await
-                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
                     Err(anyhow::anyhow!("Firecracker not available on this platform"))
                 }
@@ -1123,7 +1122,7 @@ impl Executor {
                     firecracker
                         .execute(config.clone())
                         .await
-                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
                     Err(anyhow::anyhow!("Firecracker not available on this platform"))
                 }
@@ -1166,7 +1165,7 @@ impl Executor {
                         docker_executor
                             .execute(config.clone())
                             .await
-                            .map_err(|e| anyhow::anyhow!("Execution failed: {}", e))
+                            .map_err(|e| anyhow::anyhow!("Execution failed: {e}"))
                     }
                 }
             }
@@ -1177,7 +1176,7 @@ impl Executor {
                     firecracker
                         .execute(config.clone())
                         .await
-                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
                     Err(anyhow::anyhow!("Firecracker not available on this platform"))
                 }
@@ -1220,7 +1219,7 @@ impl Executor {
                         docker_executor
                             .execute(config.clone())
                             .await
-                            .map_err(|e| anyhow::anyhow!("Execution failed: {}", e))
+                            .map_err(|e| anyhow::anyhow!("Execution failed: {e}"))
                     }
                 }
             }
@@ -1231,7 +1230,7 @@ impl Executor {
                     firecracker
                         .execute(config.clone())
                         .await
-                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {}", e))
+                        .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
                     Err(anyhow::anyhow!("Firecracker not available on this platform"))
                 }
@@ -1292,7 +1291,7 @@ impl Executor {
                 docker_executor
                     .execute(config.clone())
                     .await
-                    .map_err(|e| anyhow::anyhow!("Execution failed: {}", e))
+                    .map_err(|e| anyhow::anyhow!("Execution failed: {e}"))
             }
         }
     }
@@ -1394,15 +1393,12 @@ impl Executor {
                 full_cmd.push("-c".to_string());
 
                 // Build the command with environment variables
-                let env_prefix = env_vars
-                    .iter()
-                    .map(|e| e.clone())
-                    .collect::<Vec<_>>()
+                let env_prefix = env_vars.to_vec()
                     .join(" ");
 
                 // Combine env vars and command
                 let cmd_string = config.command.join(" ");
-                full_cmd.push(format!("{} {}", env_prefix, cmd_string));
+                full_cmd.push(format!("{env_prefix} {cmd_string}"));
             } else {
                 full_cmd.extend(config.command.clone());
             }

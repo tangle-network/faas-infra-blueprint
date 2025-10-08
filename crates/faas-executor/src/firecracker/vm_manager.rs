@@ -6,19 +6,18 @@ use firecracker_rs_sdk::{
     firecracker::FirecrackerOption,
     instance::Instance as FcInstance,
     models::{
-        BootSource, Drive, MachineConfiguration, NetworkInterface as FcNetworkInterface,
-        SnapshotCreateParams, SnapshotLoadParams, Vsock as FcVsock,
+        BootSource, Drive, MachineConfiguration, NetworkInterface as FcNetworkInterface, Vsock as FcVsock,
     },
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 /// Firecracker VM configuration
@@ -232,7 +231,7 @@ impl FirecrackerManager {
 
         // Create bridge
         let _ = Command::new("ip")
-            .args(&[
+            .args([
                 "link",
                 "add",
                 &self.network_cfg.bridge_name,
@@ -243,12 +242,12 @@ impl FirecrackerManager {
 
         // Set bridge up
         Command::new("ip")
-            .args(&["link", "set", &self.network_cfg.bridge_name, "up"])
+            .args(["link", "set", &self.network_cfg.bridge_name, "up"])
             .output()?;
 
         // Add IP to bridge
         let _ = Command::new("ip")
-            .args(&[
+            .args([
                 "addr",
                 "add",
                 &format!("{}/24", self.network_cfg.gateway),
@@ -262,7 +261,7 @@ impl FirecrackerManager {
 
         // Setup NAT
         let _ = Command::new("iptables")
-            .args(&[
+            .args([
                 "-t",
                 "nat",
                 "-A",
@@ -287,18 +286,18 @@ impl FirecrackerManager {
 
         // Create TAP device
         Command::new("ip")
-            .args(&["tuntap", "add", &tap_name, "mode", "tap"])
+            .args(["tuntap", "add", &tap_name, "mode", "tap"])
             .output()
             .context("Failed to create TAP device")?;
 
         // Set TAP up
         Command::new("ip")
-            .args(&["link", "set", &tap_name, "up"])
+            .args(["link", "set", &tap_name, "up"])
             .output()?;
 
         // Add to bridge
         Command::new("ip")
-            .args(&[
+            .args([
                 "link",
                 "set",
                 &tap_name,
@@ -363,7 +362,7 @@ impl FirecrackerManager {
         fc_instance
             .start_vmm()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to start VMM process: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to start VMM process: {e:?}"))?;
 
         info!("VMM started for {}, configuring via SDK API", vm_id);
 
@@ -383,7 +382,7 @@ impl FirecrackerManager {
         fc_instance
             .put_machine_configuration(&machine_config)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to configure machine: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to configure machine: {e:?}"))?;
 
         // Configure boot source using SDK models
         let boot_source = BootSource {
@@ -395,7 +394,7 @@ impl FirecrackerManager {
         fc_instance
             .put_guest_boot_source(&boot_source)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to configure boot source: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to configure boot source: {e:?}"))?;
 
         // Configure rootfs drive using SDK models
         let rootfs_drive = Drive {
@@ -413,7 +412,7 @@ impl FirecrackerManager {
         fc_instance
             .put_guest_drive_by_id(&rootfs_drive)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to configure rootfs drive: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to configure rootfs drive: {e:?}"))?;
 
         // Configure network interfaces using SDK models
         for (idx, net_iface) in config.network_interfaces.iter().enumerate() {
@@ -428,7 +427,7 @@ impl FirecrackerManager {
             fc_instance
                 .put_guest_network_interface_by_id(&fc_net_iface)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to configure network interface {}: {:?}", idx, e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to configure network interface {idx}: {e:?}"))?;
         }
 
         // Configure vsock if requested
@@ -443,13 +442,13 @@ impl FirecrackerManager {
             fc_instance
                 .put_guest_vsock(&fc_vsock)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to configure vsock: {:?}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to configure vsock: {e:?}"))?;
         }
 
         // Start the VM using SDK
         fc_instance.start()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to start VM: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to start VM: {e:?}"))?;
 
         info!("VM {} started successfully via SDK", vm_id);
 
@@ -505,13 +504,13 @@ impl FirecrackerManager {
             let vm = vm_arc.read().await;
 
             if vm.state != VmState::Running {
-                return Err(anyhow::anyhow!("VM {} is not running", vm_id));
+                return Err(anyhow::anyhow!("VM {vm_id} is not running"));
             }
 
             // Use real vsock/serial communication instead of simulation
             let comm_config = crate::firecracker::communication::CommunicationConfig {
                 vsock_cid: vm.vsock_cid,
-                serial_device: Some(format!("/tmp/firecracker-{}-console.sock", vm_id)),
+                serial_device: Some(format!("/tmp/firecracker-{vm_id}-console.sock")),
                 ssh_config: None,
                 timeout: std::time::Duration::from_secs(30),
                 retry_attempts: 3,
@@ -529,11 +528,11 @@ impl FirecrackerManager {
                 Err(e) => {
                     warn!("VM communication failed for {}, error: {}", vm_id, e);
                     // Return error instead of fallback simulation
-                    Err(anyhow::anyhow!("VM communication failed: {}", e))
+                    Err(anyhow::anyhow!("VM communication failed: {e}"))
                 }
             }
         } else {
-            Err(anyhow::anyhow!("VM {} not found", vm_id))
+            Err(anyhow::anyhow!("VM {vm_id} not found"))
         }
     }
 
@@ -547,7 +546,7 @@ impl FirecrackerManager {
             // Use SDK's stop method
             vm.fc_instance.stop()
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to stop VM via SDK: {:?}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to stop VM via SDK: {e:?}"))?;
 
             // Wait a bit for graceful shutdown
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;

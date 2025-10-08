@@ -6,7 +6,6 @@ use super::{
     CommunicationConfig, CommunicationError, Result, SerialConsole, VsockConnection,
 };
 use faas_common::SandboxConfig;
-use std::time::Duration;
 use tracing::{debug, info, warn};
 
 /// Executes commands in VMs using the best available communication method

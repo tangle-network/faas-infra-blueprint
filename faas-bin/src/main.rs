@@ -1,17 +1,19 @@
 use blueprint_sdk::{
     contexts::tangle::TangleClientContext,
-    environments::BlueprintEnvironment,
-    router::Router,
-    runner::BlueprintRunner,
+    crypto::{sp_core::SpSr25519, tangle_pair_signer::TanglePairSigner},
+    keystore::backends::Backend,
+    runner::{BlueprintRunner, config::BlueprintEnvironment, tangle::config::TangleConfig},
+    Job, Router,
     tangle::{
-        config::TangleConfig, consumer::TangleConsumer, layer::TangleLayer,
+        consumer::TangleConsumer,
+        layers::TangleLayer,
         producer::TangleProducer,
     },
 };
 use color_eyre::eyre;
-use faas_lib::api_server::{ApiBackgroundService, ApiKeyPermissions, ApiServerConfig};
-use faas_lib::context::FaaSContext;
-use faas_lib::jobs::*; // Import all jobs
+use faas_blueprint_lib::api_server::{ApiBackgroundService, ApiKeyPermissions, ApiServerConfig};
+use faas_blueprint_lib::context::FaaSContext;
+use faas_blueprint_lib::jobs::*; // Import all jobs
 use std::collections::HashMap;
 use tracing::info;
 
@@ -27,7 +29,7 @@ async fn main() -> eyre::Result<()> {
 
     info!("Starting FaaS Blueprint Service...");
 
-    let env = BlueprintEnvironment::boot().await?;
+    let env = BlueprintEnvironment::load()?;
 
     // Context creation now handles orchestrator setup
     info!("Initializing FaaSContext...");
@@ -35,10 +37,16 @@ async fn main() -> eyre::Result<()> {
     info!("FaaSContext initialized.");
 
     // Standard Tangle setup
-    let signer = env.tangle_identities().first_signer().await?;
-    let client = env.tangle_chain_client(None).await?;
-    let producer = TangleProducer::finalized_blocks(env.tangle_client()).await?;
-    let consumer = TangleConsumer::new(client.rpc_client.clone(), signer);
+    let tangle_client = env.tangle_client().await?;
+    let producer = TangleProducer::finalized_blocks(tangle_client.rpc_client.clone()).await?;
+
+    // Get signer from keystore
+    let keystore = env.keystore();
+    let sr25519_signer = keystore.first_local::<SpSr25519>()?;
+    let sr25519_pair = keystore.get_secret::<SpSr25519>(&sr25519_signer)?;
+    let signer = TanglePairSigner::new(sr25519_pair.0);
+
+    let consumer = TangleConsumer::new(tangle_client.rpc_client.clone(), signer);
 
     // Build the router with all jobs
     let router = Router::new()
@@ -76,7 +84,7 @@ async fn main() -> eyre::Result<()> {
         .route(EXPOSE_PORT_JOB_ID, expose_port_job.layer(TangleLayer))
         // File operations
         .route(UPLOAD_FILES_JOB_ID, upload_files_job.layer(TangleLayer))
-        .with_context(context); // Pass the initialized FaaSContext
+        .with_context(context.clone()); // Pass the initialized FaaSContext
 
     // Configure API server
     let mut api_keys = HashMap::new();
@@ -120,15 +128,11 @@ async fn main() -> eyre::Result<()> {
 
     // Build and run the Blueprint with API server as background service
     info!("Starting BlueprintRunner with API server...");
-    BlueprintRunner::builder(TangleConfig::new(), env)
+    BlueprintRunner::builder(TangleConfig::default(), env)
         .router(router)
         .producer(producer)
         .consumer(consumer)
-        .background_service(Box::pin(async move {
-            if let Err(e) = api_service.run().await {
-                tracing::error!("API server error: {}", e);
-            }
-        }))
+        .background_service(api_service)
         .run()
         .await?;
 

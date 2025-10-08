@@ -1,14 +1,14 @@
 //! VM Result Caching for Ultra-Fast Response
 //! Provides 100,000x+ speedups by caching VM execution results
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// VM Result Cache with intelligent eviction and compression
 pub struct VmResultCache {
@@ -542,7 +542,7 @@ impl DiskCache {
     }
 
     async fn get(&self, key: &str) -> Result<Option<CacheResult>> {
-        let path = self.cache_dir.join(format!("{}.cache", key));
+        let path = self.cache_dir.join(format!("{key}.cache"));
 
         if path.exists() {
             let data = tokio::fs::read(&path).await?;
@@ -555,7 +555,7 @@ impl DiskCache {
     }
 
     async fn put(&self, key: &str, result: &CacheResult) -> Result<()> {
-        let path = self.cache_dir.join(format!("{}.cache", key));
+        let path = self.cache_dir.join(format!("{key}.cache"));
         let serialized = bincode::serialize(result)?;
         let compressed = compress_prepend_size(&serialized);
         tokio::fs::write(&path, compressed).await?;

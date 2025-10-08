@@ -48,6 +48,12 @@ pub struct SnapshotHasher {
     hasher: Sha256,
 }
 
+impl Default for SnapshotHasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SnapshotHasher {
     pub fn new() -> Self {
         Self {
@@ -109,8 +115,8 @@ impl SnapshotHasher {
         for (path, entry) in files {
             hasher.update(path.as_bytes());
             hasher.update(&entry.hash);
-            hasher.update(&entry.size.to_le_bytes());
-            hasher.update(&entry.mode.to_le_bytes());
+            hasher.update(entry.size.to_le_bytes());
+            hasher.update(entry.mode.to_le_bytes());
         }
 
         hasher.finalize().to_vec()

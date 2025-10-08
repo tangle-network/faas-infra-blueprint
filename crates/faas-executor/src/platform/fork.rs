@@ -95,7 +95,7 @@ impl ForkManager {
         let mut branch_ids = Vec::new();
 
         for i in 0..count {
-            let branch_id = format!("{}-fork-{}", parent_id, i);
+            let branch_id = format!("{parent_id}-fork-{i}");
             let overlay_path = self
                 .cow_storage
                 .create_overlay(parent_id, &branch_id)
@@ -129,7 +129,7 @@ impl ForkManager {
         // Get parent memory regions
         let memory_regions = self.memory_regions.read().await;
         let parent_regions = memory_regions.get(parent_id)
-            .ok_or_else(|| anyhow!("Parent memory region not found: {}", parent_id))?
+            .ok_or_else(|| anyhow!("Parent memory region not found: {parent_id}"))?
             .clone();
 
         // Create CoW fork of memory regions
@@ -182,7 +182,7 @@ impl ForkManager {
     pub async fn handle_page_fault(&self, fork_id: &str, page_addr: usize, parent_pid: u32) -> Result<Vec<u8>> {
         let memory_regions = self.memory_regions.read().await;
         let fork_region = memory_regions.get(fork_id)
-            .ok_or_else(|| anyhow!("Fork memory region not found: {}", fork_id))?;
+            .ok_or_else(|| anyhow!("Fork memory region not found: {fork_id}"))?;
 
         // Calculate page ID from address
         let page_id = (page_addr / 4096) as u64;
@@ -216,19 +216,19 @@ impl ForkManager {
         use std::fs::File;
         use std::io::{Read, Seek, SeekFrom};
 
-        let mem_path = format!("/proc/{}/mem", pid);
+        let mem_path = format!("/proc/{pid}/mem");
 
         // Check if process still exists and is readable
-        if !std::path::Path::new(&format!("/proc/{}", pid)).exists() {
-            return Err(anyhow!("Parent process {} no longer exists", pid));
+        if !std::path::Path::new(&format!("/proc/{pid}")).exists() {
+            return Err(anyhow!("Parent process {pid} no longer exists"));
         }
 
         let mut mem_file = File::open(&mem_path)
-            .context(format!("Failed to open {}", mem_path))?;
+            .context(format!("Failed to open {mem_path}"))?;
 
         // Seek to the page address
         mem_file.seek(SeekFrom::Start(addr as u64))
-            .context(format!("Failed to seek to address 0x{:x}", addr))?;
+            .context(format!("Failed to seek to address 0x{addr:x}"))?;
 
         // Read exactly one page (4KB)
         let mut page_data = vec![0u8; 4096];
@@ -341,7 +341,7 @@ impl CowStorage {
         let base_dir = self.base_path.join(base_id);
 
         let output = Command::new("mount")
-            .args(&[
+            .args([
                 "-t", "overlay", "overlay",
                 "-o", &format!(
                     "lowerdir={},upperdir={},workdir={}",
@@ -366,7 +366,7 @@ impl CowStorage {
     fn supports_reflink(&self) -> bool {
         // Check if filesystem supports reflink (BTRFS, ZFS)
         std::process::Command::new("cp")
-            .args(&["--reflink=always", "/dev/null", "/tmp/reflink_test"])
+            .args(["--reflink=always", "/dev/null", "/tmp/reflink_test"])
             .output()
             .map(|out| out.status.success())
             .unwrap_or(false)
@@ -374,7 +374,7 @@ impl CowStorage {
 
     async fn reflink_copy(&self, src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
         let output = tokio::process::Command::new("cp")
-            .args(&[
+            .args([
                 "--reflink=always",
                 "-r",
                 src.to_str().unwrap(),

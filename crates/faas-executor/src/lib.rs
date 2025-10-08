@@ -192,7 +192,7 @@ async fn run_container_inner(
             None::<docktopus::bollard::container::StartContainerOptions<String>>,
         )
         .await
-        .map_err(|e| ExecutorError::StartFailed(e))?;
+        .map_err(ExecutorError::StartFailed)?;
 
     info!(%container_id, "Container started. Writing payload to stdin...");
     let payload_clone = config.payload.clone();
@@ -277,8 +277,7 @@ async fn run_container_inner(
                 (
                     None,
                     Some(format!(
-                        "Container failed with exit code: {}. Logs: {}",
-                        exit_code, logs_string
+                        "Container failed with exit code: {exit_code}. Logs: {logs_string}"
                     )),
                 )
             }
@@ -288,8 +287,7 @@ async fn run_container_inner(
             (
                 None,
                 Some(format!(
-                    "Container wait failed: {}. Logs: {}",
-                    e, logs_string
+                    "Container wait failed: {e}. Logs: {logs_string}"
                 )),
             )
         }
@@ -298,8 +296,7 @@ async fn run_container_inner(
             (
                 None,
                 Some(format!(
-                    "Container wait failed: stream ended unexpectedly. Logs: {}",
-                    logs_string
+                    "Container wait failed: stream ended unexpectedly. Logs: {logs_string}"
                 )),
             )
         }

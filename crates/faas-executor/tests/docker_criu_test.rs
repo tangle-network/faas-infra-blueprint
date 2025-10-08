@@ -2,7 +2,6 @@
 //! These tests use actual CRIU functionality when available
 
 use std::fs;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 

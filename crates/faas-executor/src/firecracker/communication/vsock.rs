@@ -3,11 +3,8 @@
 //! Uses virtio-vsock for high-performance VM communication
 
 use super::{CommunicationError, Result};
-use std::io::{Read, Write};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
-use tracing::{debug, error, info};
+use tracing::info;
 
 /// Vsock connection to a Firecracker VM
 pub struct VsockConnection {

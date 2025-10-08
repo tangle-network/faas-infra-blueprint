@@ -1,16 +1,16 @@
 //! VM Forking with CoW Memory and Instant Branching
 //! Provides sub-millisecond VM forking similar to Docker container forking
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::info;
 use uuid::Uuid;
 
-use super::vm_snapshot::{VmSnapshotManager, VmSnapshot};
+use super::vm_snapshot::VmSnapshotManager;
 use super::vm_manager::FirecrackerManager;
 
 
@@ -106,12 +106,12 @@ impl VmForkManager {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Create initial snapshot
-        let snapshot_id = format!("base-snapshot-{}", base_id);
+        let snapshot_id = format!("base-snapshot-{base_id}");
 
         // Get FcInstance from vm_manager
         let vms = self.vm_manager.vms.read().await;
         let vm_arc = vms.get(&vm_id)
-            .ok_or_else(|| anyhow!("VM {} not found in manager", vm_id))?;
+            .ok_or_else(|| anyhow!("VM {vm_id} not found in manager"))?;
         let mut vm = vm_arc.write().await;
 
         self.snapshot_manager
@@ -169,7 +169,7 @@ impl VmForkManager {
         // Get parent fork info
         let forks = self.forks.read().await;
         let parent = forks.get(parent_id)
-            .ok_or_else(|| anyhow!("Parent fork not found: {}", parent_id))?
+            .ok_or_else(|| anyhow!("Parent fork not found: {parent_id}"))?
             .clone();
         drop(forks);
 
@@ -253,7 +253,7 @@ impl VmForkManager {
         parent: &VmFork,
         fork_id: &str,
     ) -> Result<(String, usize)> {
-        let snapshot_id = format!("cow-fork-{}", fork_id);
+        let snapshot_id = format!("cow-fork-{fork_id}");
 
         #[cfg(target_os = "linux")]
         {
@@ -387,7 +387,7 @@ impl VmForkManager {
         parent: &VmFork,
         fork_id: &str,
     ) -> Result<(String, usize)> {
-        let snapshot_id = format!("full-fork-{}", fork_id);
+        let snapshot_id = format!("full-fork-{fork_id}");
 
         // Get FcInstance from vm_manager
         let vms = self.vm_manager.vms.read().await;
@@ -451,7 +451,7 @@ impl VmForkManager {
         info!("Pre-warming {} forks from base {}", count, base_id);
 
         for i in 0..count.min(self.config.prewarm_forks) {
-            let fork_id = format!("{}-prewarm-{}", base_id, i);
+            let fork_id = format!("{base_id}-prewarm-{i}");
             self.fork_vm(base_id, &fork_id).await?;
         }
 
@@ -467,13 +467,13 @@ impl VmForkManager {
     ) -> Result<Vec<u8>> {
         let forks = self.forks.read().await;
         let fork = forks.get(fork_id)
-            .ok_or_else(|| anyhow!("Fork not found: {}", fork_id))?;
+            .ok_or_else(|| anyhow!("Fork not found: {fork_id}"))?;
 
         let vm_id = fork.vm_id.clone(); // Clone before dropping
         let serial_socket = format!("/tmp/serial-{}.sock", fork.vm_id); // Clone socket path too
         drop(forks);
 
-        let _api_socket = format!("/tmp/firecracker-{}.sock", vm_id);
+        let _api_socket = format!("/tmp/firecracker-{vm_id}.sock");
 
         // Execute via communication layer
         let comm_config = super::communication::CommunicationConfig {
@@ -500,7 +500,7 @@ impl VmForkManager {
         };
 
         executor.execute(&config).await
-            .map_err(|e| anyhow!("Execution failed: {:?}", e))
+            .map_err(|e| anyhow!("Execution failed: {e:?}"))
     }
 
     /// Cleanup fork and reclaim resources

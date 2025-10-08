@@ -345,7 +345,7 @@ impl Executor {
             let fork_id = format!("fork-{}", req.id);
 
             // First ensure parent container exists and create checkpoint if needed
-            let checkpoint_id = format!("checkpoint-{}", parent);
+            let checkpoint_id = format!("checkpoint-{parent}");
 
             // Check if we already have this checkpoint
             let checkpoints = self.docker_fork.checkpoints.read().await;
@@ -374,18 +374,18 @@ impl Executor {
 
                 // Now checkpoint it
                 self.docker_fork.checkpoint_container(&parent, &checkpoint_id).await
-                    .map_err(|e| anyhow::anyhow!("Failed to checkpoint parent: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Failed to checkpoint parent: {e}"))?;
             }
 
             // Fork from the checkpoint
             let forked_container_id = self.docker_fork.fork_from_checkpoint(&checkpoint_id, &fork_id).await
-                .map_err(|e| anyhow::anyhow!("Failed to fork from checkpoint: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to fork from checkpoint: {e}"))?;
 
             info!("Created fork {} from parent {} (container: {})", fork_id, parent, forked_container_id);
 
             // Execute the code in the forked container
             let output = self.docker_fork.execute_in_fork(&fork_id, &req.code).await
-                .map_err(|e| anyhow::anyhow!("Failed to execute in fork: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to execute in fork: {e}"))?;
 
             // Clean up the fork after execution
             let _ = self.docker_fork.cleanup_fork(&fork_id).await;
@@ -403,7 +403,7 @@ impl Executor {
 
     async fn run_persistent(&self, req: Request) -> Result<Response> {
         // For persistent mode, prefer Firecracker on Linux, Docker on other platforms
-        let runtime = req.runtime.unwrap_or_else(|| {
+        let runtime = req.runtime.unwrap_or({
             if cfg!(target_os = "linux") {
                 faas_common::Runtime::Firecracker
             } else {

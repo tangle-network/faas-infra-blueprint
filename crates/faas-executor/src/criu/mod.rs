@@ -139,7 +139,7 @@ impl CriuManager {
 
         // Set log file
         let log_path = if let Some(log_dir) = &self.config.log_file {
-            let log_file = log_dir.join(format!("{}-checkpoint.log", checkpoint_id));
+            let log_file = log_dir.join(format!("{checkpoint_id}-checkpoint.log"));
             cmd.arg("--log-file").arg(&log_file);
             Some(log_file)
         } else {
@@ -164,7 +164,7 @@ impl CriuManager {
                 }
             }
 
-            return Err(anyhow::anyhow!("CRIU checkpoint failed: {}", stderr));
+            return Err(anyhow::anyhow!("CRIU checkpoint failed: {stderr}"));
         }
 
         // Analyze checkpoint results
@@ -194,8 +194,7 @@ impl CriuManager {
 
         if !images_path.exists() {
             return Err(anyhow::anyhow!(
-                "Checkpoint images not found: {:?}",
-                images_path
+                "Checkpoint images not found: {images_path:?}"
             ));
         }
 
@@ -223,7 +222,7 @@ impl CriuManager {
 
         // Set log file
         let log_path = if let Some(log_dir) = &self.config.log_file {
-            let log_file = log_dir.join(format!("{}-restore.log", restore_id));
+            let log_file = log_dir.join(format!("{restore_id}-restore.log"));
             cmd.arg("--log-file").arg(&log_file);
             Some(log_file)
         } else {
@@ -250,7 +249,7 @@ impl CriuManager {
                 }
             }
 
-            return Err(anyhow::anyhow!("CRIU restore failed: {}", stderr));
+            return Err(anyhow::anyhow!("CRIU restore failed: {stderr}"));
         }
 
         // Parse restore output to get new PID
@@ -374,7 +373,7 @@ impl CriuManager {
 
             // Don't fail on warnings, but log them
             if stderr.contains("Error") || stderr.contains("FAIL") {
-                return Err(anyhow::anyhow!("CRIU capability check failed: {}", stderr));
+                return Err(anyhow::anyhow!("CRIU capability check failed: {stderr}"));
             }
         }
 

@@ -1,4 +1,3 @@
-use reqwest;
 use serde_json::json;
 use tracing::info;
 
@@ -11,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting OpenCode container via Docker...");
 
     let container_output = tokio::process::Command::new("docker")
-        .args(&[
+        .args([
             "run", "-d", "--rm",
             "-p", "4096:4096",
             "opencode-chat:latest"
@@ -34,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Wait for server to be ready
     let server_url = "http://localhost:4096".to_string();
-    let health_url = format!("{}/health", server_url);
+    let health_url = format!("{server_url}/health");
 
     info!("Waiting for server to be ready...");
     for i in 0..30 {
@@ -59,16 +58,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Send ANY prompt - this demonstrates the server accepts ANY prompt
-    let chat_url = format!("{}/api/chat", server_url);
+    let chat_url = format!("{server_url}/api/chat");
 
     // Example prompts - you can send ANYTHING
-    let prompts = vec![
-        "Build a production-ready Rust GUI application for voice transcription with hotkey support",
+    let prompts = ["Build a production-ready Rust GUI application for voice transcription with hotkey support",
         "Write a Python script to analyze stock market data",
         "Create a TypeScript React component for a dashboard",
         "Explain quantum computing in simple terms",
-        "Generate SQL queries for a user management system"
-    ];
+        "Generate SQL queries for a user management system"];
 
     // Randomly select a prompt to demonstrate the server accepts ANY prompt
     let prompt_idx = (std::time::SystemTime::now()
@@ -90,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !response.status().is_success() {
         let error = response.text().await?;
-        return Err(format!("Chat request failed: {}", error).into());
+        return Err(format!("Chat request failed: {error}").into());
     }
 
     // Read the streaming response
@@ -113,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(json_str) = line.strip_prefix("data: ") {
                     if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
                         if let Some(chunk) = data.get("chunk").and_then(|c| c.as_str()) {
-                            print!("{}", chunk);
+                            print!("{chunk}");
                             full_response.push_str(chunk);
                         } else if data.get("done").and_then(|d| d.as_bool()).unwrap_or(false) {
                             response_complete = true;
@@ -137,7 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Optionally save the response if it contains code
         if prompt.contains("build") || prompt.contains("create") || prompt.contains("write") {
             let save_response = http_client
-                .post(&format!("{}/api/execute", server_url))
+                .post(format!("{server_url}/api/execute"))
                 .json(&json!({
                     "language": "rust",
                     "code": full_response,
@@ -159,7 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !container_id.is_empty() {
         info!("Stopping local container...");
         let _ = tokio::process::Command::new("docker")
-            .args(&["stop", &container_id])
+            .args(["stop", &container_id])
             .output()
             .await;
     }

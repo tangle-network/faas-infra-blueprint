@@ -1,7 +1,6 @@
 use axum::{
     extract::{Json, Path, Query, State},
     http::HeaderMap,
-    response::IntoResponse,
     routing::{get, post},
     Router,
 };
@@ -203,13 +202,13 @@ pub async fn execute_advanced_handler(
     .await
     {
         Ok(result) => Ok(Json(ExecuteResponse {
-            request_id: format!("api-{}", call_id),
+            request_id: format!("api-{call_id}"),
             response: Some(result.0),
             logs: None,
             error: None,
         })),
         Err(e) => Ok(Json(ExecuteResponse {
-            request_id: format!("api-{}", call_id),
+            request_id: format!("api-{call_id}"),
             response: None,
             logs: None,
             error: Some(e.to_string()),

@@ -27,20 +27,21 @@ pub async fn execute_function_job(
     info!(image = %args.image, command = ?args.command, "Executing function");
 
     let request = PlatformRequest {
-        id: format!("job_{}", call_id),
+        id: format!("job_{call_id}"),
         code: args.command.join(" "),
         mode: Mode::Ephemeral,
         env: args.image,
         timeout: Duration::from_secs(60),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let response = _ctx
         .executor
         .run(request)
         .await
-        .map_err(|e| JobError::ExecutionFailed(format!("Platform execution failed: {}", e)))?;
+        .map_err(|e| JobError::ExecutionFailed(format!("Platform execution failed: {e}")))?;
 
     if response.exit_code != 0 {
         return Err(JobError::ExecutionFailed(format!(
@@ -86,7 +87,7 @@ pub async fn execute_advanced_job(
         "Executing function with mode"
     );
 
-    let function_id = format!("job_{}", call_id);
+    let function_id = format!("job_{call_id}");
 
     let mode = match args.mode.as_str() {
         "cached" => Mode::Cached,
@@ -104,13 +105,14 @@ pub async fn execute_advanced_job(
         timeout: Duration::from_secs(args.timeout_secs.unwrap_or(60)),
         checkpoint: args.checkpoint_id,
         branch_from: args.branch_from,
+        runtime: None,
     };
 
     let response = _ctx
         .executor
         .run(request)
         .await
-        .map_err(|e| JobError::ExecutionFailed(format!("Execution failed: {}", e)))?;
+        .map_err(|e| JobError::ExecutionFailed(format!("Execution failed: {e}")))?;
 
     Ok(TangleResult(response.stdout))
 }
@@ -160,7 +162,7 @@ pub async fn restore_snapshot_job(
 ) -> Result<TangleResult<String>, JobError> {
     info!("Restoring snapshot: {}", snapshot_id);
 
-    let container_id = format!("restored_{}_{}", snapshot_id, call_id);
+    let container_id = format!("restored_{snapshot_id}_{call_id}");
 
     // TODO: Actual CRIU restore implementation
     // ctx.criu_manager.restore(snapshot_id, container_id)?;
@@ -222,7 +224,7 @@ pub async fn merge_branches_job(
 ) -> Result<TangleResult<String>, JobError> {
     info!("Merging branches: {:?}", args.branch_ids);
 
-    let merged_id = format!("merged_{}", call_id);
+    let merged_id = format!("merged_{call_id}");
 
     // TODO: Implement branch merging logic
 
@@ -257,7 +259,7 @@ pub async fn start_instance_job(
 ) -> Result<TangleResult<String>, JobError> {
     info!("Starting persistent instance");
 
-    let instance_id = format!("inst_{}", call_id);
+    let instance_id = format!("inst_{call_id}");
 
     // TODO: Create long-running container with SSH if enabled
     // - Use snapshot_id if provided, otherwise use image
@@ -297,7 +299,7 @@ pub async fn pause_instance_job(
     info!("Pausing instance: {}", instance_id);
 
     // Create checkpoint and pause
-    let checkpoint_id = format!("pause_{}_{}", instance_id, call_id);
+    let checkpoint_id = format!("pause_{instance_id}_{call_id}");
 
     // TODO: CRIU checkpoint + pause container
 
@@ -317,7 +319,7 @@ pub async fn resume_instance_job(
     info!("Resuming from checkpoint: {}", checkpoint_id);
 
     // TODO: CRIU restore from checkpoint
-    let instance_id = format!("resumed_{}", call_id);
+    let instance_id = format!("resumed_{call_id}");
 
     info!("Resumed instance: {}", instance_id);
     Ok(TangleResult(instance_id))

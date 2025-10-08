@@ -817,7 +817,7 @@ impl FaasClient {
     /// Execute Bash script
     pub async fn run_bash(&self, script: &str) -> Result<ExecuteResponse, SdkError> {
         self.execute(ExecuteRequest {
-            command: format!("bash -c \"{}\"", script),
+            command: format!("bash -c \"{script}\""),
             image: Some("alpine:latest".to_string()),
             runtime: Some(self.runtime.clone()),
             timeout_ms: Some(30000),
@@ -848,7 +848,7 @@ impl FaasClient {
     /// Create checkpoint for stateful workflow
     pub async fn checkpoint_execution(&self, execution_id: &str) -> Result<SnapshotResponse, SdkError> {
         self.create_snapshot(CreateSnapshotRequest {
-            name: format!("checkpoint-{}", execution_id),
+            name: format!("checkpoint-{execution_id}"),
             container_id: execution_id.to_string(),
             description: Some("Execution checkpoint".to_string()),
         }).await

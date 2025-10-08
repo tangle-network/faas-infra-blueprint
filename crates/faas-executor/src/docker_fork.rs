@@ -45,18 +45,18 @@ impl DockerForkManager {
         // Commit the container to create an image with its current state
         let options = CommitContainerOptions {
             container: container_id.to_string(),
-            repo: format!("faas-checkpoint-{}", checkpoint_id),
+            repo: format!("faas-checkpoint-{checkpoint_id}"),
             tag: "latest".to_string(),
-            comment: format!("Checkpoint of container {}", container_id),
+            comment: format!("Checkpoint of container {container_id}"),
             ..Default::default()
         };
 
         let commit_result = self.docker.commit_container(options, crate::bollard::container::Config::<String>::default()).await
-            .map_err(|e| anyhow!("Failed to commit container: {}", e))?;
+            .map_err(|e| anyhow!("Failed to commit container: {e}"))?;
 
         // Use the returned ID or fall back to the image name we specified
         let image_id = commit_result.id
-            .unwrap_or_else(|| format!("faas-checkpoint-{}:latest", checkpoint_id));
+            .unwrap_or_else(|| format!("faas-checkpoint-{checkpoint_id}:latest"));
 
         // Store the checkpoint mapping
         let mut checkpoints = self.checkpoints.write().await;
@@ -74,18 +74,18 @@ impl DockerForkManager {
         // Get the checkpoint image
         let checkpoints = self.checkpoints.read().await;
         let image_id = checkpoints.get(checkpoint_id)
-            .ok_or_else(|| anyhow!("Checkpoint {} not found", checkpoint_id))?
+            .ok_or_else(|| anyhow!("Checkpoint {checkpoint_id} not found"))?
             .clone();
         drop(checkpoints);
 
         // Create a new container from the checkpoint image
         let config = CreateContainerOptions {
-            name: format!("faas-fork-{}", fork_id),
+            name: format!("faas-fork-{fork_id}"),
             platform: None,
         };
 
         let container_config = crate::bollard::container::Config {
-            image: Some(format!("faas-checkpoint-{}:latest", checkpoint_id)),
+            image: Some(format!("faas-checkpoint-{checkpoint_id}:latest")),
             cmd: Some(vec!["/bin/sh".to_string()]),
             tty: Some(true),
             attach_stdin: Some(true),
@@ -97,11 +97,11 @@ impl DockerForkManager {
         };
 
         let container = self.docker.create_container(Some(config), container_config).await
-            .map_err(|e| anyhow!("Failed to create forked container: {}", e))?;
+            .map_err(|e| anyhow!("Failed to create forked container: {e}"))?;
 
         // Start the forked container
         self.docker.start_container(&container.id, None::<StartContainerOptions<String>>).await
-            .map_err(|e| anyhow!("Failed to start forked container: {}", e))?;
+            .map_err(|e| anyhow!("Failed to start forked container: {e}"))?;
 
         // Store branch info
         let branch_info = BranchInfo {
@@ -125,7 +125,7 @@ impl DockerForkManager {
     pub async fn execute_in_fork(&self, fork_id: &str, command: &str) -> Result<Vec<u8>> {
         let branches = self.branches.read().await;
         let branch_info = branches.get(fork_id)
-            .ok_or_else(|| anyhow!("Fork {} not found", fork_id))?;
+            .ok_or_else(|| anyhow!("Fork {fork_id} not found"))?;
         let container_id = branch_info.container_id.clone();
         drop(branches);
 
@@ -138,11 +138,11 @@ impl DockerForkManager {
         };
 
         let exec = self.docker.create_exec(&container_id, exec_config).await
-            .map_err(|e| anyhow!("Failed to create exec: {}", e))?;
+            .map_err(|e| anyhow!("Failed to create exec: {e}"))?;
 
         // Start exec and collect output
         let start_result = self.docker.start_exec(&exec.id, None).await
-            .map_err(|e| anyhow!("Failed to start exec: {}", e))?;
+            .map_err(|e| anyhow!("Failed to start exec: {e}"))?;
 
         let output = match start_result {
             StartExecResults::Attached { mut output, .. } => {
@@ -164,7 +164,7 @@ impl DockerForkManager {
 
         // Create container
         let config = CreateContainerOptions {
-            name: format!("faas-base-{}", base_id),
+            name: format!("faas-base-{base_id}"),
             platform: None,
         };
 
@@ -181,11 +181,11 @@ impl DockerForkManager {
         };
 
         let container = self.docker.create_container(Some(config), container_config).await
-            .map_err(|e| anyhow!("Failed to create base container: {}", e))?;
+            .map_err(|e| anyhow!("Failed to create base container: {e}"))?;
 
         // Start container
         self.docker.start_container(&container.id, None::<StartContainerOptions<String>>).await
-            .map_err(|e| anyhow!("Failed to start base container: {}", e))?;
+            .map_err(|e| anyhow!("Failed to start base container: {e}"))?;
 
         // Execute setup commands
         for cmd in setup_commands {

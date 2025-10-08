@@ -29,6 +29,7 @@ async fn test_complete_execution_pipeline() -> Result<()> {
         timeout: Duration::from_secs(30),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let response1 = executor.run(req1).await?;
@@ -60,6 +61,7 @@ async fn test_complete_execution_pipeline() -> Result<()> {
         timeout: Duration::from_secs(30),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let response2 = executor.run(req2.clone()).await?;
@@ -151,6 +153,7 @@ async fn test_concurrent_execution_scaling() -> Result<()> {
                 timeout: Duration::from_secs(45),
                 checkpoint: None,
                 branch_from: None,
+        runtime: None,
             };
 
             let start_individual = Instant::now();
@@ -222,6 +225,7 @@ async fn test_error_handling_and_recovery() -> Result<()> {
         timeout: Duration::from_secs(10),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let response_bad = executor.run(req_bad_syntax).await?;
@@ -242,6 +246,7 @@ async fn test_error_handling_and_recovery() -> Result<()> {
         timeout: Duration::from_secs(10),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let response_good = executor.run(req_good).await?;
@@ -264,6 +269,7 @@ async fn test_error_handling_and_recovery() -> Result<()> {
         timeout: Duration::from_secs(2), // Short timeout
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let start = Instant::now();
@@ -305,6 +311,7 @@ async fn test_execution_modes_integration() -> Result<()> {
         timeout: Duration::from_secs(20),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let ephemeral_resp = executor.run(ephemeral_req).await?;
@@ -323,6 +330,7 @@ async fn test_execution_modes_integration() -> Result<()> {
         timeout: Duration::from_secs(20),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let cached_resp = executor.run(cached_req).await?;
@@ -341,6 +349,7 @@ async fn test_execution_modes_integration() -> Result<()> {
         timeout: Duration::from_secs(20),
         checkpoint: None, // Will create a new checkpoint
         branch_from: None,
+        runtime: None,
     };
 
     let checkpoint_resp = executor.run(checkpoint_req).await?;
@@ -359,6 +368,7 @@ async fn test_execution_modes_integration() -> Result<()> {
         timeout: Duration::from_secs(20),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let persistent_resp = executor.run(persistent_req).await?;
@@ -396,6 +406,7 @@ async fn test_performance_monitoring() -> Result<()> {
             timeout: Duration::from_secs(10),
             checkpoint: None,
             branch_from: None,
+        runtime: None,
         };
 
         let response = executor.run(req).await?;
@@ -495,6 +506,7 @@ async fn test_resource_utilization() -> Result<()> {
                 timeout: Duration::from_secs(30),
                 checkpoint: None,
                 branch_from: None,
+        runtime: None,
             };
 
             executor_clone.run(req).await
@@ -544,6 +556,7 @@ async fn test_resource_utilization() -> Result<()> {
         timeout: Duration::from_secs(30),
         checkpoint: None,
         branch_from: None,
+        runtime: None,
     };
 
     let response = executor.run(req).await?;

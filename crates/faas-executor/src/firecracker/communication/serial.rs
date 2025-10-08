@@ -3,11 +3,11 @@
 //! Fallback communication method using serial console for VMs
 
 use super::{CommunicationError, Result};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, Write};
 use std::time::Duration;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 /// Serial console connection to a VM
 pub struct SerialConsole {
@@ -86,8 +86,7 @@ impl SerialConsole {
             )
         } else {
             format!(
-                "echo '{}'; {} 2>&1; EXIT_CODE=$?; echo '{}'; echo $EXIT_CODE\n",
-                start_marker, command, end_marker
+                "echo '{start_marker}'; {command} 2>&1; EXIT_CODE=$?; echo '{end_marker}'; echo $EXIT_CODE\n"
             )
         };
 
@@ -136,8 +135,7 @@ impl SerialConsole {
 
             if exit_code != 0 {
                 Err(CommunicationError::ExecutionFailed(format!(
-                    "Command failed with exit code {}",
-                    exit_code
+                    "Command failed with exit code {exit_code}"
                 )))
             } else {
                 Ok(output)
@@ -164,7 +162,7 @@ impl SerialConsole {
 
     /// Read output from the serial console
     pub async fn read_output(&self, max_bytes: usize) -> Result<Vec<u8>> {
-        let mut device = OpenOptions::new()
+        let device = OpenOptions::new()
             .read(true)
             .open(&self.device_path)
             .await?;
@@ -194,7 +192,7 @@ impl SerialConsole {
     /// Wait for a specific prompt or pattern in the output
     pub async fn wait_for_prompt(&self, prompt: &str) -> Result<()> {
         let start = std::time::Instant::now();
-        let mut device = OpenOptions::new()
+        let device = OpenOptions::new()
             .read(true)
             .open(&self.device_path)
             .await?;

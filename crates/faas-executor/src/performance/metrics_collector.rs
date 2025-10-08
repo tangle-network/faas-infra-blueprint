@@ -483,7 +483,7 @@ impl MetricsCollector {
         #[cfg(unix)]
         {
             if let Ok(output) = tokio::process::Command::new("ps")
-                .args(&["aux"])
+                .args(["aux"])
                 .output()
                 .await
             {
@@ -512,7 +512,7 @@ impl MetricsCollector {
 
         // Get Docker container count
         let active_containers = if let Ok(output) = tokio::process::Command::new("docker")
-            .args(&["ps", "-q"])
+            .args(["ps", "-q"])
             .output()
             .await
         {

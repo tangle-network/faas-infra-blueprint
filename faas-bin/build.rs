@@ -14,18 +14,18 @@ fn main() {
         .join("contracts");
 
     let contract_dirs: Vec<&str> = vec![contracts_dir.to_str().unwrap()];
-    build::utils::soldeer_install();
-    build::utils::soldeer_update();
-    build::utils::build_contracts(contract_dirs);
+    build::soldeer_install();
+    build::soldeer_update();
+    build::build_contracts(contract_dirs);
 
     println!("cargo::rerun-if-changed=../faas-blueprint-lib");
 
     // The `blueprint!` macro generates the info necessary for the `blueprint.json`.
     // See its docs for all available metadata fields.
     let blueprint = blueprint! {
-        name: "experiment",
+        name: "zk-faas",
         master_manager_revision: "Latest",
-        manager: { Evm = "HelloBlueprint" },
+        manager: { Evm = "ZkFaasBlueprint" },
         jobs: []
     };
 

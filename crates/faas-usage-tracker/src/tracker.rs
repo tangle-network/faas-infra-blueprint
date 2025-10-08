@@ -62,7 +62,7 @@ impl UsageTracker {
         let remaining = account.mcus_allocated - account.mcus_consumed;
         if remaining <= 0.0 && !account.pay_as_you_go_enabled {
             return Err(UsageError::LimitExceeded {
-                message: format!("Insufficient MCU credits: {:.2} remaining", remaining),
+                message: format!("Insufficient MCU credits: {remaining:.2} remaining"),
             });
         }
 

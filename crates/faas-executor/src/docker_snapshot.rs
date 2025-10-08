@@ -3,13 +3,13 @@
 
 use anyhow::{anyhow, Context, Result};
 use crate::bollard::container::Config as ContainerConfig;
-use crate::bollard::image::{CommitContainerOptions, CreateImageOptions};
+use crate::bollard::image::CommitContainerOptions;
 use crate::bollard::Docker;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::info;
 use uuid::Uuid;
 
 /// Docker-based snapshot with actual commit operations
@@ -58,7 +58,7 @@ impl DockerSnapshotManager {
             container: container_id.to_string(),
             repo: image_name.clone(),
             tag: "latest".to_string(),
-            comment: format!("FaaS snapshot {}", snapshot_id),
+            comment: format!("FaaS snapshot {snapshot_id}"),
             author: "FaaS Platform".to_string(),
             pause: true, // Pause container during commit for consistency
             ..Default::default()
@@ -106,7 +106,7 @@ impl DockerSnapshotManager {
     pub async fn restore_snapshot(&self, snapshot_id: &str) -> Result<String> {
         let snapshots = self.snapshots.read().await;
         let snapshot = snapshots.get(snapshot_id)
-            .ok_or_else(|| anyhow!("Snapshot {} not found", snapshot_id))?;
+            .ok_or_else(|| anyhow!("Snapshot {snapshot_id} not found"))?;
 
         let container_name = format!("restored-{}-{}", snapshot_id, Uuid::new_v4());
 
@@ -200,7 +200,7 @@ impl DockerSnapshotManager {
             info!("Deleted snapshot {} and image {}", snapshot_id, snapshot.image_id);
             Ok(())
         } else {
-            Err(anyhow!("Snapshot {} not found", snapshot_id))
+            Err(anyhow!("Snapshot {snapshot_id} not found"))
         }
     }
 
@@ -217,7 +217,7 @@ impl DockerSnapshotManager {
         name: Option<String>,
     ) -> Result<DockerSnapshot> {
         let parent = self.get_snapshot(parent_snapshot_id).await
-            .ok_or_else(|| anyhow!("Parent snapshot {} not found", parent_snapshot_id))?;
+            .ok_or_else(|| anyhow!("Parent snapshot {parent_snapshot_id} not found"))?;
 
         // Get container changes since parent (for logging)
         let _changes = self.docker

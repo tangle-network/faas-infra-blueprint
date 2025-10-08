@@ -133,7 +133,7 @@ pub trait SandboxExecutor: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json; // Import for test
+     // Import for test
 
     #[test]
     fn test_serialization() {
@@ -147,7 +147,7 @@ mod tests {
             timeout_sec: Some(30),
         };
         let json = serde_json::to_string(&def).unwrap();
-        println!("{}", json);
+        println!("{json}");
         assert!(json.contains("Python"));
 
         let req = InvocationRequest {
@@ -156,7 +156,7 @@ mod tests {
             payload: vec![1, 2, 3],
         };
         let json_req = serde_json::to_string(&req).unwrap();
-        println!("{}", json_req);
+        println!("{json_req}");
         assert!(json_req.contains("f1"));
     }
 }

@@ -92,7 +92,7 @@ impl DockerSnapshotAdapter {
         let manifests = self.manifests.read().await;
         let manifest = manifests
             .get(snapshot_id)
-            .ok_or_else(|| anyhow!("Snapshot not found: {}", snapshot_id))?;
+            .ok_or_else(|| anyhow!("Snapshot not found: {snapshot_id}"))?;
 
         // Get the filesystem blob
         let fs_entry = manifest
@@ -104,7 +104,7 @@ impl DockerSnapshotAdapter {
         let tar_data = self.cache.get(&fs_entry.blob_id).await?;
 
         // Import as Docker image
-        let image_name = format!("faas-restored-{}", snapshot_id);
+        let image_name = format!("faas-restored-{snapshot_id}");
         self.docker
             .import_image(
                 crate::bollard::image::ImportImageOptions {
@@ -118,7 +118,7 @@ impl DockerSnapshotAdapter {
             .context("Failed to import image")?;
 
         // Create container from imported image
-        let container_name = format!("restored-{}", snapshot_id);
+        let container_name = format!("restored-{snapshot_id}");
         let config = crate::bollard::container::Config {
             image: Some(image_name),
             attach_stdin: Some(true),
@@ -274,7 +274,7 @@ impl VmSnapshotAdapter {
         let manifests = self.manifests.read().await;
         let manifest = manifests
             .get(snapshot_id)
-            .ok_or_else(|| anyhow!("Snapshot not found: {}", snapshot_id))?;
+            .ok_or_else(|| anyhow!("Snapshot not found: {snapshot_id}"))?;
 
         // Extract blob IDs from manifest
         let (memory_blob, state_blob) = match &manifest.kind {

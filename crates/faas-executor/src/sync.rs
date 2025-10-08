@@ -121,16 +121,16 @@ impl FileSynchronizer {
 
         // Process source files
         for (relative_path, source_info) in &source_files {
-            if self.should_skip(&relative_path) {
+            if self.should_skip(relative_path) {
                 result.files_skipped.push(relative_path.clone());
                 continue;
             }
 
-            let dest_path = destination.join(&relative_path);
+            let dest_path = destination.join(relative_path);
 
             if let Some(dest_info) = dest_files.get(relative_path) {
                 // File exists in destination
-                if self.should_update(&source_info, &dest_info).await? {
+                if self.should_update(source_info, dest_info).await? {
                     if !self.options.dry_run {
                         self.copy_file(&source_info.path, &dest_path).await?;
                         result.bytes_transferred += source_info.size;
@@ -152,9 +152,9 @@ impl FileSynchronizer {
 
         // Handle deletion of unmatched files
         if self.options.delete_unmatched {
-            for (relative_path, _) in &dest_files {
+            for relative_path in dest_files.keys() {
                 if !source_files.contains_key(relative_path) && !self.should_skip(relative_path) {
-                    let dest_path = destination.join(&relative_path);
+                    let dest_path = destination.join(relative_path);
                     if !self.options.dry_run {
                         fs::remove_file(dest_path).await?;
                     }
@@ -209,7 +209,7 @@ impl FileSynchronizer {
                         .as_secs() as i64,
                     0,
                 )
-                .unwrap_or_else(|| Utc::now());
+                .unwrap_or_else(Utc::now);
 
                 files.insert(
                     relative_path,

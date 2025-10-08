@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
@@ -187,7 +187,7 @@ impl CriuContainerManager {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("CRIU dump failed: {}", stderr);
-            return Err(anyhow::anyhow!("Checkpoint failed: {}", stderr));
+            return Err(anyhow::anyhow!("Checkpoint failed: {stderr}"));
         }
 
         // Calculate checkpoint size
@@ -231,7 +231,7 @@ impl CriuContainerManager {
     ) -> Result<CheckpointMetadata> {
         let parent_path = self.checkpoint_dir.join(parent_id);
         if !parent_path.exists() {
-            return Err(anyhow::anyhow!("Parent checkpoint {} not found", parent_id));
+            return Err(anyhow::anyhow!("Parent checkpoint {parent_id} not found"));
         }
 
         let checkpoint_path = self.checkpoint_dir.join(checkpoint_id);
@@ -281,7 +281,7 @@ impl CriuContainerManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Incremental checkpoint failed: {}", stderr));
+            return Err(anyhow::anyhow!("Incremental checkpoint failed: {stderr}"));
         }
 
         let size = fs::read_dir(&checkpoint_path)?
@@ -314,7 +314,7 @@ impl CriuContainerManager {
     pub fn restore(&self, checkpoint_id: &str) -> Result<u32> {
         let checkpoint_path = self.checkpoint_dir.join(checkpoint_id);
         if !checkpoint_path.exists() {
-            return Err(anyhow::anyhow!("Checkpoint {} not found", checkpoint_id));
+            return Err(anyhow::anyhow!("Checkpoint {checkpoint_id} not found"));
         }
 
         info!("Restoring from checkpoint {}", checkpoint_id);
@@ -345,7 +345,7 @@ impl CriuContainerManager {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Restore failed: {}", stderr));
+            return Err(anyhow::anyhow!("Restore failed: {stderr}"));
         }
 
         // Read the pidfile to get the restored PID

@@ -137,7 +137,7 @@ impl ApiBackgroundService {
         Self { config, context }
     }
 
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn run_server(self) -> Result<(), Box<dyn std::error::Error>> {
         let state = ApiState {
             context: self.context,
             config: self.config.clone(),
@@ -160,6 +160,29 @@ impl ApiBackgroundService {
         axum::serve(listener, app).await?;
 
         Ok(())
+    }
+}
+
+impl blueprint_sdk::runner::BackgroundService for ApiBackgroundService {
+    fn start(
+        &self,
+    ) -> impl std::future::Future<Output = Result<tokio::sync::oneshot::Receiver<Result<(), blueprint_sdk::runner::error::RunnerError>>, blueprint_sdk::runner::error::RunnerError>> + Send {
+        let config = self.config.clone();
+        let context = self.context.clone();
+
+        async move {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+
+            tokio::spawn(async move {
+                let service = ApiBackgroundService { config, context };
+                let result = service.run_server()
+                    .await
+                    .map_err(|e| blueprint_sdk::runner::error::RunnerError::Other(format!("API server error: {e}").into()));
+                let _ = tx.send(result);
+            });
+
+            Ok(rx)
+        }
     }
 }
 
@@ -200,7 +223,7 @@ pub(crate) async fn check_rate_limit(
 
         if *count > limit {
             return Err(ApiError {
-                error: format!("Rate limit exceeded: {} requests per minute", limit),
+                error: format!("Rate limit exceeded: {limit} requests per minute"),
                 code: "RATE_LIMIT_EXCEEDED".to_string(),
             });
         }
@@ -250,7 +273,7 @@ async fn execute_function_handler(
     .await
     {
         Ok(result) => Ok(Json(ExecuteResponse {
-            request_id: format!("api-{}", call_id),
+            request_id: format!("api-{call_id}"),
             response: Some(result.0),
             logs: None,
             error: None,
@@ -258,7 +281,7 @@ async fn execute_function_handler(
         Err(e) => {
             error!("Execution failed: {:?}", e);
             Ok(Json(ExecuteResponse {
-                request_id: format!("api-{}", call_id),
+                request_id: format!("api-{call_id}"),
                 response: None,
                 logs: None,
                 error: Some(e.to_string()),

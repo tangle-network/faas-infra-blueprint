@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Run a simple command (fastest path to results)
     println!("1. Quick command execution:");
     let output = client.run("echo 'Hello from FaaS!'").await?;
-    println!("   Output: {}", output);
+    println!("   Output: {output}");
 
     // 3. Run Python code (no setup needed)
     println!("\n2. Python execution:");
@@ -91,7 +91,7 @@ console.log(JSON.stringify(compute(), null, 2));
         "echo 'This will be cached'",
         "alpine:latest"
     ).await?;
-    println!("   Output: {}", cached_result);
+    println!("   Output: {cached_result}");
 
     // 8. Check platform health
     println!("\n7. Platform health check:");

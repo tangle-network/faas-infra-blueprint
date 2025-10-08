@@ -92,7 +92,7 @@ impl SnapshotStore {
         let snapshots = self.snapshots.read().await;
         let snapshot = snapshots
             .get(snapshot_id)
-            .ok_or_else(|| anyhow::anyhow!("Snapshot not found: {}", snapshot_id))?;
+            .ok_or_else(|| anyhow::anyhow!("Snapshot not found: {snapshot_id}"))?;
 
         let exec_id = match snapshot.backend {
             Backend::Criu => self.restore_criu_snapshot(snapshot).await?,
@@ -106,7 +106,7 @@ impl SnapshotStore {
         // Parse exec_id as PID for CRIU
         let pid: u32 = exec_id
             .parse()
-            .map_err(|_| anyhow::anyhow!("Invalid PID format: {}", exec_id))?;
+            .map_err(|_| anyhow::anyhow!("Invalid PID format: {exec_id}"))?;
 
         // Use real CRIU manager to create checkpoint
         let checkpoint_result = self.criu.checkpoint(pid, snapshot_id).await?;

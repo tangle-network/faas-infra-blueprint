@@ -25,8 +25,7 @@ use faas_common::{InvocationResult, Result as CommonResult, SandboxConfig, Sandb
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::warn;
 
 /// High-level Firecracker executor implementing SandboxExecutor trait
 pub struct FirecrackerExecutor {
@@ -235,7 +234,7 @@ impl FirecrackerExecutor {
         // Build communication config
         let comm_config = communication::CommunicationConfig {
             vsock_cid,
-            serial_device: Some(format!("/tmp/firecracker-{}-console.sock", vm_id)),
+            serial_device: Some(format!("/tmp/firecracker-{vm_id}-console.sock")),
             ssh_config: None, // Could be configured if SSH is set up in the VM
             timeout: Duration::from_secs(30),
             retry_attempts: 3,
@@ -249,7 +248,7 @@ impl FirecrackerExecutor {
         executor
             .execute(config)
             .await
-            .map_err(|e| anyhow::anyhow!("VM command execution failed: {}", e))
+            .map_err(|e| anyhow::anyhow!("VM command execution failed: {e}"))
     }
 
     /// Execute with VM forking for branched execution
@@ -377,7 +376,7 @@ impl SandboxExecutor for FirecrackerExecutor {
             "{}:{}:{}",
             config.function_id.clone(),
             config.source.clone(),
-            format!("{:x}", md5::compute(&config.command.join(" ")))
+            format!("{:x}", md5::compute(config.command.join(" ")))
         );
 
         // Start Firecracker with optimizations

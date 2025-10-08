@@ -28,6 +28,12 @@ pub struct InMemoryStorage {
     executions: Arc<RwLock<Vec<ExecutionRecord>>>,
 }
 
+impl Default for InMemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryStorage {
     pub fn new() -> Self {
         Self {

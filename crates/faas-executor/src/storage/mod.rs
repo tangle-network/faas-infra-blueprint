@@ -26,7 +26,6 @@ pub use tier::{StorageTier, TieredStore};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::path::Path;
 
 /// Storage backend trait for different storage implementations
 #[async_trait]

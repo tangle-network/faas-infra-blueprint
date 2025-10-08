@@ -200,7 +200,7 @@ impl ReadinessChecker {
     async fn check_http(&self, instance_id: &str, probe: &ReadinessProbe) -> bool {
         let port = probe.port.unwrap_or(80);
         let path = probe.path.as_deref().unwrap_or("/health");
-        let url = format!("http://{}:{}{}", instance_id, port, path);
+        let url = format!("http://{instance_id}:{port}{path}");
 
         match reqwest::get(&url).await {
             Ok(response) => {
@@ -219,7 +219,7 @@ impl ReadinessChecker {
         use tokio::net::TcpStream;
 
         let port = probe.port.unwrap_or(80);
-        let addr = format!("{}:{}", instance_id, port);
+        let addr = format!("{instance_id}:{port}");
 
         match TcpStream::connect(&addr).await {
             Ok(_) => true,
@@ -262,7 +262,7 @@ impl ReadinessChecker {
         use tokio::fs;
 
         let path = match &probe.path {
-            Some(p) => format!("/tmp/instances/{}/{}", instance_id, p),
+            Some(p) => format!("/tmp/instances/{instance_id}/{p}"),
             None => return false,
         };
 
@@ -394,7 +394,7 @@ impl LongRunningExecutionManager {
             session.last_heartbeat = Utc::now();
             Ok(())
         } else {
-            Err(format!("Session {} not found", execution_id).into())
+            Err(format!("Session {execution_id} not found").into())
         }
     }
 
@@ -415,7 +415,7 @@ impl LongRunningExecutionManager {
             });
             Ok(())
         } else {
-            Err(format!("Session {} not found", execution_id).into())
+            Err(format!("Session {execution_id} not found").into())
         }
     }
 
@@ -434,7 +434,7 @@ impl LongRunningExecutionManager {
             session.extended_count += 1;
             Ok(self.config.max_duration)
         } else {
-            Err(format!("Session {} not found", execution_id).into())
+            Err(format!("Session {execution_id} not found").into())
         }
     }
 

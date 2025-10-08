@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// High-performance snapshot optimization for sub-200ms target
 pub struct SnapshotOptimizer {
@@ -247,10 +247,10 @@ impl SnapshotOptimizer {
             .context("Invalid process ID")?;
 
         // Real process memory capture via /proc filesystem
-        let proc_path = format!("/proc/{}", pid);
+        let proc_path = format!("/proc/{pid}");
 
         if !std::path::Path::new(&proc_path).exists() {
-            return Err(anyhow!("Process {} not found", pid));
+            return Err(anyhow!("Process {pid} not found"));
         }
 
         let mut captured_data = Vec::new();
@@ -258,7 +258,7 @@ impl SnapshotOptimizer {
         let mut file_descriptors = 0u32;
 
         // Read memory mappings
-        let maps_path = format!("{}/maps", proc_path);
+        let maps_path = format!("{proc_path}/maps");
         if let Ok(maps_content) = std::fs::read_to_string(&maps_path) {
             for line in maps_content.lines() {
                 if let Some(region) = self.parse_memory_mapping(line) {
@@ -280,7 +280,7 @@ impl SnapshotOptimizer {
         }
 
         // Count file descriptors
-        let fd_path = format!("{}/fd", proc_path);
+        let fd_path = format!("{proc_path}/fd");
         if let Ok(fd_entries) = std::fs::read_dir(&fd_path) {
             file_descriptors = fd_entries.count() as u32;
         }
@@ -306,7 +306,7 @@ impl SnapshotOptimizer {
 
     fn find_process_by_name(&self, name: &str) -> Result<u32> {
         // Simple implementation - in production would use more sophisticated process discovery
-        Err(anyhow!("Process name lookup not implemented: {}", name))
+        Err(anyhow!("Process name lookup not implemented: {name}"))
     }
 
     fn parse_memory_mapping(&self, line: &str) -> Option<MemoryRegion> {
@@ -336,7 +336,7 @@ impl SnapshotOptimizer {
     }
 
     async fn read_memory_region(&self, pid: u32, region: &MemoryRegion) -> Result<Vec<u8>> {
-        let mem_path = format!("/proc/{}/mem", pid);
+        let mem_path = format!("/proc/{pid}/mem");
         let mut mem_file = std::fs::File::open(&mem_path)?;
 
         use std::io::{Read, Seek, SeekFrom};
@@ -357,7 +357,7 @@ impl SnapshotOptimizer {
     }
 
     async fn read_process_status(&self, pid: u32) -> Result<ProcessStatus> {
-        let status_path = format!("/proc/{}/status", pid);
+        let status_path = format!("/proc/{pid}/status");
         let content = std::fs::read_to_string(&status_path)?;
 
         let has_network = content.contains("VmRSS:") && content.contains("VmSize:");
@@ -582,8 +582,7 @@ impl SnapshotOptimizer {
         // In production, this would load from persistent storage
         // For now, return an error since we don't have persistent storage
         Err(anyhow::anyhow!(
-            "Snapshot {} not found in cache or storage",
-            snapshot_id
+            "Snapshot {snapshot_id} not found in cache or storage"
         ))
     }
 

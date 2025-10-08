@@ -95,7 +95,7 @@ impl ZkProverClient {
             &base64::engine::general_purpose::STANDARD,
             &prove_resp.proof_data,
         )
-        .map_err(|e| ZkProverError::Server(format!("Invalid base64: {}", e)))?;
+        .map_err(|e| ZkProverError::Server(format!("Invalid base64: {e}")))?;
 
         Ok(ZkProof {
             proof_id: prove_resp.proof_id,

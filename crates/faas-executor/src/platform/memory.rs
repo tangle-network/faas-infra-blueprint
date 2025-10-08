@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::process::Command;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -142,7 +142,7 @@ impl MemoryPool {
             .ok();
 
         Command::new("swapon")
-            .args(&["-p", "100", "/dev/zram0"])
+            .args(["-p", "100", "/dev/zram0"])
             .output()
             .await
             .ok();
@@ -336,8 +336,7 @@ impl MemoryPool {
             buf
         } else {
             // Regular allocation with NUMA binding
-            let mut buf = Vec::with_capacity(size_bytes);
-            buf.resize(size_bytes, 0);
+            let buf = vec![0; size_bytes];
 
             // Apply NUMA binding for regular allocations too
             #[cfg(target_os = "linux")]

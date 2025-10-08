@@ -101,7 +101,7 @@ impl SshKeyManager {
         let rng = SystemRandom::new();
         let mut seed = [0u8; 32];
         rng.fill(&mut seed)
-            .map_err(|e| format!("Failed to generate random seed: {:?}", e))?;
+            .map_err(|e| format!("Failed to generate random seed: {e:?}"))?;
 
         let keypair = Ed25519Keypair::from_seed(&seed);
         let private_key = PrivateKey::from(keypair);
@@ -109,7 +109,7 @@ impl SshKeyManager {
 
         let private_pem = private_key.to_openssh(LineEnding::LF)?;
         let public_str = public_key.to_openssh()?;
-        let fingerprint = self.calculate_fingerprint(&public_key)?;
+        let fingerprint = self.calculate_fingerprint(public_key)?;
 
         Ok((private_pem.to_string(), public_str, fingerprint))
     }
@@ -117,7 +117,7 @@ impl SshKeyManager {
     async fn generate_rsa(&self) -> Result<(String, String, String), Box<dyn std::error::Error>> {
         // Use ssh-keygen for RSA keys
         let output = Command::new("ssh-keygen")
-            .args(&["-t", "rsa", "-b", "4096", "-N", "", "-f", "-"])
+            .args(["-t", "rsa", "-b", "4096", "-N", "", "-f", "-"])
             .output()
             .await?;
 
@@ -129,7 +129,7 @@ impl SshKeyManager {
 
         // Extract public key
         let pub_output = Command::new("ssh-keygen")
-            .args(&["-y", "-f", "-"])
+            .args(["-y", "-f", "-"])
             .arg(&private_key)
             .output()
             .await?;
@@ -142,7 +142,7 @@ impl SshKeyManager {
 
     async fn generate_ecdsa(&self) -> Result<(String, String, String), Box<dyn std::error::Error>> {
         let output = Command::new("ssh-keygen")
-            .args(&["-t", "ecdsa", "-b", "256", "-N", "", "-f", "-"])
+            .args(["-t", "ecdsa", "-b", "256", "-N", "", "-f", "-"])
             .output()
             .await?;
 
@@ -153,7 +153,7 @@ impl SshKeyManager {
         let private_key = String::from_utf8(output.stdout)?;
 
         let pub_output = Command::new("ssh-keygen")
-            .args(&["-y", "-f", "-"])
+            .args(["-y", "-f", "-"])
             .arg(&private_key)
             .output()
             .await?;
@@ -178,7 +178,7 @@ impl SshKeyManager {
         let instance_keys = self
             .active_keys
             .entry(instance_id.to_string())
-            .or_insert_with(Vec::new);
+            .or_default();
 
         // Add new key
         instance_keys.push(new_key.clone());
@@ -237,8 +237,8 @@ impl SshKeyManager {
         instance_id: &str,
         keypair: &SshKeyPair,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let instance_dir = format!("/tmp/instances/{}", instance_id);
-        let authorized_keys_path = format!("{}/authorized_keys", instance_dir);
+        let instance_dir = format!("/tmp/instances/{instance_id}");
+        let authorized_keys_path = format!("{instance_dir}/authorized_keys");
 
         // Create instance directory if it doesn't exist
         fs::create_dir_all(&instance_dir).await?;
@@ -265,7 +265,7 @@ impl SshKeyManager {
         instance_id: &str,
         key_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let authorized_keys_path = format!("/tmp/instances/{}/authorized_keys", instance_id);
+        let authorized_keys_path = format!("/tmp/instances/{instance_id}/authorized_keys");
 
         if !Path::new(&authorized_keys_path).exists() {
             return Ok(());

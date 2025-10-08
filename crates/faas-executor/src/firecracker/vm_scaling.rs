@@ -1,8 +1,7 @@
 //! Predictive VM Scaling with ML-based Load Forecasting
 //! Provides intelligent VM pool management and auto-scaling
 
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -138,7 +137,7 @@ impl VmPredictiveScaler {
         info!("Initializing VM pool for environment: {}", environment);
 
         // Create base VM for forking
-        let base_id = format!("{}-base", environment);
+        let base_id = format!("{environment}-base");
         let base_vm_id = self.fork_manager
             .create_base_vm(&base_id, base_config)
             .await?;
@@ -146,7 +145,7 @@ impl VmPredictiveScaler {
         // Pre-warm initial VMs
         let mut warm_vms = VecDeque::new();
         for i in 0..self.config.min_warm_vms {
-            let fork_id = format!("{}-warm-{}", environment, i);
+            let fork_id = format!("{environment}-warm-{i}");
             let forked = self.fork_manager
                 .fork_vm(&base_id, &fork_id)
                 .await?;
@@ -189,7 +188,7 @@ impl VmPredictiveScaler {
         // Get VM from pool
         let mut pools = self.pools.write().await;
         let pool = pools.get_mut(environment)
-            .ok_or_else(|| anyhow::anyhow!("Pool not initialized for environment: {}", environment))?;
+            .ok_or_else(|| anyhow::anyhow!("Pool not initialized for environment: {environment}"))?;
 
         // Try warm pool first
         if let Some(warm_vm) = pool.warm_vms.pop_front() {

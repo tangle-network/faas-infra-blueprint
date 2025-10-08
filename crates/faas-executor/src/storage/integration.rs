@@ -70,7 +70,7 @@ impl StorageManager {
     }
 
     /// Enable tiered storage with object store backend
-    pub fn with_tiered_storage(mut self, object_store_url: Option<String>) -> Result<Self> {
+    pub fn with_tiered_storage(self, object_store_url: Option<String>) -> Result<Self> {
         if let Some(_url) = object_store_url {
             // TODO: Initialize object store backend (S3, MinIO, etc.)
             // For now, keep as local-only

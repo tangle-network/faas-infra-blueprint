@@ -1,11 +1,8 @@
 //! VM Snapshot Management for Firecracker using firecracker-rs-sdk
 //! Provides full snapshot/restore capabilities with memory and disk state preservation
 
-use anyhow::{anyhow, Context, Result};
-use firecracker_rs_sdk::{
-    instance::Instance as FcInstance,
-    models::{SnapshotCreateParams, SnapshotLoadParams, SnapshotType},
-};
+use anyhow::{anyhow, Result};
+use firecracker_rs_sdk::instance::Instance as FcInstance;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -14,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// VM Snapshot Manager with full state preservation
 pub struct VmSnapshotManager {
@@ -173,7 +170,7 @@ impl VmSnapshotManager {
         // Verify parent exists
         let snapshots = self.snapshots.read().await;
         let parent = snapshots.get(parent_id)
-            .ok_or_else(|| anyhow!("Parent snapshot not found: {}", parent_id))?
+            .ok_or_else(|| anyhow!("Parent snapshot not found: {parent_id}"))?
             .clone();
         drop(snapshots);
 
@@ -266,7 +263,7 @@ impl VmSnapshotManager {
         // Get snapshot metadata
         let snapshots = self.snapshots.read().await;
         let snapshot = snapshots.get(snapshot_id)
-            .ok_or_else(|| anyhow!("Snapshot not found: {}", snapshot_id))?
+            .ok_or_else(|| anyhow!("Snapshot not found: {snapshot_id}"))?
             .clone();
         drop(snapshots);
 
@@ -315,7 +312,7 @@ impl VmSnapshotManager {
             // Placeholder for Mac testing
             Ok(RestoredVm {
                 vm_id: new_vm_id.to_string(),
-                api_socket: format!("/tmp/firecracker-{}.sock", new_vm_id),
+                api_socket: format!("/tmp/firecracker-{new_vm_id}.sock"),
                 process: None,
                 restore_time: start.elapsed(),
             })
@@ -582,7 +579,7 @@ impl VmSnapshotManager {
         {
             Ok(RestoredVm {
                 vm_id: new_vm_id.to_string(),
-                api_socket: format!("/tmp/firecracker-{}.sock", new_vm_id),
+                api_socket: format!("/tmp/firecracker-{new_vm_id}.sock"),
                 process: None,
                 restore_time: start.elapsed(),
             })
