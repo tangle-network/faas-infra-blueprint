@@ -59,7 +59,7 @@ bytes = { version = "1.7", optional = true }
 url = "2.5"
 
 [features]
-default = []
+default = ["object-storage"]
 object-storage = ["dep:object_store", "dep:bytes"]
 
 [dev-dependencies]

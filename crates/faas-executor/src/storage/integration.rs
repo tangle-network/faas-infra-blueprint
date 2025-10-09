@@ -73,11 +73,72 @@ impl StorageManager {
     ///
     /// URL formats:
     /// - `s3://bucket` - AWS S3 (uses credentials from environment)
-    /// - `s3://bucket?region=us-east-1&endpoint=https://minio.local` - Custom S3
+    /// - `s3://bucket/prefix` - AWS S3 with prefix for organization
+    /// - `s3://bucket?region=us-east-1` - AWS S3 with specific region
+    /// - `s3://bucket?endpoint=https://minio.local:9000` - MinIO or S3-compatible
+    /// - `https://minio.example.com/bucket` - Direct HTTPS URL
+    ///
+    /// Environment variables for authentication:
+    /// - AWS_ACCESS_KEY_ID
+    /// - AWS_SECRET_ACCESS_KEY
+    /// - AWS_REGION (optional, defaults from URL)
+    /// - AWS_ENDPOINT (optional, for S3-compatible services)
     #[cfg(feature = "object-storage")]
-    pub async fn with_tiered_storage_async(self, _object_store_url: Option<String>) -> Result<Self> {
-        // TODO: Implement tiered storage initialization
-        // This requires refactoring to avoid circular dependency with BlobStore
+    pub async fn with_tiered_storage_async(mut self, object_store_url: Option<String>) -> Result<Self> {
+        use super::tier::{ObjectBackend, TieredStore};
+        use super::Backend;
+        use tracing::info;
+        use anyhow::Context;
+
+        if let Some(url) = object_store_url {
+            info!("Configuring tiered storage with object store: {}", url);
+
+            // Create object backend from URL
+            let object_backend = Arc::new(
+                ObjectBackend::from_url(&url)
+                    .await
+                    .context("Failed to create object store backend")?
+            );
+
+            // Get the base path from current blob_store backend
+            let base_path = std::path::PathBuf::from("/var/lib/faas/blobs");
+
+            // Create tiered store (local + remote)
+            let tiered = TieredStore::new(base_path)
+                .await?
+                .with_object_store(object_backend);
+
+            // Replace blob_store backend with tiered store
+            self.blob_store = Arc::new(BlobStore::new(
+                Arc::new(tiered) as Arc<dyn Backend>
+            ));
+
+            // Recreate cache with new blob_store
+            self.cache = Arc::new(BlobCache::new(
+                self.blob_store.clone(),
+                100, // cache size in entries
+                10 * 1024 * 1024, // 10MB max blob size in cache
+            ));
+
+            // Update adapters to use new cache
+            self.docker_adapter = Arc::new(DockerSnapshotAdapter::new(
+                self.docker_adapter.docker.clone(),
+                self.cache.clone()
+            ));
+
+            self.vm_adapter = Arc::new(VmSnapshotAdapter::new(
+                self.cache.clone(),
+                self.vm_adapter.snapshot_dir.clone()
+            ));
+
+            #[cfg(target_os = "linux")]
+            {
+                self.criu_adapter = Arc::new(CriuCheckpointAdapter::new(self.cache.clone()));
+            }
+
+            info!("Tiered storage enabled: local NVMe + object store");
+        }
+
         Ok(self)
     }
 

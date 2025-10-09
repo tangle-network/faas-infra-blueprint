@@ -1,5 +1,6 @@
 use anyhow::Result;
 use faas_common::SandboxExecutor;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, instrument};
@@ -14,6 +15,7 @@ use crate::performance::{
     CacheManager, CacheStrategy, MetricsCollector, OptimizationConfig,
     PredictiveScaler, SnapshotOptimizer,
 };
+use crate::storage::StorageManager;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Mode {
@@ -60,6 +62,8 @@ pub struct Executor {
     metrics: Arc<MetricsCollector>,
     snapshot_optimizer: Arc<SnapshotOptimizer>,
     predictive_scaler: Arc<PredictiveScaler>,
+    // Unified storage system
+    storage: Arc<StorageManager>,
 }
 
 impl Executor {
@@ -128,6 +132,22 @@ impl Executor {
             metrics: Arc::new(MetricsCollector::new(MetricsConfig::default())),
             snapshot_optimizer: Arc::new(SnapshotOptimizer::new(OptimizationConfig::default())),
             predictive_scaler: Arc::new(PredictiveScaler::new(ScalingConfig::default())),
+            storage: {
+                let docker = Arc::new(Docker::connect_with_local_defaults().unwrap());
+                let base_path = PathBuf::from("/var/lib/faas");
+                let cache_size_mb = 100; // 100MB cache
+
+                // Initialize storage manager
+                let storage = StorageManager::new(base_path, docker, cache_size_mb).await?;
+
+                // Check for object store URL from environment
+                let object_store_url = std::env::var("FAAS_OBJECT_STORE_URL").ok();
+
+                // Enable tiered storage if configured
+                let storage = storage.with_tiered_storage_async(object_store_url).await?;
+
+                Arc::new(storage)
+            },
         })
     }
 

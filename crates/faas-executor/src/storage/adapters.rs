@@ -15,8 +15,8 @@ use tracing::info;
 
 /// Adapter for Docker snapshots using blob storage backend
 pub struct DockerSnapshotAdapter {
-    docker: Arc<Docker>,
-    cache: Arc<BlobCache>,
+    pub(crate) docker: Arc<Docker>,
+    pub(crate) cache: Arc<BlobCache>,
     manifests: Arc<RwLock<HashMap<String, Manifest>>>,
 }
 
@@ -169,9 +169,9 @@ impl DockerSnapshotAdapter {
 
 /// Adapter for Firecracker VM snapshots using blob storage
 pub struct VmSnapshotAdapter {
-    cache: Arc<BlobCache>,
+    pub(crate) cache: Arc<BlobCache>,
     manifests: Arc<RwLock<HashMap<String, Manifest>>>,
-    snapshot_dir: PathBuf,
+    pub(crate) snapshot_dir: PathBuf,
 }
 
 impl VmSnapshotAdapter {
