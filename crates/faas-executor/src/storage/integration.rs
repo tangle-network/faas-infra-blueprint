@@ -70,10 +70,24 @@ impl StorageManager {
     }
 
     /// Enable tiered storage with object store backend
-    pub fn with_tiered_storage(self, object_store_url: Option<String>) -> Result<Self> {
-        if let Some(_url) = object_store_url {
-            // TODO: Initialize object store backend (S3, MinIO, etc.)
-            // For now, keep as local-only
+    ///
+    /// URL formats:
+    /// - `s3://bucket` - AWS S3 (uses credentials from environment)
+    /// - `s3://bucket?region=us-east-1&endpoint=https://minio.local` - Custom S3
+    #[cfg(feature = "object-storage")]
+    pub async fn with_tiered_storage_async(self, _object_store_url: Option<String>) -> Result<Self> {
+        // TODO: Implement tiered storage initialization
+        // This requires refactoring to avoid circular dependency with BlobStore
+        Ok(self)
+    }
+
+    /// Stub when object-storage feature is disabled
+    #[cfg(not(feature = "object-storage"))]
+    pub async fn with_tiered_storage_async(self, object_store_url: Option<String>) -> Result<Self> {
+        if object_store_url.is_some() {
+            return Err(anyhow::anyhow!(
+                "Object storage not enabled. Rebuild with --features object-storage"
+            ));
         }
         Ok(self)
     }

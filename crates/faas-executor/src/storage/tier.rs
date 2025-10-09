@@ -81,30 +81,152 @@ impl Backend for LocalBackend {
     }
 }
 
-/// Object store backend (S3/MinIO compatible)
+/// S3-compatible object store backend (AWS S3, MinIO, R2, DO Spaces, etc.)
+#[cfg(feature = "object-storage")]
 pub struct ObjectBackend {
-    _bucket: String,
-    _endpoint: String,
+    store: Arc<dyn object_store::ObjectStore>,
+    prefix: object_store::path::Path,
 }
 
+#[cfg(feature = "object-storage")]
 impl ObjectBackend {
-    #[allow(dead_code)]
-    pub fn new(bucket: String, endpoint: String) -> Self {
-        Self {
-            _bucket: bucket,
-            _endpoint: endpoint,
+    /// Create from S3-compatible URL (s3://bucket/prefix, https://minio.example.com/bucket)
+    pub async fn from_url(url: &str) -> Result<Self> {
+        use object_store::{parse_url, ClientOptions};
+
+        let parsed_url = url::Url::parse(url)
+            .map_err(|e| anyhow!("Invalid object store URL: {e}"))?;
+
+        let (store, path) = parse_url(&parsed_url)
+            .map_err(|e| anyhow!("Failed to parse object store URL: {e}"))?;
+
+        Ok(Self {
+            store: Arc::from(store),
+            prefix: path,
+        })
+    }
+
+    /// Create with explicit S3 configuration
+    pub fn new_s3(bucket: String, region: String, endpoint: Option<String>) -> Result<Self> {
+        use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
+
+        let mut builder = AmazonS3Builder::new()
+            .with_bucket_name(&bucket)
+            .with_region(&region);
+
+        if let Some(endpoint) = endpoint {
+            builder = builder.with_endpoint(&endpoint);
         }
+
+        // Allow anonymous access or credentials from environment
+        builder = builder.with_allow_http(true);
+
+        let store = builder.build()
+            .map_err(|e| anyhow!("Failed to create S3 backend: {e}"))?;
+
+        Ok(Self {
+            store: Arc::new(store),
+            prefix: object_store::path::Path::from(""),
+        })
+    }
+
+    fn blob_path(&self, id: &BlobId) -> object_store::path::Path {
+        // Git-style: first 2 chars as dir, rest as file
+        let hash = id.as_str();
+        let (dir, file) = hash.split_at(2.min(hash.len()));
+        self.prefix.child(dir).child(file)
     }
 }
 
+#[cfg(feature = "object-storage")]
+#[async_trait]
+impl Backend for ObjectBackend {
+    async fn put(&self, data: &[u8]) -> Result<BlobId> {
+        use bytes::Bytes;
+        use object_store::PutPayload;
+
+        let id = BlobId::from_bytes(data);
+        let path = self.blob_path(&id);
+
+        let payload = PutPayload::from(Bytes::copy_from_slice(data));
+        self.store.put(&path, payload)
+            .await
+            .map_err(|e| anyhow!("Failed to put blob to object store: {e}"))?;
+
+        debug!("Stored blob {} to object store at {}", id.as_str(), path);
+        Ok(id)
+    }
+
+    async fn get(&self, id: &BlobId) -> Result<Vec<u8>> {
+        use object_store::GetResult;
+
+        let path = self.blob_path(id);
+
+        let result = self.store.get(&path)
+            .await
+            .map_err(|e| anyhow!("Failed to get blob from object store: {e}"))?;
+
+        let bytes = result.bytes()
+            .await
+            .map_err(|e| anyhow!("Failed to read blob bytes: {e}"))?;
+
+        Ok(bytes.to_vec())
+    }
+
+    async fn exists(&self, id: &BlobId) -> Result<bool> {
+        let path = self.blob_path(id);
+
+        match self.store.head(&path).await {
+            Ok(_) => Ok(true),
+            Err(object_store::Error::NotFound { .. }) => Ok(false),
+            Err(e) => Err(anyhow!("Failed to check blob existence: {e}")),
+        }
+    }
+
+    async fn delete(&self, id: &BlobId) -> Result<()> {
+        let path = self.blob_path(id);
+
+        self.store.delete(&path)
+            .await
+            .map_err(|e| anyhow!("Failed to delete blob from object store: {e}"))?;
+
+        Ok(())
+    }
+
+    async fn size(&self, id: &BlobId) -> Result<u64> {
+        let path = self.blob_path(id);
+
+        let meta = self.store.head(&path)
+            .await
+            .map_err(|e| anyhow!("Failed to get blob metadata: {e}"))?;
+
+        Ok(meta.size as u64)
+    }
+}
+
+/// Stub ObjectBackend when feature is disabled
+#[cfg(not(feature = "object-storage"))]
+pub struct ObjectBackend {
+    _bucket: String,
+}
+
+#[cfg(not(feature = "object-storage"))]
+impl ObjectBackend {
+    #[allow(dead_code)]
+    pub fn new(_bucket: String, _region: String, _endpoint: Option<String>) -> Result<Self> {
+        Err(anyhow!("Object storage feature not enabled. Enable with --features object-storage"))
+    }
+}
+
+#[cfg(not(feature = "object-storage"))]
 #[async_trait]
 impl Backend for ObjectBackend {
     async fn put(&self, _data: &[u8]) -> Result<BlobId> {
-        Err(anyhow!("Object store backend not yet implemented"))
+        Err(anyhow!("Object storage not enabled"))
     }
 
     async fn get(&self, _id: &BlobId) -> Result<Vec<u8>> {
-        Err(anyhow!("Object store backend not yet implemented"))
+        Err(anyhow!("Object storage not enabled"))
     }
 
     async fn exists(&self, _id: &BlobId) -> Result<bool> {

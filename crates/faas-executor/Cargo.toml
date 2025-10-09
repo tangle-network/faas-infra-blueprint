@@ -54,6 +54,13 @@ libc = "0.2"
 lru = "0.12"
 zstd = { workspace = true }
 lz4 = { workspace = true }
+object_store = { version = "0.11", features = ["aws", "http"], optional = true }
+bytes = { version = "1.7", optional = true }
+url = "2.5"
+
+[features]
+default = []
+object-storage = ["dep:object_store", "dep:bytes"]
 
 [dev-dependencies]
 bollard = { workspace = true }
