@@ -57,6 +57,9 @@ println!("{}", result.output);
 - **Checkpointing**: Save/restore execution state
 - **S3 Storage**: Optional cloud storage (one env var)
 - **Multi-language**: Python, JavaScript/TypeScript, Rust, Bash
+- **WebSocket Streaming**: Real-time bidirectional container communication
+- **Persistent Containers**: Long-lived containers with lifecycle management
+- **Shared Dependencies**: Replit-style shared dependency caching across all containers
 
 ## Storage Configuration
 
@@ -109,6 +112,28 @@ The gateway server exposes these endpoints:
 - `POST /api/v1/snapshots` - Create snapshots
 - `GET /api/v1/metrics` - Performance metrics
 - `GET /health` - Health check
+- `WS /api/v1/containers/:id/stream` - WebSocket streaming (bidirectional)
+
+### WebSocket Streaming
+
+Connect to any container for real-time bidirectional communication:
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/api/v1/containers/abc123/stream');
+
+// Receive events
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'stdout') {
+    console.log(data.data);
+  }
+};
+
+// Send commands
+ws.send(JSON.stringify({ type: 'exec', command: 'echo hello' }));
+```
+
+See `examples/streaming-demo` for complete example.
 
 ## Architecture
 

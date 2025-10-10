@@ -23,6 +23,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+mod streaming;
 mod types;
 #[cfg(test)]
 mod tests;
@@ -59,6 +60,7 @@ struct AppState {
     instances: Arc<DashMap<String, Instance>>,
     snapshots: Arc<DashMap<String, Snapshot>>,
     metrics: Arc<Metrics>,
+    streaming: Arc<streaming::StreamingManager>,
 }
 
 #[derive(Default)]
@@ -85,6 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         instances: Arc::new(DashMap::new()),
         snapshots: Arc::new(DashMap::new()),
         metrics: Arc::new(Metrics::default()),
+        streaming: Arc::new(streaming::StreamingManager::new()),
     };
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
@@ -126,8 +129,11 @@ fn create_app(state: AppState) -> Router {
         .route("/api/v1/metrics", get(metrics_handler))
         .route("/api/v1/metrics/detailed", get(detailed_metrics_handler))
 
-        // Server-sent events for real-time logs
+        // Server-sent events for real-time logs (deprecated, use WebSocket)
         .route("/api/v1/logs/:id/stream", get(stream_logs_handler))
+
+        // WebSocket streaming (bidirectional, real-time)
+        .route("/api/v1/containers/:id/stream", get(ws_stream_wrapper))
 
         // Health check with runtime status
         .route("/health", get(health_handler))
@@ -460,6 +466,15 @@ async fn stream_logs_handler(
 ) -> Sse<UnboundedReceiverStream<Result<Event, Infallible>>> {
     let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
     Sse::new(UnboundedReceiverStream::new(rx))
+}
+
+/// WebSocket streaming endpoint wrapper
+async fn ws_stream_wrapper(
+    ws: axum::extract::ws::WebSocketUpgrade,
+    Path(container_id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    streaming::ws_stream_handler(ws, Path(container_id), State(state.streaming)).await
 }
 
 async fn health_handler(
