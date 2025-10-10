@@ -12,7 +12,7 @@ faas-executor = { path = "../faas-executor" }
 faas-gateway = { path = "../faas-gateway" }
 faas-common = { path = "../faas-common" }
 
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tokio = { version = "1", features = ["full"] }

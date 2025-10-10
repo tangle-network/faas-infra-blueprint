@@ -24,6 +24,12 @@ pub async fn execute_function_job(
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<ExecuteFunctionArgs>,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
+    // Check operator assignment
+    if !_ctx.is_assigned_to_job(call_id).await.unwrap_or(true) {
+        info!("Job {call_id} not assigned to this operator, skipping");
+        return Err(JobError::NotAssigned);
+    }
+
     info!(image = %args.image, command = ?args.command, "Executing function");
 
     let request = PlatformRequest {
@@ -80,6 +86,12 @@ pub async fn execute_advanced_job(
     CallId(call_id): CallId,
     TangleArg(args): TangleArg<ExecuteAdvancedArgs>,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
+    // Check operator assignment
+    if !_ctx.is_assigned_to_job(call_id).await.unwrap_or(true) {
+        info!("Job {call_id} not assigned to this operator, skipping");
+        return Err(JobError::NotAssigned);
+    }
+
     info!(
         image = %args.image,
         command = ?args.command,

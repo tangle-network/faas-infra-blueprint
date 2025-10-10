@@ -63,6 +63,37 @@ contract ZkFaasBlueprint is BlueprintServiceManagerBase {
     /// @notice Mapping of program hash to proof count
     mapping(bytes32 => uint256) public programProofCount;
 
+    // ============================================================================
+    // OPERATOR SELECTION & LOAD BALANCING
+    // ============================================================================
+
+    /// @notice Operator info for load balancing
+    struct OperatorInfo {
+        address addr;
+        uint256 totalJobs;
+        uint256 successfulJobs;
+        uint256 currentLoad;
+        bool active;
+    }
+
+    /// @notice Job assignment for operator selection
+    struct JobAssignment {
+        address assignedOperator;
+        bool executed;
+    }
+
+    /// @notice Container to operator mapping (sticky routing)
+    mapping(string => address) public containerOperator;
+
+    /// @notice Operator info by address
+    mapping(address => OperatorInfo) public operators;
+
+    /// @notice Job call ID to assignment
+    mapping(uint64 => JobAssignment) public jobAssignments;
+
+    /// @notice List of all registered operators
+    address[] public operatorList;
+
     /// @notice Events
     event ProgramRegistered(
         bytes32 indexed programHash,
@@ -89,6 +120,9 @@ contract ZkFaasBlueprint is BlueprintServiceManagerBase {
         bytes32 indexed proofId,
         bool valid
     );
+
+    event JobAssigned(uint64 indexed jobCallId, address indexed operator);
+    event ContainerAssigned(string indexed containerId, address indexed operator);
 
     /// @notice Constructor
     constructor() BlueprintServiceManagerBase() {}
@@ -120,8 +154,18 @@ contract ZkFaasBlueprint is BlueprintServiceManagerBase {
         // Validate operator has at least one supported zkVM
         require(supportedZkVms.length > 0, "Must support at least one zkVM");
 
-        // Store operator capabilities (would extend with custom storage)
-        // For now, we rely on the base contract's operator management
+        // Track operator for load balancing
+        address operatorAddr = operatorToAddress(operator);
+        if (!operators[operatorAddr].active) {
+            operatorList.push(operatorAddr);
+            operators[operatorAddr] = OperatorInfo({
+                addr: operatorAddr,
+                totalJobs: 0,
+                successfulJobs: 0,
+                currentLoad: 0,
+                active: true
+            });
+        }
 
         emit OperatorRegistered(operator, publicKeyHash, metadataUri);
     }
@@ -149,6 +193,66 @@ contract ZkFaasBlueprint is BlueprintServiceManagerBase {
         emit ServiceRequested(params.requestId, params.requester);
     }
 
+    // ============================================================================
+    // OPERATOR SELECTION LOGIC
+    // ============================================================================
+
+    /// @notice Select operator for a job using load balancing
+    /// @param jobCallId The job call ID
+    /// @param containerId Optional container ID for sticky routing (empty string if not applicable)
+    /// @return Selected operator address
+    function selectOperator(uint64 jobCallId, string memory containerId)
+        public
+        returns (address)
+    {
+        // Check sticky routing for container-specific jobs
+        if (bytes(containerId).length > 0 && containerOperator[containerId] != address(0)) {
+            address stickyOp = containerOperator[containerId];
+            if (operators[stickyOp].active) {
+                _assignJob(jobCallId, stickyOp);
+                return stickyOp;
+            }
+        }
+
+        // Load balance: select operator with lowest current load
+        require(operatorList.length > 0, "No operators available");
+
+        address bestOp = operatorList[0];
+        uint256 lowestLoad = operators[bestOp].currentLoad;
+
+        for (uint256 i = 1; i < operatorList.length; i++) {
+            address op = operatorList[i];
+            if (!operators[op].active) continue;
+
+            if (operators[op].currentLoad < lowestLoad) {
+                lowestLoad = operators[op].currentLoad;
+                bestOp = op;
+            }
+        }
+
+        _assignJob(jobCallId, bestOp);
+        return bestOp;
+    }
+
+    /// @notice Internal: Assign job to operator
+    function _assignJob(uint64 jobCallId, address operator) internal {
+        jobAssignments[jobCallId] = JobAssignment({
+            assignedOperator: operator,
+            executed: false
+        });
+        operators[operator].currentLoad += 1;
+        emit JobAssigned(jobCallId, operator);
+    }
+
+    /// @notice Check if operator is assigned to job
+    function isAssignedOperator(uint64 jobCallId, address operator)
+        external
+        view
+        returns (bool)
+    {
+        return jobAssignments[jobCallId].assignedOperator == operator;
+    }
+
     /**
      * @dev Hook for handling job results
      * @param serviceId The ID of the service
@@ -172,6 +276,27 @@ contract ZkFaasBlueprint is BlueprintServiceManagerBase {
         override
         onlyFromMaster
     {
+        address operatorAddr = operatorToAddress(operator);
+
+        // Validate operator assignment if job was assigned
+        if (jobAssignments[jobCallId].assignedOperator != address(0)) {
+            require(
+                jobAssignments[jobCallId].assignedOperator == operatorAddr,
+                "Operator not assigned to this job"
+            );
+            require(!jobAssignments[jobCallId].executed, "Job already executed");
+            jobAssignments[jobCallId].executed = true;
+        }
+
+        // Update operator stats
+        if (operators[operatorAddr].active) {
+            operators[operatorAddr].totalJobs += 1;
+            operators[operatorAddr].successfulJobs += 1;
+            if (operators[operatorAddr].currentLoad > 0) {
+                operators[operatorAddr].currentLoad -= 1;
+            }
+        }
+
         if (job == 0) {
             // Job 0: Register ZK Program
             _handleProgramRegistration(operator, inputs, outputs);

@@ -74,4 +74,6 @@ pub enum JobError {
     ExecutionFailed(String),
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+    #[error("Operator not assigned to this job")]
+    NotAssigned,
 }

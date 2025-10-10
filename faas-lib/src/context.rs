@@ -36,4 +36,14 @@ impl FaaSContext {
             executor: Arc::new(executor),
         })
     }
+
+    /// Check if this operator is assigned to execute a job
+    /// Returns true if assigned, false if should skip
+    pub async fn is_assigned_to_job(&self, _job_call_id: u64) -> Result<bool, BlueprintLibError> {
+        // TODO: Query smart contract via tangle_client() to check assignment
+        // For now, accept all jobs (backward compatible)
+        // When assignment system is active, this will query:
+        // contract.isAssignedOperator(job_call_id, self.operator_address())
+        Ok(true)
+    }
 }
