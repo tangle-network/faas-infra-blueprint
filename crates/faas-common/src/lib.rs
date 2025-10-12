@@ -98,7 +98,7 @@ impl Display for InvocationResult {
 }
 
 /// Input arguments for the ExecuteFunction Tangle job.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(
     feature = "scale",
     derive(parity_scale_codec::Encode, parity_scale_codec::Decode)
@@ -108,6 +108,18 @@ pub struct ExecuteFunctionArgs {
     pub command: Vec<String>,
     pub env_vars: Option<Vec<String>>,
     pub payload: Vec<u8>,
+}
+
+impl blueprint_sdk::tangle::metadata::IntoTangleFieldTypes for ExecuteFunctionArgs {
+    fn into_tangle_fields() -> Vec<blueprint_sdk::tangle::metadata::macros::ext::FieldType> {
+        use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
+        vec![
+            FieldType::String,                    // image
+            FieldType::List(Box::new(FieldType::String)), // command
+            FieldType::Optional(Box::new(FieldType::List(Box::new(FieldType::String)))), // env_vars
+            FieldType::List(Box::new(FieldType::Uint8)),  // payload
+        ]
+    }
 }
 
 // Configuration for a sandbox execution request

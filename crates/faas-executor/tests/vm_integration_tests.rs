@@ -15,7 +15,7 @@ fn is_kvm_available() -> bool {
 }
 
 #[tokio::test]
-#[ignore] // Run with --ignored on Linux with KVM
+// Requires KVM available
 async fn test_vm_cold_start() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -49,7 +49,7 @@ async fn test_vm_cold_start() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_snapshot_creation_and_restore() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -80,7 +80,7 @@ async fn test_vm_snapshot_creation_and_restore() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_cache_hit() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -118,7 +118,7 @@ async fn test_vm_cache_hit() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_forking() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -151,7 +151,7 @@ async fn test_vm_forking() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_predictive_scaling() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -197,7 +197,7 @@ async fn test_vm_predictive_scaling() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_branched_execution() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -249,7 +249,7 @@ async fn test_vm_branched_execution() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_warm_pool_acquisition() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -289,7 +289,7 @@ async fn test_vm_warm_pool_acquisition() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_incremental_snapshots() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");
@@ -324,7 +324,7 @@ async fn test_vm_incremental_snapshots() {
 }
 
 #[tokio::test]
-#[ignore]
+// Auto-runs on Linux with KVM
 async fn test_vm_performance_optimizations() {
     if !is_kvm_available() {
         eprintln!("KVM not available, skipping test");

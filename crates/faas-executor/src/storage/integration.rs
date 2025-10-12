@@ -101,7 +101,11 @@ impl StorageManager {
             );
 
             // Get the base path from current blob_store backend
-            let base_path = std::path::PathBuf::from("/var/lib/faas/blobs");
+            let base_path = if cfg!(target_os = "linux") {
+                std::path::PathBuf::from("/var/lib/faas/blobs")
+            } else {
+                std::env::temp_dir().join("faas").join("blobs")
+            };
 
             // Create tiered store (local + remote)
             let tiered = TieredStore::new(base_path)

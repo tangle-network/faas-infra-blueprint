@@ -63,7 +63,7 @@ pub async fn execute_function_job(
 
 pub const EXECUTE_ADVANCED_JOB_ID: u64 = 1;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(
     feature = "scale",
     derive(parity_scale_codec::Encode, parity_scale_codec::Decode)
@@ -77,6 +77,22 @@ pub struct ExecuteAdvancedArgs {
     pub checkpoint_id: Option<String>,
     pub branch_from: Option<String>,
     pub timeout_secs: Option<u64>,
+}
+
+impl blueprint_sdk::tangle::metadata::IntoTangleFieldTypes for ExecuteAdvancedArgs {
+    fn into_tangle_fields() -> Vec<blueprint_sdk::tangle::metadata::macros::ext::FieldType> {
+        use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
+        vec![
+            FieldType::String,                    // image
+            FieldType::List(Box::new(FieldType::String)), // command
+            FieldType::Optional(Box::new(FieldType::List(Box::new(FieldType::String)))), // env_vars
+            FieldType::List(Box::new(FieldType::Uint8)),  // payload
+            FieldType::String,                    // mode
+            FieldType::Optional(Box::new(FieldType::String)), // checkpoint_id
+            FieldType::Optional(Box::new(FieldType::String)), // branch_from
+            FieldType::Optional(Box::new(FieldType::Uint64)), // timeout_secs
+        ]
+    }
 }
 
 #[instrument(skip(_ctx), fields(job_id = % EXECUTE_ADVANCED_JOB_ID))]

@@ -1,5 +1,6 @@
 use blueprint_sdk::build;
 use blueprint_sdk::tangle::blueprint;
+use faas_blueprint_lib::jobs::{execute_function_job, execute_advanced_job};
 use std::path::Path;
 use std::process;
 
@@ -26,7 +27,7 @@ fn main() {
         name: "zk-faas",
         master_manager_revision: "Latest",
         manager: { Evm = "ZkFaasBlueprint" },
-        jobs: []
+        jobs: [execute_function_job, execute_advanced_job]
     };
 
     match blueprint {

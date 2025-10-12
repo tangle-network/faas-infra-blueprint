@@ -134,7 +134,15 @@ impl Executor {
             predictive_scaler: Arc::new(PredictiveScaler::new(ScalingConfig::default())),
             storage: {
                 let docker = Arc::new(Docker::connect_with_local_defaults().unwrap());
-                let base_path = PathBuf::from("/var/lib/faas");
+
+                // Use platform-appropriate base path
+                let base_path = if cfg!(target_os = "linux") {
+                    PathBuf::from("/var/lib/faas")
+                } else {
+                    // On macOS/other platforms, use a user-writable temp directory
+                    std::env::temp_dir().join("faas")
+                };
+
                 let cache_size_mb = 100; // 100MB cache
 
                 // Initialize storage manager
