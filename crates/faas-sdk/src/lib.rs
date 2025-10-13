@@ -970,3 +970,7 @@ impl FaasClient {
     }
 
 }
+
+// Tangle blockchain client (optional, gated behind 'tangle' feature)
+#[cfg(feature = "tangle")]
+pub mod tangle;

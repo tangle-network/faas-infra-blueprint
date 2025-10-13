@@ -8,6 +8,10 @@ homepage.workspace = true
 repository.workspace = true
 description = "Comprehensive SDK for FaaS Platform"
 
+[features]
+default = []
+tangle = ["blueprint-sdk", "subxt"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -17,6 +21,10 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 md5 = "0.7"
+
+# Tangle blockchain dependencies (optional)
+blueprint-sdk = { path = "/Users/drew/webb/gadget/crates/sdk", optional = true }
+subxt = { version = "0.37", optional = true }
 
 [dev-dependencies]
 mockito = "1.0"
