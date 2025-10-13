@@ -1,6 +1,6 @@
 //! HTTP endpoint handlers for Blueprint SDK integration
 
-use super::backend::{BackendType, ExecutionBackend, FaasConfig};
+use super::backend::{BackendType, FaasConfig};
 use super::BackendRouter;
 use axum::{
     body::Bytes,
@@ -303,5 +303,232 @@ impl IntoResponse for AppError {
         });
 
         (status, Json(body)).into_response()
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::Request,
+    };
+    use serde_json::json;
+    use tower::ServiceExt;
+    use std::io::Write;
+
+    async fn create_test_app() -> Router {
+        let base_url = "http://localhost:8080".to_string();
+        let tangle_endpoint = "ws://localhost:9944".to_string();
+
+        let router = Arc::new(
+            BackendRouter::new(base_url, tangle_endpoint)
+                .await
+                .expect("Failed to create backend router"),
+        );
+
+        let state = Arc::new(AppState { router });
+        blueprint_routes(state)
+    }
+
+    /// Create a valid zip file with a bootstrap executable for testing
+    fn create_test_zip() -> Vec<u8> {
+        use std::io::Cursor;
+        use zip::write::FileOptions;
+
+        let buffer = Vec::new();
+        let cursor = Cursor::new(buffer);
+        let mut zip = zip::ZipWriter::new(cursor);
+
+        // Add a bootstrap script
+        let bootstrap_content = b"#!/bin/sh\necho '{\"job_id\": 1, \"result\": [72, 101, 108, 108, 111], \"success\": true}'";
+
+        zip.start_file("bootstrap", FileOptions::default()).unwrap();
+        zip.write_all(bootstrap_content).unwrap();
+
+        // Finish and extract the buffer
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[tokio::test]
+    async fn test_deploy_function_success() {
+        let app = create_test_app().await;
+        let binary = create_test_zip();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/blueprint/functions/test-fn")
+                    .body(Body::from(binary.to_vec()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(result["function_id"], "test-fn");
+        assert!(result["endpoint"].is_string());
+        assert_eq!(result["status"], "deployed");
+    }
+
+    #[tokio::test]
+    async fn test_health_check() {
+        let app = create_test_app().await;
+
+        // Deploy first
+        let binary = create_test_zip();
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/blueprint/functions/health-test")
+                    .body(Body::from(binary.to_vec()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Check health
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/blueprint/functions/health-test/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_not_found() {
+        let app = create_test_app().await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/blueprint/functions/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_backend_selection_header() {
+        let app = create_test_app().await;
+        let binary = create_test_zip();
+
+        // Test local backend
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/blueprint/functions/local-test")
+                    .header("X-Execution-Backend", "local")
+                    .body(Body::from(binary.to_vec()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Test tangle backend
+        let response2 = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/blueprint/functions/tangle-test")
+                    .header("X-Execution-Backend", "tangle")
+                    .body(Body::from(binary.to_vec()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response2.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_function_lifecycle() {
+        let app = create_test_app().await;
+        let binary = create_test_zip();
+
+        // 1. Deploy
+        let deploy_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/blueprint/functions/lifecycle")
+                    .body(Body::from(binary.to_vec()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deploy_resp.status(), StatusCode::OK);
+
+        // 2. Get info
+        let info_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/blueprint/functions/lifecycle")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(info_resp.status(), StatusCode::OK);
+
+        // 3. Warm
+        let warm_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/blueprint/functions/lifecycle/warm")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(warm_resp.status(), StatusCode::OK);
+
+        // 4. Undeploy
+        let undeploy_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/api/blueprint/functions/lifecycle")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(undeploy_resp.status(), StatusCode::OK);
     }
 }

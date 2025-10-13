@@ -42,3 +42,6 @@ tracing = { workspace = true }
 [features]
 default = []
 tangle = ["faas-sdk/tangle"]
+
+[dev-dependencies]
+tower = { workspace = true }
