@@ -38,6 +38,19 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Install protobuf compiler (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+
+      - name: Install protobuf compiler (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install protobuf
+          protoc --version
+
       - name: Build
         run: cargo build --all --verbose
 
@@ -217,6 +230,12 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+
       - name: Run cargo audit
         run: |
           cargo install cargo-audit
@@ -230,6 +249,12 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
 
       - name: Build examples
         run: |
