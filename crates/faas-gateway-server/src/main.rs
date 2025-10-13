@@ -82,6 +82,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("✅ FaaS Gateway initialized with dual runtime support");
 
+    // Initialize Blueprint backend router
+    let base_url = std::env::var("FAAS_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let tangle_endpoint = std::env::var("TANGLE_ENDPOINT").unwrap_or_else(|_| "ws://localhost:9944".to_string());
+
+    let blueprint_router = Arc::new(
+        faas_gateway::blueprint::BackendRouter::new(base_url, tangle_endpoint)
+            .await
+            .expect("Failed to initialize Blueprint backend router")
+    );
+
+    info!("✅ Blueprint SDK integration enabled");
+
     let state = AppState {
         executor,
         instances: Arc::new(DashMap::new()),
@@ -93,14 +105,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     info!("🚀 FaaS Gateway listening on {}", addr);
 
-    let app = create_app(state);
+    let app = create_app(state, blueprint_router);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
 }
 
-fn create_app(state: AppState) -> Router {
+fn create_app(state: AppState, blueprint_router: Arc<faas_gateway::blueprint::BackendRouter>) -> Router {
+    // Create Blueprint app state
+    let blueprint_state = Arc::new(faas_gateway::blueprint::AppState {
+        router: blueprint_router,
+    });
+
     Router::new()
         // Single consolidated execution endpoint
         .route("/api/v1/execute", post(execute_handler))
@@ -140,6 +157,8 @@ fn create_app(state: AppState) -> Router {
 
         .layer(CorsLayer::permissive())
         .with_state(state)
+        // Merge Blueprint SDK routes
+        .merge(faas_gateway::blueprint::blueprint_routes(blueprint_state))
 }
 
 // Single consolidated execute handler

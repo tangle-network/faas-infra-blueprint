@@ -4,6 +4,7 @@
 //! Supports both local execution and Tangle blockchain routing.
 
 pub mod backend;
+pub mod handlers;
 pub mod local_backend;
 pub mod tangle_backend;
 
@@ -11,6 +12,7 @@ pub use backend::{
     BackendError, BackendType, DeployInfo, ExecutionBackend, FaasConfig, HealthStatus,
     InvokeResult, Result,
 };
+pub use handlers::{blueprint_routes, AppState};
 pub use local_backend::LocalBackend;
 pub use tangle_backend::TangleBackend;
 
