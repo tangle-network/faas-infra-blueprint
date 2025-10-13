@@ -60,8 +60,8 @@ async function main() {
   // Example 6: Using environment variables
   console.log('6. With environment variables:');
   result = await client.execute({
-    command: 'node -e "console.log(`API_KEY=${process.env.API_KEY}`)"',
-    image: 'node:20-slim',
+    command: 'echo "API_KEY=$API_KEY"',
+    image: 'alpine:latest',
     envVars: { API_KEY: 'secret123' }
   });
   console.log(`   Output: ${result.output}\n`);
@@ -136,7 +136,8 @@ async function main() {
   console.log('12. Platform health:');
   const health = await client.healthCheck();
   console.log(`    Status: ${health.status}`);
-  console.log(`    Components:`, health.components);
+  console.log(`    Docker: ${health.docker}`);
+  console.log(`    Firecracker: ${health.firecracker}`);
 
   // Example 13: Method chaining
   console.log('\n13. Method chaining:');

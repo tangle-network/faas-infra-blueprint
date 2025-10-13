@@ -55,8 +55,8 @@ async def main():
     # Example 5: Using environment variables
     print("5. With environment variables:")
     result = await client.execute(
-        command='python -c "import os; print(f\'API_KEY={os.environ.get(\'API_KEY\', \'not set\')}\')"',
-        image="python:3.11-slim",
+        command='echo "API_KEY=$API_KEY"',
+        image="alpine:latest",
         env_vars={"API_KEY": "secret123"}
     )
     print(f"   Output: {result.output}\n")
@@ -106,8 +106,9 @@ async def main():
     # Example 10: Health check
     print("10. Platform health:")
     health = await client.health_check()
-    print(f"    Status: {health['status']}")
-    print(f"    Components: {health['components']}")
+    print(f"    Status: {health.get('status', 'unknown')}")
+    print(f"    Docker: {health.get('docker', False)}")
+    print(f"    Firecracker: {health.get('firecracker', False)}")
 
     await client.session.close()
 
