@@ -1,4 +1,4 @@
-name: FaaS Platform CI/CD
+name: CI
 
 on:
   push:
@@ -13,10 +13,208 @@ env:
 jobs:
   test:
     name: Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable, nightly]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --all --verbose
+
+      - name: Run tests
+        run: cargo test --all --verbose
+
+      - name: Clippy
+        run: cargo clippy --all -- -D warnings
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+  firecracker:
+    name: Firecracker Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
-      - name: Run tests
-        run: cargo test --all
+
+      - name: Check KVM support
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cpu-checker
+          kvm-ok || echo "KVM not available, tests will be skipped"
+
+      - name: Install Firecracker
+        run: |
+          release_url="https://github.com/firecracker-microvm/firecracker/releases"
+          latest=$(basename $(curl -fsSLI -o /dev/null -w  %{url_effective} ${release_url}/latest))
+          arch=$(uname -m)
+          curl -L ${release_url}/download/${latest}/firecracker-${latest}-${arch}.tgz | tar -xz
+          sudo mv release-${latest}-${arch}/firecracker-${latest}-${arch} /usr/local/bin/firecracker
+          sudo chmod +x /usr/local/bin/firecracker
+          firecracker --version
+
+      - name: Install CRIU
+        run: |
+          sudo apt-get install -y criu
+          criu --version
+
+      - name: Run Firecracker tests
+        run: |
+          sudo -E cargo test --package faas-executor --features firecracker -- --ignored --test-threads=1
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Docker
+        run: |
+          docker version
+          docker pull alpine:latest
+          docker pull python:3.11-slim
+          docker pull node:20-slim
+
+      - name: Build gateway
+        run: cargo build --package faas-gateway-server --release
+
+      - name: Start gateway
+        run: |
+          cargo run --package faas-gateway-server --release &
+          echo $! > gateway.pid
+          sleep 5
+
+      - name: Health check
+        run: curl -f http://localhost:8080/health
+
+      - name: Run integration tests
+        run: cargo test --test '*' --release
+
+      - name: Stop gateway
+        run: kill $(cat gateway.pid) || true
+
+  typescript-sdk:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: sdks/typescript/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd sdks/typescript
+          npm ci
+
+      - name: Build
+        run: |
+          cd sdks/typescript
+          npm run build
+
+      - name: Test
+        run: |
+          cd sdks/typescript
+          npm test
+
+      - name: Lint
+        run: |
+          cd sdks/typescript
+          npm run lint
+
+  python-sdk:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          cd sdks/python
+          pip install -e .
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Test
+        run: |
+          cd sdks/python
+          pytest tests/ -v --cov=faas_sdk --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./sdks/python/coverage.xml
+          flags: python-sdk
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cargo audit
+        run: |
+          cargo install cargo-audit
+          cargo audit
+
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build examples
+        run: |
+          cargo build --package quickstart --release
+          cargo build --package advanced-features --release
+          cargo build --package cicd --release
+          cargo build --package data-pipeline --release

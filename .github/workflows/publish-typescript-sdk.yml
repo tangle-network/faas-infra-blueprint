@@ -1,0 +1,72 @@
+name: Publish TypeScript SDK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'sdks/typescript/**'
+      - '.github/workflows/publish-typescript-sdk.yml'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          release-type: node
+          package-name: '@faas-platform/sdk'
+          path: sdks/typescript
+          changelog-path: CHANGELOG.md
+
+  publish-npm:
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: |
+          cd sdks/typescript
+          npm ci
+
+      - name: Build
+        run: |
+          cd sdks/typescript
+          npm run build
+
+      - name: Test
+        run: |
+          cd sdks/typescript
+          npm test
+
+      - name: Publish to npm
+        run: |
+          cd sdks/typescript
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ needs.release-please.outputs.tag_name }} \
+            --title "TypeScript SDK ${{ needs.release-please.outputs.tag_name }}" \
+            --notes "See CHANGELOG.md for details"
