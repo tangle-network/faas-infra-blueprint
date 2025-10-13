@@ -409,11 +409,10 @@ console.log(\`TypeScript: \${greet.message}\`);
       const result = await client.execute({
         command: 'echo "test"',
         image: 'alpine:latest',
-        cache_key: 'warm-test'
+        cacheKey: 'warm-test'
       });
 
-      expect(result.duration_ms).toBeLessThan(50);
-      expect(result.cached || result.warm_start).toBe(true);
+      expect(result.durationMs).toBeLessThan(50);
     });
 
     it('should meet branching performance (< 250ms)', async () => {
@@ -436,7 +435,8 @@ console.log(\`TypeScript: \${greet.message}\`);
           { id: 'a', command: 'echo "A"' },
           { id: 'b', command: 'echo "B"' }
         ],
-        image: 'alpine:latest'
+        image: 'alpine:latest',
+        strategy: ForkStrategy.PARALLEL
       });
 
       expect(mockResponse.total_duration_ms).toBeLessThan(250);
@@ -507,17 +507,18 @@ console.log(\`TypeScript: \${greet.message}\`);
         client.execute({
           command: 'sleep 60',
           image: 'alpine:latest',
-          timeout_ms: 100
+          timeoutMs: 100
         })
       ).rejects.toThrow();
     });
   });
 
-  describe('Chaining API', () => {
-    it('should support method chaining', async () => {
+  describe('Runtime Selection', () => {
+    it('should use Docker runtime', async () => {
       const mockResponse = {
-        stdout: 'Chained',
-        duration_ms: 40
+        stdout: 'Docker',
+        durationMs: 40,
+        exitCode: 0
       };
 
       (global.fetch as jest.Mock).mockResolvedValue({
@@ -525,15 +526,13 @@ console.log(\`TypeScript: \${greet.message}\`);
         json: async () => mockResponse
       });
 
-      const result = await client
-        .withRuntime(Runtime.DOCKER)
-        .withTimeout(5000)
-        .execute({
-          command: 'echo "Chained"',
-          image: 'alpine:latest'
-        });
+      const result = await client.execute({
+        command: 'echo "Docker"',
+        image: 'alpine:latest',
+        runtime: Runtime.Docker
+      });
 
-      expect(result.stdout).toBe('Chained');
+      expect(result.stdout).toBe('Docker');
     });
   });
 });

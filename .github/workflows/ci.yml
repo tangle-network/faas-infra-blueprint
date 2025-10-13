@@ -94,7 +94,7 @@ jobs:
       - name: Run Firecracker tests
         if: steps.kvm.outputs.available == 'true'
         run: |
-          sudo -E env "PATH=$PATH" cargo test --package faas-executor --features firecracker -- --ignored --test-threads=1
+          sudo -E env "PATH=$PATH" cargo test --package faas-executor -- --ignored --test-threads=1
 
   integration:
     name: Integration Tests
@@ -108,6 +108,12 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
 
       - name: Setup Docker
         run: |
