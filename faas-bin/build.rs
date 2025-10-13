@@ -26,7 +26,7 @@ fn main() {
     let blueprint = blueprint! {
         name: "zk-faas",
         master_manager_revision: "Latest",
-        manager: { Evm = "SimpleFaasBlueprint" },
+        manager: { Evm = "FaaSBlueprint" },
         jobs: [execute_function_job, execute_advanced_job]
     };
 
