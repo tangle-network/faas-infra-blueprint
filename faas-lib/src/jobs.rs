@@ -2,7 +2,7 @@ use crate::context::FaaSContext;
 use crate::JobError;
 use blueprint_sdk::extract::Context;
 use blueprint_sdk::macros::debug_job;
-use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleResult};
+use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleArgs4, TangleArgs8, TangleResult};
 use faas_common::ExecuteFunctionArgs;
 use faas_executor::platform::{Mode, Request as PlatformRequest};
 use serde::{Deserialize, Serialize};
@@ -18,11 +18,10 @@ use tracing::{info, instrument};
 pub const EXECUTE_FUNCTION_JOB_ID: u64 = 0;
 
 #[instrument(skip(_ctx), fields(job_id = % EXECUTE_FUNCTION_JOB_ID))]
-#[debug_job]
 pub async fn execute_function_job(
     Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
-    TangleArg(args): TangleArg<ExecuteFunctionArgs>,
+    TangleArgs4(image, command, _env_vars, _payload): TangleArgs4<String, Vec<String>, Option<Vec<String>>, Vec<u8>>,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
     // Check operator assignment
     if !_ctx.is_assigned_to_job(call_id).await.unwrap_or(true) {
@@ -30,13 +29,13 @@ pub async fn execute_function_job(
         return Err(JobError::NotAssigned);
     }
 
-    info!(image = %args.image, command = ?args.command, "Executing function");
+    info!(image = %image, command = ?command, "Executing function");
 
     let request = PlatformRequest {
         id: format!("job_{call_id}"),
-        code: args.command.join(" "),
+        code: command.join(" "),
         mode: Mode::Ephemeral,
-        env: args.image,
+        env: image,
         timeout: Duration::from_secs(60),
         checkpoint: None,
         branch_from: None,
@@ -100,7 +99,8 @@ impl blueprint_sdk::tangle::metadata::IntoTangleFieldTypes for ExecuteAdvancedAr
 pub async fn execute_advanced_job(
     Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
-    TangleArg(args): TangleArg<ExecuteAdvancedArgs>,
+    TangleArgs8(image, command, _env_vars, _payload, mode_str, checkpoint_id, branch_from, timeout_secs):
+        TangleArgs8<String, Vec<String>, Option<Vec<String>>, Vec<u8>, String, Option<String>, Option<String>, Option<u64>>,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
     // Check operator assignment
     if !_ctx.is_assigned_to_job(call_id).await.unwrap_or(true) {
@@ -109,15 +109,15 @@ pub async fn execute_advanced_job(
     }
 
     info!(
-        image = %args.image,
-        command = ?args.command,
-        mode = %args.mode,
+        image = %image,
+        command = ?command,
+        mode = %mode_str,
         "Executing function with mode"
     );
 
     let function_id = format!("job_{call_id}");
 
-    let mode = match args.mode.as_str() {
+    let mode = match mode_str.as_str() {
         "cached" => Mode::Cached,
         "checkpointed" => Mode::Checkpointed,
         "branched" => Mode::Branched,
@@ -127,12 +127,12 @@ pub async fn execute_advanced_job(
 
     let request = PlatformRequest {
         id: function_id,
-        code: args.command.join(" "),
+        code: command.join(" "),
         mode,
-        env: args.image,
-        timeout: Duration::from_secs(args.timeout_secs.unwrap_or(60)),
-        checkpoint: args.checkpoint_id,
-        branch_from: args.branch_from,
+        env: image,
+        timeout: Duration::from_secs(timeout_secs.unwrap_or(60)),
+        checkpoint: checkpoint_id,
+        branch_from: branch_from,
         runtime: None,
     };
 

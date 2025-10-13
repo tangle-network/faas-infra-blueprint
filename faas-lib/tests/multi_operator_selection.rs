@@ -34,7 +34,7 @@ fn extract_output_bytes(output_value: &OutputValue) -> Vec<u8> {
     }
 }
 
-// Helper to create ExecuteFunctionArgs job input
+// Helper to create ExecuteFunctionArgs job input (4 separate values for TangleArgs4)
 fn create_execute_job_args(image: &str, command: Vec<&str>) -> Vec<InputValue> {
     vec![
         InputValue::String(new_bounded_string(image)),
@@ -47,12 +47,12 @@ fn create_execute_job_args(image: &str, command: Vec<&str>) -> Vec<InputValue> {
                     .collect(),
             ),
         ),
-        InputValue::List(FieldType::String, BoundedVec(vec![])), // No env vars
-        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),  // No payload
+        InputValue::Optional(FieldType::List(Box::new(FieldType::String)), Box::new(None)),
+        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),
     ]
 }
 
-// Helper to create ExecuteAdvancedArgs job input
+// Helper to create ExecuteAdvancedArgs job input (8 separate values for TangleArgs8)
 fn create_execute_advanced_job_args(
     image: &str,
     command: Vec<&str>,
@@ -70,12 +70,12 @@ fn create_execute_advanced_job_args(
                     .collect(),
             ),
         ),
-        InputValue::List(FieldType::String, BoundedVec(vec![])), // env_vars: None
-        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),  // payload: empty
-        InputValue::String(new_bounded_string(mode)),            // mode
-        InputValue::List(FieldType::String, BoundedVec(vec![])), // checkpoint_id: None
-        InputValue::List(FieldType::String, BoundedVec(vec![])), // branch_from: None
-        InputValue::Uint64(timeout_secs),                        // timeout_secs
+        InputValue::Optional(FieldType::List(Box::new(FieldType::String)), Box::new(None)),
+        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),
+        InputValue::String(new_bounded_string(mode)),
+        InputValue::Optional(FieldType::String, Box::new(None)),
+        InputValue::Optional(FieldType::String, Box::new(None)),
+        InputValue::Optional(FieldType::Uint64, Box::new(Some(InputValue::Uint64(timeout_secs)))),
     ]
 }
 

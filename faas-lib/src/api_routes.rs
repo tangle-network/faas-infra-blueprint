@@ -11,7 +11,7 @@ use tracing::instrument;
 use crate::api_server::{authenticate, check_rate_limit, ApiError, ApiState};
 use crate::jobs::*;
 use blueprint_sdk::extract::Context;
-use blueprint_sdk::tangle::extract::{CallId, TangleArg};
+use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleArgs4, TangleArgs8};
 
 // ============================================================================
 // READ-ONLY ENDPOINTS (API Server only - no Tangle jobs needed)
@@ -197,7 +197,16 @@ pub async fn execute_advanced_handler(
     match execute_advanced_job(
         Context(state.context.clone()),
         CallId(call_id),
-        TangleArg(request),
+        TangleArgs8(
+            request.image,
+            request.command,
+            request.env_vars,
+            request.payload,
+            request.mode,
+            request.checkpoint_id,
+            request.branch_from,
+            request.timeout_secs,
+        ),
     )
     .await
     {
