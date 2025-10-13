@@ -73,11 +73,15 @@ jobs:
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler cpu-checker
+          protoc --version
+
       - name: Check KVM support
         id: kvm
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cpu-checker
           if kvm-ok; then
             echo "available=true" >> $GITHUB_OUTPUT
           else
