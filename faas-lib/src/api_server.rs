@@ -15,7 +15,7 @@ use tracing::{error, info, instrument};
 use crate::context::FaaSContext;
 use crate::jobs::execute_function_job;
 use blueprint_sdk::extract::Context;
-use blueprint_sdk::tangle::extract::{CallId, TangleArg};
+use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleArgs4};
 
 /// API server configuration
 #[derive(Clone, Debug)]
@@ -87,16 +87,17 @@ pub struct ExecuteResponse {
     pub error: Option<String>,
 }
 
-impl From<InvocationResult> for ExecuteResponse {
-    fn from(result: InvocationResult) -> Self {
-        Self {
-            request_id: result.request_id,
-            response: result.response,
-            logs: result.logs,
-            error: result.error,
-        }
-    }
-}
+// Temporarily commented out due to type mismatch during u64 testing
+// impl From<InvocationResult> for ExecuteResponse {
+//     fn from(result: InvocationResult) -> Self {
+//         Self {
+//             request_id: result.request_id,
+//             response: result.response,
+//             logs: result.logs,
+//             error: result.error,
+//         }
+//     }
+// }
 
 /// Instance management endpoints (placeholder for SDK compatibility)
 #[derive(Debug, Deserialize)]
@@ -268,7 +269,7 @@ async fn execute_function_handler(
     match execute_function_job(
         Context(state.context.clone()),
         CallId(call_id),
-        TangleArg(args),
+        TangleArgs4(args.image, args.command, args.env_vars, args.payload),
     )
     .await
     {

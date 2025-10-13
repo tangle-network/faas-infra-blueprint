@@ -55,6 +55,7 @@ pub async fn execute_function_job(
         )));
     }
 
+    // Return stdout
     Ok(TangleResult(response.stdout))
 }
 
