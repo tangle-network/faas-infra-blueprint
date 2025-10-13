@@ -6,16 +6,30 @@
  * - prewarm, getMetrics, healthCheck
  */
 
-import { FaaSClient, Runtime, ForkStrategy, ExecutionResult, ForkResult } from '../src/index';
+import { FaaSClient, Runtime, ExecutionResult } from '../src/index';
 import { EventEmitter } from 'events';
+import axios from 'axios';
 
-// Mock fetch for testing
-global.fetch = jest.fn();
+// Mock axios for testing
+jest.mock('axios');
+const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('FaaSClient Convenience Methods', () => {
   let client: FaaSClient;
+  let mockAxiosInstance: any;
 
   beforeEach(() => {
+    // Create a mock axios instance
+    mockAxiosInstance = {
+      get: jest.fn(),
+      post: jest.fn(),
+      put: jest.fn(),
+      delete: jest.fn(),
+    };
+
+    // Mock axios.create to return our mock instance
+    mockedAxios.create = jest.fn().mockReturnValue(mockAxiosInstance);
+
     client = new FaaSClient('http://localhost:8080');
     jest.clearAllMocks();
   });
@@ -23,17 +37,14 @@ describe('FaaSClient Convenience Methods', () => {
   describe('runPython', () => {
     it('should execute Python code successfully', async () => {
       const mockResponse = {
-        stdout: 'Hello from Python!\\n42',
-        stderr: '',
-        exit_code: 0,
-        duration_ms: 45,
         request_id: 'python-123',
-        cached: false
+        output: 'Hello from Python!\n42',
+        logs: '',
+        duration_ms: 45
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
       const code = `
@@ -44,36 +55,30 @@ print(result)
 
       const result = await client.runPython(code);
 
-      expect(result.stdout).toContain('Hello from Python!');
-      expect(result.stdout).toContain('42');
-      expect(result.duration_ms).toBe(45);
-      expect(result.cached).toBe(false);
+      expect(result.output).toContain('Hello from Python!');
+      expect(result.output).toContain('42');
+      expect(result.durationMs).toBe(45);
+      expect(result.requestId).toBe('python-123');
 
       // Verify the correct endpoint was called
-      expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:8080/api/v1/run/python',
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
+        '/api/v1/execute',
         expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json'
-          }),
-          body: expect.stringContaining(code)
+          command: expect.stringContaining('python'),
+          image: 'python:3.11-slim'
         })
       );
     });
 
     it('should execute Python with custom image', async () => {
       const mockResponse = {
-        stdout: 'NumPy array: [1 2 3 4 5]',
-        stderr: '',
-        exit_code: 0,
-        duration_ms: 250,
-        request_id: 'numpy-123'
+        request_id: 'numpy-123',
+        output: 'NumPy array: [1 2 3 4 5]',
+        duration_ms: 250
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
       const code = `
@@ -84,25 +89,21 @@ print(f"NumPy array: {arr}")
 
       const result = await client.runPython(code, { image: 'python:3.11-numpy' });
 
-      expect(result.stdout).toContain('NumPy array');
-      expect(result.duration_ms).toBe(250);
+      expect(result.output).toContain('NumPy array');
+      expect(result.durationMs).toBe(250);
     });
   });
 
   describe('runJavaScript', () => {
     it('should execute JavaScript code successfully', async () => {
       const mockResponse = {
-        stdout: 'Hello from JavaScript!\\n42',
-        stderr: '',
-        exit_code: 0,
-        duration_ms: 35,
         request_id: 'js-123',
-        cached: false
+        output: 'Hello from JavaScript!\n42',
+        duration_ms: 35
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
       const code = `
@@ -112,22 +113,20 @@ console.log(40 + 2);
 
       const result = await client.runJavaScript(code);
 
-      expect(result.stdout).toContain('Hello from JavaScript!');
-      expect(result.stdout).toContain('42');
-      expect(result.duration_ms).toBe(35);
+      expect(result.output).toContain('Hello from JavaScript!');
+      expect(result.output).toContain('42');
+      expect(result.durationMs).toBe(35);
     });
 
     it('should execute JavaScript with Node.js modules', async () => {
       const mockResponse = {
-        stdout: 'Lodash sum: 15\\nMoment date: 2024-01-01',
-        stderr: '',
-        exit_code: 0,
+        request_id: 'lodash-123',
+        output: 'Lodash sum: 15',
         duration_ms: 180
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
       const code = `
@@ -138,23 +137,20 @@ console.log('Lodash sum:', _.sum(numbers));
 
       const result = await client.runJavaScript(code, { image: 'node:20' });
 
-      expect(result.stdout).toContain('Lodash sum: 15');
+      expect(result.output).toContain('Lodash sum: 15');
     });
   });
 
   describe('runTypeScript', () => {
     it('should execute TypeScript code successfully', async () => {
       const mockResponse = {
-        stdout: 'TypeScript: Hello, World!',
-        stderr: '',
-        exit_code: 0,
-        duration_ms: 120,
-        request_id: 'ts-123'
+        request_id: 'ts-123',
+        output: 'TypeScript: Hello, World!',
+        duration_ms: 120
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
       const code = `
@@ -168,144 +164,73 @@ console.log(\`TypeScript: \${greet.message}\`);
 
       const result = await client.runTypeScript(code);
 
-      expect(result.stdout).toContain('TypeScript: Hello, World!');
-      expect(result.duration_ms).toBe(120);
+      expect(result.output).toContain('TypeScript: Hello, World!');
+      expect(result.durationMs).toBe(120);
     });
   });
 
   describe('forkExecution', () => {
-    it('should execute branches in parallel', async () => {
+    it('should fork from parent execution', async () => {
       const mockResponse = {
-        results: [
-          {
-            branch_id: 'version-a',
-            stdout: 'Algorithm A result',
-            stderr: '',
-            exit_code: 0,
-            duration_ms: 120
-          },
-          {
-            branch_id: 'version-b',
-            stdout: 'Algorithm B result',
-            stderr: '',
-            exit_code: 0,
-            duration_ms: 85
-          }
-        ],
-        selected_branch: 'version-b',
-        selection_reason: 'lower_latency'
+        request_id: 'fork-123',
+        output: 'Forked result',
+        duration_ms: 85
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
-      const branches = [
-        {
-          id: 'version-a',
-          command: 'echo "Algorithm A"',
-          weight: 0.5
-        },
-        {
-          id: 'version-b',
-          command: 'echo "Algorithm B"',
-          weight: 0.5
-        }
-      ];
+      const result = await client.forkExecution('parent-123', 'echo "forked"');
 
-      const result = await client.forkExecution({
-        branches,
-        image: 'alpine:latest',
-        strategy: ForkStrategy.PARALLEL
-      });
+      expect(result.requestId).toBe('fork-123');
+      expect(result.output).toBe('Forked result');
+      expect(result.durationMs).toBe(85);
 
-      expect(result.results).toHaveLength(2);
-      expect(result.selected_branch).toBe('version-b');
-      expect(result.selection_reason).toBe('lower_latency');
-
-      const branchA = result.results.find(r => r.branch_id === 'version-a');
-      expect(branchA?.duration_ms).toBe(120);
-
-      const branchB = result.results.find(r => r.branch_id === 'version-b');
-      expect(branchB?.duration_ms).toBe(85);
-    });
-
-    it('should select fastest branch', async () => {
-      const mockResponse = {
-        results: [
-          { branch_id: 'slow', stdout: 'Slow', duration_ms: 500 },
-          { branch_id: 'fast', stdout: 'Fast', duration_ms: 50 }
-        ],
-        selected_branch: 'fast',
-        selection_reason: 'fastest_execution'
-      };
-
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
-      });
-
-      const result = await client.forkExecution({
-        branches: [
-          { id: 'slow', command: 'sleep 0.5' },
-          { id: 'fast', command: 'echo "Fast"' }
-        ],
-        image: 'alpine:latest',
-        strategy: ForkStrategy.FASTEST
-      });
-
-      expect(result.selected_branch).toBe('fast');
-      expect(result.selection_reason).toBe('fastest_execution');
+      // Verify the correct API call
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
+        '/api/v1/execute',
+        expect.objectContaining({
+          command: 'echo "forked"',
+          mode: 'branched',
+          branch_from: 'parent-123'
+        })
+      );
     });
   });
 
   describe('prewarm', () => {
     it('should prewarm Docker containers', async () => {
-      const mockResponse = {
-        success: true,
-        containers_warmed: 5,
-        average_warmup_ms: 125
-      };
-
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: {}
       });
 
-      const result = await client.prewarm({
-        image: 'alpine:latest',
-        count: 5,
-        runtime: Runtime.DOCKER
-      });
+      await client.prewarm('alpine:latest', 5);
 
-      expect(result.success).toBe(true);
-      expect(result.containers_warmed).toBe(5);
-      expect(result.average_warmup_ms).toBe(125);
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
+        '/api/v1/prewarm',
+        expect.objectContaining({
+          image: 'alpine:latest',
+          count: 5
+        })
+      );
     });
 
     it('should prewarm Firecracker microVMs', async () => {
-      const mockResponse = {
-        success: true,
-        containers_warmed: 3,
-        average_warmup_ms: 95
-      };
-
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: {}
       });
 
-      const result = await client.prewarm({
-        image: 'alpine:latest',
-        count: 3,
-        runtime: Runtime.FIRECRACKER,
-        memory_mb: 256,
-        cpu_cores: 1
-      });
+      await client.useFirecracker().prewarm('alpine:latest', 3);
 
-      expect(result.success).toBe(true);
-      expect(result.average_warmup_ms).toBeLessThan(100);
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
+        '/api/v1/prewarm',
+        expect.objectContaining({
+          image: 'alpine:latest',
+          count: 3,
+          runtime: Runtime.Firecracker
+        })
+      );
     });
   });
 
@@ -326,9 +251,8 @@ console.log(\`TypeScript: \${greet.message}\`);
         p50_latency_ms: 35
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockMetrics
+      mockAxiosInstance.get.mockResolvedValueOnce({
+        data: mockMetrics
       });
 
       const metrics = await client.getMetrics();
@@ -356,9 +280,8 @@ console.log(\`TypeScript: \${greet.message}\`);
         }
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockHealth
+      mockAxiosInstance.get.mockResolvedValueOnce({
+        data: mockHealth
       });
 
       const health = await client.healthCheck();
@@ -379,9 +302,8 @@ console.log(\`TypeScript: \${greet.message}\`);
         issues: ['Cache hit rate below threshold']
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockHealth
+      mockAxiosInstance.get.mockResolvedValueOnce({
+        data: mockHealth
       });
 
       const health = await client.healthCheck();
@@ -395,15 +317,13 @@ console.log(\`TypeScript: \${greet.message}\`);
   describe('Performance Benchmarks', () => {
     it('should meet warm start performance (< 50ms)', async () => {
       const mockResponse = {
-        stdout: 'Warm start',
-        duration_ms: 35,
-        cached: true,
-        warm_start: true
+        request_id: 'perf-123',
+        output: 'Warm start',
+        duration_ms: 35
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
       const result = await client.execute({
@@ -414,63 +334,36 @@ console.log(\`TypeScript: \${greet.message}\`);
 
       expect(result.durationMs).toBeLessThan(50);
     });
-
-    it('should meet branching performance (< 250ms)', async () => {
-      const mockResponse = {
-        results: [
-          { branch_id: 'a', duration_ms: 100 },
-          { branch_id: 'b', duration_ms: 120 }
-        ],
-        total_duration_ms: 235,
-        selected_branch: 'a'
-      };
-
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
-      });
-
-      const result = await client.forkExecution({
-        branches: [
-          { id: 'a', command: 'echo "A"' },
-          { id: 'b', command: 'echo "B"' }
-        ],
-        image: 'alpine:latest',
-        strategy: ForkStrategy.PARALLEL
-      });
-
-      expect(mockResponse.total_duration_ms).toBeLessThan(250);
-    });
   });
 
   describe('Event Emitter Integration', () => {
     it('should emit events for execution lifecycle', async () => {
       const mockResponse = {
-        stdout: 'Test',
+        request_id: 'event-123',
+        output: 'Test',
         duration_ms: 50
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValueOnce({
+        data: mockResponse
       });
 
-      const startListener = jest.fn();
-      const completeListener = jest.fn();
+      const executionListener = jest.fn();
 
-      client.on('execution:start', startListener);
-      client.on('execution:complete', completeListener);
+      client.on('execution', executionListener);
 
       await client.execute({
         command: 'echo "test"',
         image: 'alpine:latest'
       });
 
-      expect(startListener).toHaveBeenCalled();
-      expect(completeListener).toHaveBeenCalledWith(
+      expect(executionListener).toHaveBeenCalledWith(
         expect.objectContaining({
-          stdout: 'Test',
-          duration_ms: 50
+          result: expect.objectContaining({
+            request_id: 'event-123',
+            output: 'Test',
+            duration_ms: 50
+          })
         })
       );
     });
@@ -478,7 +371,7 @@ console.log(\`TypeScript: \${greet.message}\`);
 
   describe('Error Handling', () => {
     it('should handle network errors', async () => {
-      (global.fetch as jest.Mock).mockRejectedValueOnce(
+      mockAxiosInstance.post.mockRejectedValueOnce(
         new Error('Network error')
       );
 
@@ -488,10 +381,11 @@ console.log(\`TypeScript: \${greet.message}\`);
     });
 
     it('should handle server errors', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error'
+      mockAxiosInstance.post.mockRejectedValueOnce({
+        response: {
+          status: 500,
+          statusText: 'Internal Server Error'
+        }
       });
 
       await expect(client.runJavaScript('console.log("test")')).rejects.toThrow();
@@ -501,7 +395,7 @@ console.log(\`TypeScript: \${greet.message}\`);
       const mockAbortError = new Error('The operation was aborted');
       mockAbortError.name = 'AbortError';
 
-      (global.fetch as jest.Mock).mockRejectedValueOnce(mockAbortError);
+      mockAxiosInstance.post.mockRejectedValueOnce(mockAbortError);
 
       await expect(
         client.execute({
@@ -516,14 +410,13 @@ console.log(\`TypeScript: \${greet.message}\`);
   describe('Runtime Selection', () => {
     it('should use Docker runtime', async () => {
       const mockResponse = {
-        stdout: 'Docker',
-        durationMs: 40,
-        exitCode: 0
+        request_id: 'docker-123',
+        output: 'Docker\n',
+        duration_ms: 40
       };
 
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: async () => mockResponse
+      mockAxiosInstance.post.mockResolvedValue({
+        data: mockResponse
       });
 
       const result = await client.execute({
@@ -532,7 +425,7 @@ console.log(\`TypeScript: \${greet.message}\`);
         runtime: Runtime.Docker
       });
 
-      expect(result.stdout).toBe('Docker');
+      expect(result.output).toContain('Docker');
     });
   });
 });

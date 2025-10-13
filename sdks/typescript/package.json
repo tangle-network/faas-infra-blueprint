@@ -6,7 +6,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "jest",
+    "test": "jest --testPathIgnorePatterns=integration",
+    "test:integration": "jest --testPathPattern=integration --runInBand",
+    "test:all": "jest --runInBand",
     "lint": "eslint src/**/*.ts",
     "prepublish": "npm run build"
   },

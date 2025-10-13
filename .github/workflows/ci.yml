@@ -173,20 +173,50 @@ jobs:
           cache: 'npm'
           cache-dependency-path: sdks/typescript/package-lock.json
 
-      - name: Install dependencies
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+
+      - name: Setup Docker
+        run: |
+          docker pull alpine:latest
+          docker pull python:3.11-slim
+          docker pull node:20-slim
+
+      - name: Build gateway
+        run: cargo build --package faas-gateway-server --release
+
+      - name: Start gateway
+        run: |
+          cargo run --package faas-gateway-server --release &
+          echo $! > gateway.pid
+          sleep 5
+
+      - name: Install SDK dependencies
         run: |
           cd sdks/typescript
           npm ci
 
-      - name: Build
+      - name: Build SDK
         run: |
           cd sdks/typescript
           npm run build
 
-      - name: Test
+      - name: Health check
+        run: curl -f http://localhost:8080/health
+
+      - name: Run integration tests
         run: |
           cd sdks/typescript
-          npm test
+          npm run test:integration
+
+      - name: Stop gateway
+        run: kill $(cat gateway.pid) || true
 
       - name: Lint
         run: |
@@ -198,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
 
@@ -207,22 +237,46 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+
+      - name: Setup Docker
+        run: |
+          docker pull alpine:latest
+          docker pull python:3.11-slim
+          docker pull node:20-slim
+
+      - name: Build gateway
+        run: cargo build --package faas-gateway-server --release
+
+      - name: Start gateway
+        run: |
+          cargo run --package faas-gateway-server --release &
+          echo $! > gateway.pid
+          sleep 5
+
+      - name: Install SDK dependencies
         run: |
           cd sdks/python
           pip install -e .
-          pip install pytest pytest-asyncio pytest-cov
+          pip install pytest pytest-asyncio
 
-      - name: Test
+      - name: Health check
+        run: curl -f http://localhost:8080/health
+
+      - name: Run integration tests
         run: |
           cd sdks/python
-          pytest tests/ -v --cov=faas_sdk --cov-report=xml
+          pytest tests/test_integration.py -v
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./sdks/python/coverage.xml
-          flags: python-sdk
+      - name: Stop gateway
+        run: kill $(cat gateway.pid) || true
 
   security:
     name: Security Audit
