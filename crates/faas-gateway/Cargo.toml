@@ -14,6 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 faas-common = { workspace = true }
+faas-executor = { workspace = true }
 
 # Web Framework
 axum = { workspace = true }
@@ -23,6 +24,20 @@ thiserror = { workspace = true }
 
 # Async & Utils
 tokio = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+# Blueprint integration
+zip = "0.6"
+rand = { workspace = true }
+
+# Tangle SDK (optional)
+faas-sdk = { path = "../faas-sdk", optional = true }
 
 # Logging
 tracing = { workspace = true }
+
+[features]
+default = []
+tangle = ["faas-sdk/tangle"]

@@ -4,6 +4,9 @@ use faas_common::InvocationResult;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Blueprint SDK integration
+pub mod blueprint;
+
 #[derive(Error, Debug)]
 pub enum ApiError {
     #[error("Bad request: {0}")]
