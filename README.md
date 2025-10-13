@@ -170,12 +170,12 @@ variant_b = await client.fork_execution(base.request_id, 'test_b.py')
 
 ### Tangle Blockchain Features
 
-| Feature | Rust SDK | TypeScript SDK | Python SDK |
-|---------|:--------:|:--------------:|:----------:|
-| Submit jobs | ✓ (feature-gated) | Structure ready | Structure ready |
-| Query results | ✓ (feature-gated) | Structure ready | Structure ready |
-| Operator assignment | ✓ (feature-gated) | Structure ready | Structure ready |
-| 12 job types | ✓ (defined) | ✓ (defined) | ✓ (defined) |
+| Feature | Rust SDK | TypeScript SDK |
+|---------|:--------:|:--------------:|
+| Submit jobs | ✓ (feature-gated) | Structure ready |
+| Query results | ✓ (feature-gated) | Structure ready |
+| Operator assignment | ✓ (feature-gated) | Structure ready |
+| 12 job types | ✓ (defined) | ✓ (defined) |
 
 ## Execution Modes
 
@@ -431,7 +431,6 @@ cargo test --workspace
   - Python: `sdks/python/README.md`
   - Tangle (Rust): `crates/faas-sdk/src/tangle.rs` (feature-gated)
   - Tangle (TS): `sdks/typescript-tangle/README.md` (structure)
-  - Tangle (Python): `sdks/python-tangle/README.md` (structure)
 
 ## License
 
