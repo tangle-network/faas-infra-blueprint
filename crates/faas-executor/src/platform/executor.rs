@@ -36,6 +36,7 @@ pub struct Request {
     pub checkpoint: Option<String>,
     pub branch_from: Option<String>,
     pub runtime: Option<faas_common::Runtime>,
+    pub env_vars: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Debug)]
@@ -176,12 +177,17 @@ impl Executor {
     }
 
     async fn run_ephemeral(&self, req: Request) -> Result<Response> {
+        // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
+        let env_vars = req.env_vars.map(|map| {
+            map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
+        });
+
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
             source: req.env,
             command: vec!["sh".to_string(), "-c".to_string(), req.code],
             payload: Vec::new(),
-            env_vars: None,
+            env_vars,
             runtime: req.runtime,
             execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
             memory_limit: None,
@@ -245,12 +251,17 @@ impl Executor {
             }
         }
 
+        // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
+        let env_vars = req.env_vars.clone().map(|map| {
+            map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
+        });
+
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
             source: req.env.clone(),
             command: vec!["sh".to_string(), "-c".to_string(), req.code.clone()],
             payload: Vec::new(),
-            env_vars: None,
+            env_vars,
             runtime: req.runtime,
             execution_mode: Some(faas_common::ExecutionMode::Cached),
             memory_limit: None,
@@ -342,12 +353,17 @@ impl Executor {
             // Use Firecracker VM forking
             info!("Using VM forking from parent: {}", parent);
 
+            // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
+            let env_vars = req.env_vars.clone().map(|map| {
+                map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
+            });
+
             let config = faas_common::SandboxConfig {
                 function_id: req.id.clone(),
                 source: req.env.clone(),
                 command: vec!["sh".to_string(), "-c".to_string(), req.code.clone()],
                 payload: Vec::new(),
-                env_vars: None,
+                env_vars,
                 runtime: Some(faas_common::Runtime::Firecracker),  // Use Firecracker for VM forking
                 execution_mode: Some(faas_common::ExecutionMode::Branched),
                 memory_limit: None,
@@ -385,12 +401,17 @@ impl Executor {
                 info!("Creating base container and checkpoint for parent: {}", parent);
 
                 // Start a container to be the parent
+                // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
+                let env_vars = req.env_vars.clone().map(|map| {
+                    map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
+                });
+
                 let config = faas_common::SandboxConfig {
                     function_id: parent.clone(),
                     source: req.env.clone(),
                     command: vec!["sh".to_string(), "-c".to_string(), "sleep 3600".to_string()], // Keep alive
                     payload: Vec::new(),
-                    env_vars: None,
+                    env_vars,
                     runtime: Some(faas_common::Runtime::Docker),  // Use Docker for container forking
                     execution_mode: Some(faas_common::ExecutionMode::Branched),
                     memory_limit: None,
@@ -439,12 +460,17 @@ impl Executor {
             }
         });
 
+        // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
+        let env_vars = req.env_vars.map(|map| {
+            map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
+        });
+
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
             source: req.env,
             command: vec!["sh".to_string(), "-c".to_string(), req.code],
             payload: Vec::new(),
-            env_vars: None,
+            env_vars,
             runtime: Some(runtime),
             execution_mode: Some(faas_common::ExecutionMode::Persistent),
             memory_limit: None,
@@ -502,6 +528,8 @@ mod tests {
             timeout: Duration::from_secs(30),
             checkpoint: None,
             branch_from: None,
+            runtime: None,
+            env_vars: None,
         };
 
         let res = exec.run(req).await.expect("Failed to run");

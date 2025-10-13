@@ -181,6 +181,11 @@ async fn execute_handler(
         _ => platform::executor::Mode::Ephemeral,
     };
 
+    // Convert env_vars from Vec to HashMap
+    let env_vars = req.env_vars.map(|vec| {
+        vec.into_iter().collect::<std::collections::HashMap<String, String>>()
+    });
+
     // Create platform request
     let platform_req = platform::executor::Request {
         id: Uuid::new_v4().to_string(),
@@ -191,6 +196,7 @@ async fn execute_handler(
         checkpoint: req.snapshot_id,
         branch_from: req.branch_from,
         runtime: req.runtime,
+        env_vars,
     };
 
     // Execute using platform executor (it handles runtime selection internally)
@@ -230,6 +236,11 @@ async fn fork_execution_handler(
     // Fork execution into multiple variants for A/B testing
     let mut responses = Vec::new();
 
+    // Convert env_vars from Vec to HashMap
+    let env_vars = req.env_vars.map(|vec| {
+        vec.into_iter().collect::<std::collections::HashMap<String, String>>()
+    });
+
     // Create base request
     let base_req = platform::executor::Request {
         id: Uuid::new_v4().to_string(),
@@ -240,6 +251,7 @@ async fn fork_execution_handler(
         checkpoint: None,
         branch_from: None,
         runtime: None,
+        env_vars,
     };
 
     // Run with different configurations
@@ -274,6 +286,11 @@ async fn fork_from_parent_handler(
     Path(parent_id): Path<String>,
     Json(req): Json<ExecuteRequest>,
 ) -> Result<Json<InvokeResponse>, StatusCode> {
+    // Convert env_vars from Vec to HashMap
+    let env_vars = req.env_vars.map(|vec| {
+        vec.into_iter().collect::<std::collections::HashMap<String, String>>()
+    });
+
     let platform_req = platform::executor::Request {
         id: Uuid::new_v4().to_string(),
         code: req.command.clone(),
@@ -283,6 +300,7 @@ async fn fork_from_parent_handler(
         checkpoint: None,
         branch_from: Some(parent_id),
         runtime: None,
+        env_vars,
     };
 
     match state.executor.run(platform_req).await {

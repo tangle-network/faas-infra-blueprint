@@ -34,7 +34,7 @@ def client():
 @pytest.mark.asyncio
 async def test_health_check(client):
     """Verify gateway is running and healthy."""
-    health = await client.health()
+    health = await client.health_check()
     assert health is not None
     assert 'status' in health
 

@@ -202,6 +202,7 @@ impl ExecutionBackend for LocalBackend {
             checkpoint: None,
             branch_from: None,
             runtime: Some(faas_common::Runtime::Auto), // Auto-select Docker or Firecracker
+            env_vars: None,
         };
 
         // Execute

@@ -639,11 +639,11 @@ export class FaaSClient extends EventEmitter {
   }
 
   /**
-   * Execute Bash script
+   * Execute Bash script (using sh on alpine)
    */
   async runBash(script: string, options?: Partial<Parameters<typeof this.execute>[0]>): Promise<ExecutionResult> {
     return this.execute({
-      command: `bash -c "${script.replace(/"/g, '\\"')}"`,
+      command: `sh -c "${script.replace(/"/g, '\\"')}"`,
       image: 'alpine:latest',
       ...options
     });

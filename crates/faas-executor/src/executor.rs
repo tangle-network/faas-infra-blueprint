@@ -1383,29 +1383,20 @@ impl Executor {
         let request_id = Uuid::new_v4().to_string();
 
         // Build the command with environment variables if present
-        let mut full_cmd = Vec::new();
-
-        // If we have environment variables, wrap the command with env
-        if let Some(env_vars) = &config.env_vars {
+        let full_cmd = if let Some(env_vars) = &config.env_vars {
             if !env_vars.is_empty() {
-                // Use sh -c to properly handle environment variables
-                full_cmd.push("sh".to_string());
-                full_cmd.push("-c".to_string());
-
-                // Build the command with environment variables
-                let env_prefix = env_vars.to_vec()
-                    .join(" ");
-
-                // Combine env vars and command
-                let cmd_string = config.command.join(" ");
-                full_cmd.push(format!("{env_prefix} {cmd_string}"));
+                // Use 'env' command to inject environment variables
+                // Format: env KEY=VALUE KEY2=VALUE2 sh -c "command"
+                let mut cmd = vec!["env".to_string()];
+                cmd.extend(env_vars.clone());
+                cmd.extend(config.command.clone());
+                cmd
             } else {
-                full_cmd.extend(config.command.clone());
+                config.command.clone()
             }
         } else {
-            // No env vars, use command directly
-            full_cmd.extend(config.command.clone());
-        }
+            config.command.clone()
+        };
 
         // Create an exec instance
         let exec_config = docktopus::bollard::exec::CreateExecOptions {
