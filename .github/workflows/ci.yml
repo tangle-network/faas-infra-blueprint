@@ -94,7 +94,7 @@ jobs:
       - name: Run Firecracker tests
         if: steps.kvm.outputs.available == 'true'
         run: |
-          sudo -E cargo test --package faas-executor --features firecracker -- --ignored --test-threads=1
+          sudo -E env "PATH=$PATH" cargo test --package faas-executor --features firecracker -- --ignored --test-threads=1
 
   integration:
     name: Integration Tests
