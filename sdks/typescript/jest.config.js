@@ -15,6 +15,5 @@ module.exports = {
     'text',
     'lcov',
     'html'
-  ],
-  setupFilesAfterEnv: ['<rootDir>/tests/setup.ts']
+  ]
 };

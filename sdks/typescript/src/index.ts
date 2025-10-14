@@ -230,6 +230,7 @@ export interface ExecutionResult {
   output?: string;
   logs?: string;
   error?: string;
+  exitCode?: number;
   durationMs: number;
   cacheHit: boolean;
   runtimeUsed?: Runtime;
@@ -456,7 +457,7 @@ export class FaaSClient extends EventEmitter {
   /**
    * Generate cache key from content
    */
-  private getCacheKey(content: string): string {
+  public getCacheKey(content: string): string {
     return crypto.createHash('md5').update(content).digest('hex');
   }
 
@@ -527,6 +528,9 @@ export class FaaSClient extends EventEmitter {
 
     const result = await this.executeWithRetry(async () => {
       const response = await this.client.post('/api/v1/execute', payload);
+      if (!response || !response.data) {
+        throw new Error('No response data received from server');
+      }
       return response.data;
     });
 
@@ -546,9 +550,10 @@ export class FaaSClient extends EventEmitter {
 
     return {
       requestId: result.request_id || '',
-      output: result.output,
-      logs: result.logs,
+      output: result.stdout || result.output,
+      logs: result.stderr || result.logs,
       error: result.error,
+      exitCode: result.exit_code,
       durationMs: result.duration_ms || elapsedMs,
       cacheHit,
       runtimeUsed: runtime
@@ -667,9 +672,10 @@ export class FaaSClient extends EventEmitter {
 
     return {
       requestId: response.data.request_id || '',
-      output: response.data.output,
-      logs: response.data.logs,
+      output: response.data.stdout || response.data.output,
+      logs: response.data.stderr || response.data.logs,
       error: response.data.error,
+      exitCode: response.data.exit_code,
       durationMs: response.data.duration_ms || 0,
       cacheHit: false
     };
