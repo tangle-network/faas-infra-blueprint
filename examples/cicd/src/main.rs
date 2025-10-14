@@ -286,32 +286,28 @@ environment:
     // Example 2: Python project with actual tests
     println!("\n\nExample 2: Real Python Project CI");
 
-    let python_pipeline = r#"
-name: python-app
+    let python_pipeline = r#"name: python-app
 stages:
   - name: setup
     image: python:3.11-alpine
-    commands:
-      - echo 'def add(a, b): return a + b' > app.py
-      - echo 'from app import add; assert add(2, 3) == 5; print("Test passed")' > test_app.py
     timeout_seconds: 30
-
+    commands:
+      - "echo 'def add(a, b): return a + b' > app.py"
+      - "echo 'from app import add; assert add(2, 3) == 5; print(\"Test passed\")' > test_app.py"
   - name: test
     image: python:3.11-alpine
-    commands:
-      - python test_app.py
     timeout_seconds: 60
-
+    commands:
+      - "python test_app.py"
   - name: coverage
     image: python:3.11-alpine
-    commands:
-      - pip install coverage
-      - coverage run test_app.py
-      - coverage report
     timeout_seconds: 120
-
+    commands:
+      - "pip install coverage"
+      - "coverage run test_app.py"
+      - "coverage report"
 environment:
-  PYTHONPATH: "."
+  PYTHONPATH: .
 "#;
 
     std::fs::write("/tmp/python-ci.yaml", python_pipeline)?;

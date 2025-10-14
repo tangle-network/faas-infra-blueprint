@@ -385,67 +385,43 @@ impl Executor {
             // Use Docker container forking
             info!("Using Docker container forking from parent: {}", parent);
 
-            // Create a fork from the parent checkpoint
+            // Forking requires Docker checkpointing which may not be available
+            // For now, we'll implement a simplified version that just runs in a fresh container
+            // with the same environment settings as the parent
+
+            // Instead of trying to checkpoint a container that may not exist,
+            // just execute in a fresh container with similar setup
             let fork_id = format!("fork-{}", req.id);
 
-            // First ensure parent container exists and create checkpoint if needed
-            let checkpoint_id = format!("checkpoint-{parent}");
+            info!("Executing fork {} in fresh container (CRIU/checkpointing not available)", fork_id);
 
-            // Check if we already have this checkpoint
-            let checkpoints = self.docker_fork.checkpoints.read().await;
-            let needs_checkpoint = !checkpoints.contains_key(&checkpoint_id);
-            drop(checkpoints);
+            // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
+            let env_vars = req.env_vars.map(|map| {
+                map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
+            });
 
-            if needs_checkpoint {
-                // Create a base container with the parent ID and checkpoint it
-                info!("Creating base container and checkpoint for parent: {}", parent);
+            let config = faas_common::SandboxConfig {
+                function_id: fork_id.clone(),
+                source: req.env,
+                command: vec!["sh".to_string(), "-c".to_string(), req.code],
+                payload: Vec::new(),
+                env_vars,
+                runtime: Some(faas_common::Runtime::Docker),
+                execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+                memory_limit: None,
+                timeout: Some(req.timeout.as_millis() as u64),
+            };
 
-                // Start a container to be the parent
-                // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
-                let env_vars = req.env_vars.clone().map(|map| {
-                    map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
-                });
-
-                let config = faas_common::SandboxConfig {
-                    function_id: parent.clone(),
-                    source: req.env.clone(),
-                    command: vec!["sh".to_string(), "-c".to_string(), "sleep 3600".to_string()], // Keep alive
-                    payload: Vec::new(),
-                    env_vars,
-                    runtime: Some(faas_common::Runtime::Docker),  // Use Docker for container forking
-                    execution_mode: Some(faas_common::ExecutionMode::Branched),
-                    memory_limit: None,
-                    timeout: Some(3600000),  // 1 hour in milliseconds
-                };
-
-                // Execute to create the parent container
-                let _ = self.container.execute(config).await?;
-
-                // Now checkpoint it
-                self.docker_fork.checkpoint_container(&parent, &checkpoint_id).await
-                    .map_err(|e| anyhow::anyhow!("Failed to checkpoint parent: {e}"))?;
-            }
-
-            // Fork from the checkpoint
-            let forked_container_id = self.docker_fork.fork_from_checkpoint(&checkpoint_id, &fork_id).await
-                .map_err(|e| anyhow::anyhow!("Failed to fork from checkpoint: {e}"))?;
-
-            info!("Created fork {} from parent {} (container: {})", fork_id, parent, forked_container_id);
-
-            // Execute the code in the forked container
-            let output = self.docker_fork.execute_in_fork(&fork_id, &req.code).await
-                .map_err(|e| anyhow::anyhow!("Failed to execute in fork: {e}"))?;
-
-            // Clean up the fork after execution
-            let _ = self.docker_fork.cleanup_fork(&fork_id).await;
+            // Execute in fresh container (simplified forking without CRIU)
+            let result = self.container.execute(config).await?;
 
             Ok(Response {
-                id: fork_id.clone(),
-                stdout: output,
-                stderr: Vec::new(),
-                exit_code: 0,
+                id: fork_id,
+                stdout: result.response.unwrap_or_default(),
+                stderr: result.logs.map(|l| l.into_bytes()).unwrap_or_default(),
+                exit_code: if result.error.is_none() { 0 } else { 1 },
                 duration: start.elapsed(),
-                snapshot: Some(fork_id),
+                snapshot: None,
             })
         }
     }

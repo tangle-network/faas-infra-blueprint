@@ -71,20 +71,24 @@ import pandas as pd
 import sys
 import json
 
-# Read CSV from stdin
-df = pd.read_csv(sys.stdin)
+# Read CSV from file
+df = pd.read_csv('/tmp/input.csv')
 
 # Real transformations
 df['salary_bracket'] = pd.cut(df['salary'],
     bins=[0, 60000, 80000, 100000, float('inf')],
     labels=['Junior', 'Mid', 'Senior', 'Executive'])
 
-# Group by department
+# Group by department and flatten the results
 dept_stats = df.groupby('department').agg({
     'salary': ['mean', 'min', 'max'],
     'age': 'mean',
     'id': 'count'
 }).round(2)
+
+# Flatten multi-index columns and convert to JSON-serializable format
+dept_stats.columns = ['_'.join(col).strip() for col in dept_stats.columns.values]
+dept_dict = dept_stats.to_dict('index')  # Convert to simple dict
 
 # Add derived metrics
 df['experience_estimate'] = df['age'] - 22
@@ -93,7 +97,7 @@ df['salary_per_year_exp'] = (df['salary'] / df['experience_estimate']).round(2)
 # Output results as JSON
 result = {
     'transformed_rows': len(df),
-    'departments': dept_stats.to_dict(),
+    'departments': dept_dict,
     'salary_brackets': df['salary_bracket'].value_counts().to_dict(),
     'avg_salary': float(df['salary'].mean()),
     'sample_data': df.head(3).to_dict('records')
@@ -102,12 +106,26 @@ result = {
 print(json.dumps(result, indent=2))
 "#;
 
+        // Write the CSV data to a temp file, install pandas, run the transform script
+        let script_with_setup = format!(r#"
+# Save stdin (CSV data) to a file
+cat > /tmp/input.csv
+
+# Install pandas
+pip install pandas >/dev/null 2>&1
+
+# Run the transformation script
+python3 << 'PYTHON_SCRIPT'
+{}
+PYTHON_SCRIPT
+"#, transform_script);
+
         let result = self.executor.execute(SandboxConfig {
             function_id: "transform".to_string(),
             source: "python:3.11-slim".to_string(),
             command: vec![
                 "sh".to_string(), "-c".to_string(),
-                format!("pip install pandas >/dev/null 2>&1 && python -c '{}'", transform_script)
+                script_with_setup
             ],
             env_vars: None,
             payload: input,
@@ -117,7 +135,10 @@ print(json.dumps(result, indent=2))
             timeout: Some(120000),
         }).await?;
 
-        let output = result.response.ok_or("Transform failed")?;
+        let output = result.response.ok_or_else(|| {
+            let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
+            format!("Transform failed: {}", error_msg)
+        })?;
         println!("  ✓ Transformed data: {} bytes JSON", output.len());
         self.stages_completed.push("transform".to_string());
 
