@@ -84,11 +84,14 @@ impl StorageManager {
     /// - AWS_REGION (optional, defaults from URL)
     /// - AWS_ENDPOINT (optional, for S3-compatible services)
     #[cfg(feature = "object-storage")]
-    pub async fn with_tiered_storage_async(mut self, object_store_url: Option<String>) -> Result<Self> {
+    pub async fn with_tiered_storage_async(
+        mut self,
+        object_store_url: Option<String>,
+    ) -> Result<Self> {
         use super::tier::{ObjectBackend, TieredStore};
         use super::Backend;
-        use tracing::info;
         use anyhow::Context;
+        use tracing::info;
 
         if let Some(url) = object_store_url {
             info!("Configuring tiered storage with object store: {}", url);
@@ -97,7 +100,7 @@ impl StorageManager {
             let object_backend = Arc::new(
                 ObjectBackend::from_url(&url)
                     .await
-                    .context("Failed to create object store backend")?
+                    .context("Failed to create object store backend")?,
             );
 
             // Get the base path from current blob_store backend
@@ -113,26 +116,24 @@ impl StorageManager {
                 .with_object_store(object_backend);
 
             // Replace blob_store backend with tiered store
-            self.blob_store = Arc::new(BlobStore::new(
-                Arc::new(tiered) as Arc<dyn Backend>
-            ));
+            self.blob_store = Arc::new(BlobStore::new(Arc::new(tiered) as Arc<dyn Backend>));
 
             // Recreate cache with new blob_store
             self.cache = Arc::new(BlobCache::new(
                 self.blob_store.clone(),
-                100, // cache size in entries
+                100,              // cache size in entries
                 10 * 1024 * 1024, // 10MB max blob size in cache
             ));
 
             // Update adapters to use new cache
             self.docker_adapter = Arc::new(DockerSnapshotAdapter::new(
                 self.docker_adapter.docker.clone(),
-                self.cache.clone()
+                self.cache.clone(),
             ));
 
             self.vm_adapter = Arc::new(VmSnapshotAdapter::new(
                 self.cache.clone(),
-                self.vm_adapter.snapshot_dir.clone()
+                self.vm_adapter.snapshot_dir.clone(),
             ));
 
             #[cfg(target_os = "linux")]

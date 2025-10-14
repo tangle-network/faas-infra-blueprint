@@ -78,7 +78,11 @@ impl BlobStore {
                 (compressed, size)
             }
             Compression::Lz4 => {
-                let compressed = lz4::block::compress(data, Some(lz4::block::CompressionMode::HIGHCOMPRESSION(9)), false)?;
+                let compressed = lz4::block::compress(
+                    data,
+                    Some(lz4::block::CompressionMode::HIGHCOMPRESSION(9)),
+                    false,
+                )?;
                 let size = compressed.len() as u64;
                 (compressed, size)
             }
@@ -104,7 +108,8 @@ impl BlobStore {
     pub async fn get(&self, id: &BlobId) -> Result<Vec<u8>> {
         let meta = {
             let metadata = self.metadata.read().await;
-            metadata.get(id)
+            metadata
+                .get(id)
                 .ok_or_else(|| anyhow!("Blob {} not found", id.as_str()))?
                 .clone()
         };
@@ -114,12 +119,8 @@ impl BlobStore {
         // Decompress if needed
         match meta.compression {
             Compression::None => Ok(data),
-            Compression::Zstd => {
-                Ok(zstd::decode_all(&data[..])?)
-            }
-            Compression::Lz4 => {
-                Ok(lz4::block::decompress(&data, Some(meta.size as i32))?)
-            }
+            Compression::Zstd => Ok(zstd::decode_all(&data[..])?),
+            Compression::Lz4 => Ok(lz4::block::decompress(&data, Some(meta.size as i32))?),
         }
     }
 
@@ -154,14 +155,20 @@ impl BlobStore {
 
     /// Get blob metadata
     pub async fn metadata(&self, id: &BlobId) -> Result<BlobMeta> {
-        self.metadata.read().await.get(id)
+        self.metadata
+            .read()
+            .await
+            .get(id)
             .cloned()
             .ok_or_else(|| anyhow!("Blob {} not found", id.as_str()))
     }
 
     /// Get total storage usage
     pub async fn total_size(&self) -> u64 {
-        self.metadata.read().await.values()
+        self.metadata
+            .read()
+            .await
+            .values()
             .map(|m| m.compressed_size)
             .sum()
     }

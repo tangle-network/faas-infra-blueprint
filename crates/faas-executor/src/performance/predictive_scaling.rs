@@ -419,16 +419,21 @@ impl PredictiveScaler {
         // Look at patterns from the last hour to calculate accuracy
         for (env, data) in history.iter() {
             if let Some(latest_entries) = data.get(pattern.environment.as_str()) {
-                for entry in latest_entries.iter().rev().take(12) { // Last 12 5-minute intervals
+                for entry in latest_entries.iter().rev().take(12) {
+                    // Last 12 5-minute intervals
                     if now.duration_since(entry.timestamp) < Duration::from_secs(3600) {
                         total_predictions += 1;
 
                         // Compare predicted vs actual load
                         let predicted_load = entry.count as f64;
-                        let actual_load = self.get_current_load_for_env(&pattern.environment).await.unwrap_or(0.0);
+                        let actual_load = self
+                            .get_current_load_for_env(&pattern.environment)
+                            .await
+                            .unwrap_or(0.0);
 
                         // Consider prediction correct if within 25% of actual
-                        let error_rate = (predicted_load - actual_load).abs() / actual_load.max(1.0);
+                        let error_rate =
+                            (predicted_load - actual_load).abs() / actual_load.max(1.0);
                         if error_rate <= 0.25 {
                             correct_predictions += 1;
                         }
@@ -441,8 +446,13 @@ impl PredictiveScaler {
             Ok(0.5) // Default 50% accuracy for new environments
         } else {
             let accuracy = correct_predictions as f64 / total_predictions as f64;
-            info!("Historical accuracy for {}: {:.2}% ({}/{})",
-                pattern.environment, accuracy * 100.0, correct_predictions, total_predictions);
+            info!(
+                "Historical accuracy for {}: {:.2}% ({}/{})",
+                pattern.environment,
+                accuracy * 100.0,
+                correct_predictions,
+                total_predictions
+            );
             Ok(accuracy)
         }
     }

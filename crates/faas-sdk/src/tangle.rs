@@ -129,7 +129,7 @@ impl TangleClient {
         // 5. Return result
 
         Err(TangleError::Execution(
-            "Tangle client implementation pending - requires subxt integration".to_string()
+            "Tangle client implementation pending - requires subxt integration".to_string(),
         ))
     }
 
@@ -148,7 +148,7 @@ impl TangleClient {
         _timeout_secs: Option<u64>,
     ) -> Result<JobResult, TangleError> {
         Err(TangleError::Execution(
-            "Tangle client implementation pending".to_string()
+            "Tangle client implementation pending".to_string(),
         ))
     }
 
@@ -160,17 +160,14 @@ impl TangleClient {
         _description: Option<String>,
     ) -> Result<JobResult, TangleError> {
         Err(TangleError::Execution(
-            "Tangle client implementation pending".to_string()
+            "Tangle client implementation pending".to_string(),
         ))
     }
 
     /// Submit Job 3: Restore Snapshot
-    pub async fn restore_snapshot(
-        &self,
-        _snapshot_id: String,
-    ) -> Result<JobResult, TangleError> {
+    pub async fn restore_snapshot(&self, _snapshot_id: String) -> Result<JobResult, TangleError> {
         Err(TangleError::Execution(
-            "Tangle client implementation pending".to_string()
+            "Tangle client implementation pending".to_string(),
         ))
     }
 
@@ -185,17 +182,14 @@ impl TangleClient {
         _enable_ssh: bool,
     ) -> Result<JobResult, TangleError> {
         Err(TangleError::Execution(
-            "Tangle client implementation pending".to_string()
+            "Tangle client implementation pending".to_string(),
         ))
     }
 
     /// Submit Job 7: Stop Instance
-    pub async fn stop_instance(
-        &self,
-        _instance_id: String,
-    ) -> Result<JobResult, TangleError> {
+    pub async fn stop_instance(&self, _instance_id: String) -> Result<JobResult, TangleError> {
         Err(TangleError::Execution(
-            "Tangle client implementation pending".to_string()
+            "Tangle client implementation pending".to_string(),
         ))
     }
 
@@ -215,17 +209,14 @@ impl TangleClient {
         _call_id: u64,
     ) -> Result<JobResult, TangleError> {
         Err(TangleError::Execution(
-            "Tangle client implementation pending".to_string()
+            "Tangle client implementation pending".to_string(),
         ))
     }
 
     /// Check which operator was assigned to a job
-    pub async fn get_assigned_operator(
-        &self,
-        _call_id: u64,
-    ) -> Result<String, TangleError> {
+    pub async fn get_assigned_operator(&self, _call_id: u64) -> Result<String, TangleError> {
         Err(TangleError::Execution(
-            "Tangle client implementation pending".to_string()
+            "Tangle client implementation pending".to_string(),
         ))
     }
 }

@@ -3,7 +3,10 @@
 
 use bollard::Docker;
 use faas_common::{SandboxConfig, SandboxExecutor};
-use faas_executor::{DockerExecutor, container_pool::{ContainerPoolManager, PoolConfig}};
+use faas_executor::{
+    container_pool::{ContainerPoolManager, PoolConfig},
+    DockerExecutor,
+};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -218,7 +221,10 @@ async fn test_container_pool_warm_start() {
     let acquisition_time1 = start.elapsed();
 
     println!("First acquisition (warm): {:?}", acquisition_time1);
-    assert!(acquisition_time1 < Duration::from_millis(500), "Warm start should be under 500ms");
+    assert!(
+        acquisition_time1 < Duration::from_millis(500),
+        "Warm start should be under 500ms"
+    );
 
     // Release back to pool
     pool.release(container1).await.unwrap();
@@ -229,7 +235,10 @@ async fn test_container_pool_warm_start() {
     let acquisition_time2 = start.elapsed();
 
     println!("Second acquisition (reuse): {:?}", acquisition_time2);
-    assert!(acquisition_time2 < Duration::from_millis(200), "Reused container should be under 200ms");
+    assert!(
+        acquisition_time2 < Duration::from_millis(200),
+        "Reused container should be under 200ms"
+    );
 
     pool.release(container2).await.unwrap();
 }
@@ -266,9 +275,14 @@ async fn test_predictive_warming() {
 
     // Check stats - should have pre-warmed more containers
     let stats = pool_manager.get_stats("alpine:latest").await.unwrap();
-    println!("Pool stats after predictive warming: available={}, in_use={}",
-             stats.available, stats.in_use);
-    assert!(stats.available >= 1, "Should have at least 1 warm container");
+    println!(
+        "Pool stats after predictive warming: available={}, in_use={}",
+        stats.available, stats.in_use
+    );
+    assert!(
+        stats.available >= 1,
+        "Should have at least 1 warm container"
+    );
 }
 
 #[tokio::test]

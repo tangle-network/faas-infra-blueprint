@@ -1,9 +1,9 @@
 //! High-performance container pool with predictive warming and Docker integration
 //! Targets: sub-50ms warm starts, intelligent pre-warming, automatic scaling
 
-use anyhow::{anyhow, Result};
 use crate::bollard::container::{Config as ContainerConfig, CreateContainerOptions};
 use crate::bollard::Docker;
+use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -214,7 +214,11 @@ impl ContainerPoolManager {
     }
 
     /// Acquire container with specific priority
-    pub async fn acquire_with_priority(&self, image: &str, priority: Priority) -> Result<PooledContainer> {
+    pub async fn acquire_with_priority(
+        &self,
+        image: &str,
+        priority: Priority,
+    ) -> Result<PooledContainer> {
         // Check for pre-built base image first
         let base_image_key = self.compute_base_image_hash(image).await?;
 
@@ -239,7 +243,10 @@ impl ContainerPoolManager {
     }
 
     /// Try to acquire from stratified pool based on priority
-    async fn try_acquire_from_stratified_pool(&self, priority: Priority) -> Result<Option<PooledContainer>> {
+    async fn try_acquire_from_stratified_pool(
+        &self,
+        priority: Priority,
+    ) -> Result<Option<PooledContainer>> {
         let tier = match priority {
             Priority::Realtime => &self.stratified_pool.hot_tier,
             Priority::Standard => &self.stratified_pool.warm_tier,
@@ -271,9 +278,7 @@ impl ContainerPoolManager {
     /// Get pool statistics
     pub async fn get_stats(&self, image: &str) -> Option<PoolStats> {
         self.pools.get(image).map(|pool| {
-            let available = pool.available.try_lock()
-                .map(|a| a.len())
-                .unwrap_or(0);
+            let available = pool.available.try_lock().map(|a| a.len()).unwrap_or(0);
             let in_use = pool.in_use.len();
 
             PoolStats {
@@ -326,7 +331,8 @@ impl ContainerPoolManager {
             let to_warm = predicted_need.saturating_sub(available);
             if to_warm > 0 {
                 info!("Predictive warming {} containers for {}", to_warm, image);
-                for _ in 0..to_warm.min(3) { // Cap at 3 per cycle
+                for _ in 0..to_warm.min(3) {
+                    // Cap at 3 per cycle
                     let pool = pool.clone();
                     tokio::spawn(async move {
                         let _ = pool.create_replacement().await;
@@ -398,7 +404,10 @@ impl ContainerPool {
 
     /// Pre-warm the pool with minimum containers
     pub async fn pre_warm(&self) -> Result<()> {
-        info!("Pre-warming pool for {} with {} containers", self.image, self.config.min_size);
+        info!(
+            "Pre-warming pool for {} with {} containers",
+            self.image, self.config.min_size
+        );
 
         let mut tasks = vec![];
         for _ in 0..self.config.min_size {
@@ -453,14 +462,19 @@ impl ContainerPool {
 
             // Update metrics
             *self.cache_hits.write().await += 1;
-            let hit_rate = *self.cache_hits.read().await as f64 / *self.total_requests.read().await as f64;
+            let hit_rate =
+                *self.cache_hits.read().await as f64 / *self.total_requests.read().await as f64;
             *self.hit_rate.write().await = hit_rate;
 
             let acquisition_ms = start.elapsed().as_millis() as f64;
             self.update_avg_startup(acquisition_ms).await;
 
-            info!("Acquired warm container {} in {}ms (hit rate: {:.2}%)",
-                  container_id, acquisition_ms, hit_rate * 100.0);
+            info!(
+                "Acquired warm container {} in {}ms (hit rate: {:.2}%)",
+                container_id,
+                acquisition_ms,
+                hit_rate * 100.0
+            );
 
             drop(available);
             return Ok(container);
@@ -471,16 +485,17 @@ impl ContainerPool {
         // Need to create a new container
         let total = *self.total_created.read().await;
         if total >= self.config.max_size {
-            return Err(anyhow!("Container pool exhausted for image: {}", self.image));
+            return Err(anyhow!(
+                "Container pool exhausted for image: {}",
+                self.image
+            ));
         }
 
         info!("Creating new container for {} (pool was empty)", self.image);
 
         let permit = self.creation_semaphore.clone().acquire_owned().await?;
-        let mut container = Self::create_container_internal(
-            self.docker.clone(),
-            self.image.clone()
-        ).await?;
+        let mut container =
+            Self::create_container_internal(self.docker.clone(), self.image.clone()).await?;
 
         container.state = ContainerState::InUse;
         container.last_used = Some(Instant::now());
@@ -516,8 +531,10 @@ impl ContainerPool {
 
         // Check if container should be retired
         if container.use_count >= self.config.max_use_count {
-            info!("Retiring container {} after {} uses",
-                  container.container_id, container.use_count);
+            info!(
+                "Retiring container {} after {} uses",
+                container.container_id, container.use_count
+            );
 
             self.terminate_container(&container).await?;
 
@@ -539,10 +556,11 @@ impl ContainerPool {
     }
 
     /// Create a container and start it
-    async fn create_container_internal(docker: Arc<Docker>, image: String) -> Result<PooledContainer> {
-        let container_name = format!("pool-{}-{}",
-            image.replace(['/', ':'], "-"),
-            Uuid::new_v4());
+    async fn create_container_internal(
+        docker: Arc<Docker>,
+        image: String,
+    ) -> Result<PooledContainer> {
+        let container_name = format!("pool-{}-{}", image.replace(['/', ':'], "-"), Uuid::new_v4());
 
         debug!("Creating pooled container: {}", container_name);
 
@@ -557,9 +575,7 @@ impl ContainerPool {
         );
 
         // Pre-allocate container name while image pulls
-        let container_name = format!("pool-{}-{}",
-            image.replace(['/', ':'], "-"),
-            Uuid::new_v4());
+        let container_name = format!("pool-{}-{}", image.replace(['/', ':'], "-"), Uuid::new_v4());
 
         // Collect image pull stream to complete the operation
         use futures::StreamExt;
@@ -607,7 +623,10 @@ impl ContainerPool {
             resource_usage: ResourceUsage::default(),
         };
 
-        info!("Created and started pooled container: {}", container.container_id);
+        info!(
+            "Created and started pooled container: {}",
+            container.container_id
+        );
         Ok(container)
     }
 
@@ -631,10 +650,8 @@ impl ContainerPool {
     pub async fn create_replacement(&self) -> Result<()> {
         let permit = self.creation_semaphore.clone().acquire_owned().await?;
 
-        let container = Self::create_container_internal(
-            self.docker.clone(),
-            self.image.clone()
-        ).await?;
+        let container =
+            Self::create_container_internal(self.docker.clone(), self.image.clone()).await?;
 
         self.available.lock().await.push_back(container);
         *self.total_created.write().await += 1;

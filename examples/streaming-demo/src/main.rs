@@ -8,22 +8,37 @@
 /// - Interactive command execution
 /// - Custom event streaming
 /// - Live container state monitoring
-
 use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{info, error};
+use tracing::{error, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum StreamEvent {
-    Stdout { data: String },
-    Stderr { data: String },
-    Exit { code: i32 },
-    FileEvent { path: String, event: String },
-    ProcessEvent { pid: u32, command: String, event: String },
-    Custom { name: String, data: serde_json::Value },
+    Stdout {
+        data: String,
+    },
+    Stderr {
+        data: String,
+    },
+    Exit {
+        code: i32,
+    },
+    FileEvent {
+        path: String,
+        event: String,
+    },
+    ProcessEvent {
+        pid: u32,
+        command: String,
+        event: String,
+    },
+    Custom {
+        name: String,
+        data: serde_json::Value,
+    },
     Heartbeat,
 }
 
@@ -39,9 +54,7 @@ enum StreamCommand {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("info").init();
 
     info!("🚀 WebSocket Streaming Demo");
     info!("==========================");
@@ -52,7 +65,10 @@ async fn main() -> Result<()> {
     info!("✅ Created persistent container: {}", container_id);
 
     // Step 2: Connect to WebSocket stream
-    let ws_url = format!("ws://localhost:8080/api/v1/containers/{}/stream", container_id);
+    let ws_url = format!(
+        "ws://localhost:8080/api/v1/containers/{}/stream",
+        container_id
+    );
     info!("🔌 Connecting to WebSocket: {}", ws_url);
 
     let (ws_stream, _) = connect_async(&ws_url).await?;
@@ -82,7 +98,11 @@ async fn main() -> Result<()> {
                                 StreamEvent::FileEvent { path, event } => {
                                     info!("📁 File event: {} - {}", path, event);
                                 }
-                                StreamEvent::ProcessEvent { pid, command, event } => {
+                                StreamEvent::ProcessEvent {
+                                    pid,
+                                    command,
+                                    event,
+                                } => {
                                     info!("⚙️  Process event: {} ({}) - {}", command, pid, event);
                                 }
                                 StreamEvent::Custom { name, data } => {
@@ -121,7 +141,9 @@ async fn main() -> Result<()> {
     let cmd = StreamCommand::Exec {
         command: "echo 'Hello from FaaS!'".to_string(),
     };
-    write.send(Message::Text(serde_json::to_string(&cmd)?)).await?;
+    write
+        .send(Message::Text(serde_json::to_string(&cmd)?))
+        .await?;
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // Send stdin
@@ -129,13 +151,17 @@ async fn main() -> Result<()> {
     let stdin_cmd = StreamCommand::Stdin {
         data: "Interactive input test\n".to_string(),
     };
-    write.send(Message::Text(serde_json::to_string(&stdin_cmd)?)).await?;
+    write
+        .send(Message::Text(serde_json::to_string(&stdin_cmd)?))
+        .await?;
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // Get container state
     info!("  → Get State");
     let state_cmd = StreamCommand::GetState;
-    write.send(Message::Text(serde_json::to_string(&state_cmd)?)).await?;
+    write
+        .send(Message::Text(serde_json::to_string(&state_cmd)?))
+        .await?;
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // Create a checkpoint
@@ -143,13 +169,17 @@ async fn main() -> Result<()> {
     let checkpoint_cmd = StreamCommand::Checkpoint {
         name: Some("demo-checkpoint".to_string()),
     };
-    write.send(Message::Text(serde_json::to_string(&checkpoint_cmd)?)).await?;
+    write
+        .send(Message::Text(serde_json::to_string(&checkpoint_cmd)?))
+        .await?;
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     // Stop container
     info!("  → Stop Container");
     let stop_cmd = StreamCommand::Stop;
-    write.send(Message::Text(serde_json::to_string(&stop_cmd)?)).await?;
+    write
+        .send(Message::Text(serde_json::to_string(&stop_cmd)?))
+        .await?;
 
     // Wait for read task to complete
     read_task.await?;

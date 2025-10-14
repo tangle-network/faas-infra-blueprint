@@ -128,7 +128,8 @@ impl ForkManager {
 
         // Get parent memory regions
         let memory_regions = self.memory_regions.read().await;
-        let parent_regions = memory_regions.get(parent_id)
+        let parent_regions = memory_regions
+            .get(parent_id)
             .ok_or_else(|| anyhow!("Parent memory region not found: {parent_id}"))?
             .clone();
 
@@ -157,12 +158,21 @@ impl ForkManager {
         let mut memory_regions = self.memory_regions.write().await;
         memory_regions.insert(fork_id.clone(), fork_memory);
 
-        info!("Created CoW memory fork {} in {:?}", fork_id, start.elapsed());
+        info!(
+            "Created CoW memory fork {} in {:?}",
+            fork_id,
+            start.elapsed()
+        );
         Ok(fork_id)
     }
 
     /// Create memory region with lazy loading
-    pub async fn setup_lazy_memory(&self, region_id: &str, parent_id: &str, size: usize) -> Result<()> {
+    pub async fn setup_lazy_memory(
+        &self,
+        region_id: &str,
+        parent_id: &str,
+        size: usize,
+    ) -> Result<()> {
         let memory_region = MemoryRegion {
             id: region_id.to_string(),
             start_addr: 0, // Will be set during actual allocation
@@ -174,14 +184,23 @@ impl ForkManager {
         let mut memory_regions = self.memory_regions.write().await;
         memory_regions.insert(region_id.to_string(), memory_region);
 
-        info!("Setup lazy memory region {} from parent {}", region_id, parent_id);
+        info!(
+            "Setup lazy memory region {} from parent {}",
+            region_id, parent_id
+        );
         Ok(())
     }
 
     /// Handle page fault and load from parent on demand
-    pub async fn handle_page_fault(&self, fork_id: &str, page_addr: usize, parent_pid: u32) -> Result<Vec<u8>> {
+    pub async fn handle_page_fault(
+        &self,
+        fork_id: &str,
+        page_addr: usize,
+        parent_pid: u32,
+    ) -> Result<Vec<u8>> {
         let memory_regions = self.memory_regions.read().await;
-        let fork_region = memory_regions.get(fork_id)
+        let fork_region = memory_regions
+            .get(fork_id)
             .ok_or_else(|| anyhow!("Fork memory region not found: {fork_id}"))?;
 
         // Calculate page ID from address
@@ -207,7 +226,10 @@ impl ForkManager {
 
         page_cache.insert(page_id, shared_page);
 
-        debug!("Loaded page {} from parent PID {} at 0x{:x}", page_id, parent_pid, page_offset);
+        debug!(
+            "Loaded page {} from parent PID {} at 0x{:x}",
+            page_id, parent_pid, page_offset
+        );
         Ok(page_data)
     }
 
@@ -223,22 +245,28 @@ impl ForkManager {
             return Err(anyhow!("Parent process {pid} no longer exists"));
         }
 
-        let mut mem_file = File::open(&mem_path)
-            .context(format!("Failed to open {mem_path}"))?;
+        let mut mem_file = File::open(&mem_path).context(format!("Failed to open {mem_path}"))?;
 
         // Seek to the page address
-        mem_file.seek(SeekFrom::Start(addr as u64))
+        mem_file
+            .seek(SeekFrom::Start(addr as u64))
             .context(format!("Failed to seek to address 0x{addr:x}"))?;
 
         // Read exactly one page (4KB)
         let mut page_data = vec![0u8; 4096];
         match mem_file.read_exact(&mut page_data) {
             Ok(_) => {
-                info!("Successfully read 4KB page from PID {} at 0x{:x}", pid, addr);
+                info!(
+                    "Successfully read 4KB page from PID {} at 0x{:x}",
+                    pid, addr
+                );
                 Ok(page_data)
-            },
+            }
             Err(e) => {
-                warn!("Failed to read memory from PID {} at 0x{:x}: {}, using zero page", pid, addr, e);
+                warn!(
+                    "Failed to read memory from PID {} at 0x{:x}: {}, using zero page",
+                    pid, addr, e
+                );
                 // Fallback to zero page if memory is unmapped/protected
                 Ok(vec![0u8; 4096])
             }
@@ -342,21 +370,26 @@ impl CowStorage {
 
         let output = Command::new("mount")
             .args([
-                "-t", "overlay", "overlay",
-                "-o", &format!(
+                "-t",
+                "overlay",
+                "overlay",
+                "-o",
+                &format!(
                     "lowerdir={},upperdir={},workdir={}",
                     base_dir.display(),
                     upper_dir.display(),
                     work_dir.display()
                 ),
-                merged_dir.to_str().unwrap()
+                merged_dir.to_str().unwrap(),
             ])
             .output()
             .await?;
 
         if !output.status.success() {
-            return Err(anyhow!("Failed to mount overlayfs: {}",
-                String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!(
+                "Failed to mount overlayfs: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
         info!("Created overlayfs fork {} from {}", fork_id, base_id);

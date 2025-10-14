@@ -6,14 +6,14 @@ use std::time::{Duration, Instant};
 use tracing::{info, instrument};
 
 use super::{fork::ForkManager, memory::MemoryPool, snapshot::SnapshotStore};
+use crate::bollard::Docker;
 use crate::container_pool::{ContainerPoolManager, PoolConfig};
 use crate::docker_fork::DockerForkManager;
-use crate::bollard::Docker;
 use crate::performance::metrics_collector::MetricsConfig;
 use crate::performance::predictive_scaling::ScalingConfig;
 use crate::performance::{
-    CacheManager, CacheStrategy, MetricsCollector, OptimizationConfig,
-    PredictiveScaler, SnapshotOptimizer,
+    CacheManager, CacheStrategy, MetricsCollector, OptimizationConfig, PredictiveScaler,
+    SnapshotOptimizer,
 };
 use crate::storage::StorageManager;
 
@@ -98,7 +98,7 @@ impl Executor {
                             )),
                             pool_manager: Some(Arc::new(ContainerPoolManager::new(
                                 docker.clone(),
-                                PoolConfig::default()
+                                PoolConfig::default(),
                             ))),
                         },
                     ))
@@ -178,9 +178,9 @@ impl Executor {
 
     async fn run_ephemeral(&self, req: Request) -> Result<Response> {
         // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
-        let env_vars = req.env_vars.map(|map| {
-            map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
-        });
+        let env_vars = req
+            .env_vars
+            .map(|map| map.iter().map(|(k, v)| format!("{}={}", k, v)).collect());
 
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
@@ -196,12 +196,8 @@ impl Executor {
 
         // Runtime selection based on request preference or auto-select
         let result = match req.runtime {
-            Some(faas_common::Runtime::Docker) => {
-                self.container.execute(config).await?
-            },
-            Some(faas_common::Runtime::Firecracker) => {
-                self.vm.execute(config).await?
-            },
+            Some(faas_common::Runtime::Docker) => self.container.execute(config).await?,
+            Some(faas_common::Runtime::Firecracker) => self.vm.execute(config).await?,
             Some(faas_common::Runtime::Auto) | None => {
                 // Use Firecracker on Linux for 125ms cold starts vs Docker's 500ms
                 if cfg!(target_os = "linux") {
@@ -229,7 +225,11 @@ impl Executor {
         let start = Instant::now();
 
         // Check cache for pre-computed result
-        let cache_key = format!("{}:{}", req.env, &req.code[..std::cmp::min(req.code.len(), 100)]);
+        let cache_key = format!(
+            "{}:{}",
+            req.env,
+            &req.code[..std::cmp::min(req.code.len(), 100)]
+        );
         if let Ok(Some(cached_result)) = self.cache_manager.get(&cache_key).await {
             info!("Cache hit for request {}", req.id);
             return Ok(Response {
@@ -246,15 +246,19 @@ impl Executor {
         if let Ok(Some(prediction)) = self.predictive_scaler.predict_scaling(&req.env).await {
             if prediction.predicted_load > 2.0 && prediction.confidence > 0.7 {
                 // High load predicted - pre-warm additional containers
-                info!("High load predicted ({:.2}), pre-warming containers", prediction.predicted_load);
+                info!(
+                    "High load predicted ({:.2}), pre-warming containers",
+                    prediction.predicted_load
+                );
                 let _ = self.container_pool.get_pool(&req.env).await;
             }
         }
 
         // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
-        let env_vars = req.env_vars.clone().map(|map| {
-            map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
-        });
+        let env_vars = req
+            .env_vars
+            .clone()
+            .map(|map| map.iter().map(|(k, v)| format!("{}={}", k, v)).collect());
 
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
@@ -274,7 +278,7 @@ impl Executor {
                 info!("Using pooled container for optimized execution");
                 // Use container-based execution with optimizations
                 self.container.execute(config).await?
-            },
+            }
             Err(_) => {
                 // Fallback to VM with snapshot optimization
                 if cfg!(target_os = "linux") {
@@ -291,7 +295,10 @@ impl Executor {
         // Store result in cache for future use
         if result.error.is_none() {
             let response_data = result.response.clone().unwrap_or_default();
-            let _ = self.cache_manager.put(&cache_key, response_data.clone(), None).await;
+            let _ = self
+                .cache_manager
+                .put(&cache_key, response_data.clone(), None)
+                .await;
         }
 
         // Record execution metrics for predictive scaling
@@ -354,9 +361,10 @@ impl Executor {
             info!("Using VM forking from parent: {}", parent);
 
             // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
-            let env_vars = req.env_vars.clone().map(|map| {
-                map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
-            });
+            let env_vars = req
+                .env_vars
+                .clone()
+                .map(|map| map.iter().map(|(k, v)| format!("{}={}", k, v)).collect());
 
             let config = faas_common::SandboxConfig {
                 function_id: req.id.clone(),
@@ -364,7 +372,7 @@ impl Executor {
                 command: vec!["sh".to_string(), "-c".to_string(), req.code.clone()],
                 payload: Vec::new(),
                 env_vars,
-                runtime: Some(faas_common::Runtime::Firecracker),  // Use Firecracker for VM forking
+                runtime: Some(faas_common::Runtime::Firecracker), // Use Firecracker for VM forking
                 execution_mode: Some(faas_common::ExecutionMode::Branched),
                 memory_limit: None,
                 timeout: Some(req.timeout.as_millis() as u64),
@@ -393,12 +401,15 @@ impl Executor {
             // just execute in a fresh container with similar setup
             let fork_id = format!("fork-{}", req.id);
 
-            info!("Executing fork {} in fresh container (CRIU/checkpointing not available)", fork_id);
+            info!(
+                "Executing fork {} in fresh container (CRIU/checkpointing not available)",
+                fork_id
+            );
 
             // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
-            let env_vars = req.env_vars.map(|map| {
-                map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
-            });
+            let env_vars = req
+                .env_vars
+                .map(|map| map.iter().map(|(k, v)| format!("{}={}", k, v)).collect());
 
             let config = faas_common::SandboxConfig {
                 function_id: fork_id.clone(),
@@ -437,9 +448,9 @@ impl Executor {
         });
 
         // Convert env_vars from HashMap to Vec<String> in KEY=VALUE format
-        let env_vars = req.env_vars.map(|map| {
-            map.iter().map(|(k, v)| format!("{}={}", k, v)).collect()
-        });
+        let env_vars = req
+            .env_vars
+            .map(|map| map.iter().map(|(k, v)| format!("{}={}", k, v)).collect());
 
         let config = faas_common::SandboxConfig {
             function_id: req.id.clone(),
@@ -455,12 +466,8 @@ impl Executor {
 
         // Runtime selection for persistent mode
         let result = match config.runtime {
-            Some(faas_common::Runtime::Docker) => {
-                self.container.execute(config).await?
-            },
-            Some(faas_common::Runtime::Firecracker) => {
-                self.vm.execute(config).await?
-            },
+            Some(faas_common::Runtime::Docker) => self.container.execute(config).await?,
+            Some(faas_common::Runtime::Firecracker) => self.vm.execute(config).await?,
             Some(faas_common::Runtime::Auto) | None => {
                 // Prefer Firecracker for persistent workloads on Linux, fallback to Docker
                 if cfg!(target_os = "linux") {

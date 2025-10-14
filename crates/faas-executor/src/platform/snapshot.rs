@@ -35,7 +35,10 @@ struct FirecrackerSnapshots {
 impl SnapshotStore {
     pub async fn new() -> Result<Self> {
         // Use temp directory if /var/lib/faas is not writable (e.g., in tests)
-        let storage_path = if tokio::fs::create_dir_all("/var/lib/faas/snapshots").await.is_ok() {
+        let storage_path = if tokio::fs::create_dir_all("/var/lib/faas/snapshots")
+            .await
+            .is_ok()
+        {
             PathBuf::from("/var/lib/faas/snapshots")
         } else {
             let temp_dir = std::env::temp_dir().join("faas-snapshots");

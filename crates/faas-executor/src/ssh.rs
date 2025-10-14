@@ -175,10 +175,7 @@ impl SshKeyManager {
         new_key.rotated_from = Some(current_key_id.to_string());
 
         // Get instance keys
-        let instance_keys = self
-            .active_keys
-            .entry(instance_id.to_string())
-            .or_default();
+        let instance_keys = self.active_keys.entry(instance_id.to_string()).or_default();
 
         // Add new key
         instance_keys.push(new_key.clone());
@@ -329,7 +326,7 @@ impl SshKeyManager {
         use sha2::{Digest, Sha256};
         let key_data = public_key.to_bytes()?;
         let hash = Sha256::digest(&key_data);
-        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
         Ok(format!("SHA256:{}", STANDARD.encode(hash)))
     }
 
@@ -337,8 +334,8 @@ impl SshKeyManager {
         &self,
         public_key: &str,
     ) -> Result<String, Box<dyn std::error::Error>> {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
         use sha2::{Digest, Sha256};
-        use base64::{Engine as _, engine::general_purpose::STANDARD};
         let hash = Sha256::digest(public_key.as_bytes());
         Ok(format!("SHA256:{}", STANDARD.encode(hash)))
     }

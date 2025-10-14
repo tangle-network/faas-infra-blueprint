@@ -1,13 +1,18 @@
+use faas_executor::bollard::container::{
+    Config, CreateContainerOptions, RemoveContainerOptions, WaitContainerOptions,
+};
+use faas_executor::bollard::exec::CreateExecOptions;
+use faas_executor::bollard::Docker;
+use faas_executor::container_pool::{ContainerPool, ContainerPoolManager, PoolConfig};
+use faas_executor::{
+    common::{SandboxConfig, SandboxExecutor},
+    DockerExecutor,
+};
+use futures::TryStreamExt;
 /// REAL Performance Tests - No Mocks, No Shortcuts
 /// These tests measure actual Docker container operations
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use faas_executor::bollard::Docker;
-use faas_executor::bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions, WaitContainerOptions};
-use faas_executor::bollard::exec::CreateExecOptions;
-use faas_executor::container_pool::{ContainerPool, ContainerPoolManager, PoolConfig};
-use faas_executor::{DockerExecutor, common::{SandboxConfig, SandboxExecutor}};
-use futures::TryStreamExt;
 
 /// Measure REAL cold start time - creating container from scratch
 #[tokio::test]
@@ -42,13 +47,20 @@ async fn test_real_cold_start_performance() {
         };
 
         // Create container
-        let container = docker.create_container(Some(options), config).await.unwrap();
+        let container = docker
+            .create_container(Some(options), config)
+            .await
+            .unwrap();
 
         // Start container
-        docker.start_container::<String>(&container.id, None).await.unwrap();
+        docker
+            .start_container::<String>(&container.id, None)
+            .await
+            .unwrap();
 
         // Wait for completion
-        let _ = docker.wait_container(&container.id, None::<WaitContainerOptions<String>>)
+        let _ = docker
+            .wait_container(&container.id, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
@@ -59,10 +71,16 @@ async fn test_real_cold_start_performance() {
         println!("  ⏱️  Cold start time: {:?}", duration);
 
         // Cleanup
-        docker.remove_container(&container.id, Some(RemoveContainerOptions {
-            force: true,
-            ..Default::default()
-        })).await.ok();
+        docker
+            .remove_container(
+                &container.id,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .ok();
     }
 
     // Statistics
@@ -76,10 +94,14 @@ async fn test_real_cold_start_performance() {
     println!("  Max: {:?}", max);
 
     // Reality check
-    assert!(avg_cold_start > Duration::from_millis(100),
-            "Cold start under 100ms is unrealistic for Docker!");
-    assert!(avg_cold_start < Duration::from_secs(5),
-            "Cold start over 5 seconds indicates a problem");
+    assert!(
+        avg_cold_start > Duration::from_millis(100),
+        "Cold start under 100ms is unrealistic for Docker!"
+    );
+    assert!(
+        avg_cold_start < Duration::from_secs(5),
+        "Cold start over 5 seconds indicates a problem"
+    );
 
     println!("\n✅ Cold start times are REALISTIC");
 }
@@ -114,8 +136,10 @@ async fn test_real_warm_pool_performance() {
     println!("  Pre-warming took: {:?}", pre_warm_duration);
 
     // Pre-warming should take time (creating real containers)
-    assert!(pre_warm_duration > Duration::from_millis(500),
-            "Pre-warming finished too quickly - likely not creating real containers!");
+    assert!(
+        pre_warm_duration > Duration::from_millis(500),
+        "Pre-warming finished too quickly - likely not creating real containers!"
+    );
 
     // Now test warm acquisition
     println!("\n📦 Testing warm container acquisition...");
@@ -136,7 +160,10 @@ async fn test_real_warm_pool_performance() {
             ..Default::default()
         };
 
-        let exec = docker.create_exec(&container.container_id, exec_config).await.unwrap();
+        let exec = docker
+            .create_exec(&container.container_id, exec_config)
+            .await
+            .unwrap();
         docker.start_exec(&exec.id, None).await.unwrap();
 
         // Return to pool
@@ -150,10 +177,14 @@ async fn test_real_warm_pool_performance() {
     println!("  All times: {:?}", warm_times);
 
     // Warm acquisition should be faster than cold start but still realistic
-    assert!(avg_warm < Duration::from_millis(100),
-            "Warm acquisition should be fast (from pool)");
-    assert!(avg_warm > Duration::from_micros(100),
-            "Warm acquisition under 100μs is suspiciously fast");
+    assert!(
+        avg_warm < Duration::from_millis(100),
+        "Warm acquisition should be fast (from pool)"
+    );
+    assert!(
+        avg_warm > Duration::from_micros(100),
+        "Warm acquisition under 100μs is suspiciously fast"
+    );
 
     println!("\n✅ Warm pool times are REALISTIC");
 }
@@ -173,33 +204,45 @@ async fn test_container_reuse_performance() {
     // First execution - cold start
     println!("\n🥶 First execution (cold):");
     let start = Instant::now();
-    let result = executor.execute(SandboxConfig {
-        function_id: "reuse-test-1".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec!["echo".to_string(), "test1".to_string()],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "reuse-test-1".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec!["echo".to_string(), "test1".to_string()],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
     let cold_time = start.elapsed();
     execution_times.push(("Cold", cold_time));
     println!("  Time: {:?}", cold_time);
-    println!("  Output: {:?}", String::from_utf8_lossy(&result.response.unwrap()));
+    println!(
+        "  Output: {:?}",
+        String::from_utf8_lossy(&result.response.unwrap())
+    );
 
     // Subsequent executions - should reuse if pooling is enabled
     for i in 2..=5 {
         println!("\n🔄 Execution #{} (potential reuse):", i);
         let start = Instant::now();
-        let result = executor.execute(SandboxConfig {
-            function_id: format!("reuse-test-{}", i),
-            source: "alpine:latest".to_string(),
-            command: vec!["echo".to_string(), format!("test{}", i)],
-            env_vars: None,
-            payload: vec![],
-        }).await.unwrap();
+        let result = executor
+            .execute(SandboxConfig {
+                function_id: format!("reuse-test-{}", i),
+                source: "alpine:latest".to_string(),
+                command: vec!["echo".to_string(), format!("test{}", i)],
+                env_vars: None,
+                payload: vec![],
+            })
+            .await
+            .unwrap();
         let exec_time = start.elapsed();
         execution_times.push((format!("Exec {}", i).leak(), exec_time));
         println!("  Time: {:?}", exec_time);
-        println!("  Output: {:?}", String::from_utf8_lossy(&result.response.unwrap()));
+        println!(
+            "  Output: {:?}",
+            String::from_utf8_lossy(&result.response.unwrap())
+        );
     }
 
     println!("\n📊 Execution Time Comparison:");
@@ -209,17 +252,25 @@ async fn test_container_reuse_performance() {
 
     // Verify performance improvement
     let cold = execution_times[0].1;
-    let warm_avg = execution_times[1..].iter()
+    let warm_avg = execution_times[1..]
+        .iter()
         .map(|(_, t)| *t)
-        .sum::<Duration>() / (execution_times.len() - 1) as u32;
+        .sum::<Duration>()
+        / (execution_times.len() - 1) as u32;
 
     println!("\n📈 Performance Analysis:");
     println!("  Cold start: {:?}", cold);
     println!("  Warm average: {:?}", warm_avg);
-    println!("  Speedup: {:.2}x", cold.as_millis() as f64 / warm_avg.as_millis() as f64);
+    println!(
+        "  Speedup: {:.2}x",
+        cold.as_millis() as f64 / warm_avg.as_millis() as f64
+    );
 
     // Warm should be noticeably faster than cold
-    assert!(warm_avg < cold, "Warm executions should be faster than cold");
+    assert!(
+        warm_avg < cold,
+        "Warm executions should be faster than cold"
+    );
 
     println!("\n✅ Container reuse provides real performance benefits");
 }
@@ -246,14 +297,19 @@ async fn test_concurrent_execution_performance() {
             let executor = executor.clone();
             let task = tokio::spawn(async move {
                 let exec_start = Instant::now();
-                let result = executor.execute(SandboxConfig {
-                    function_id: format!("concurrent-{}", i),
-                    source: "alpine:latest".to_string(),
-                    command: vec!["sh".to_string(), "-c".to_string(),
-                                  format!("echo 'Task {}' && sleep 0.1", i)],
-                    env_vars: None,
-                    payload: vec![],
-                }).await;
+                let result = executor
+                    .execute(SandboxConfig {
+                        function_id: format!("concurrent-{}", i),
+                        source: "alpine:latest".to_string(),
+                        command: vec![
+                            "sh".to_string(),
+                            "-c".to_string(),
+                            format!("echo 'Task {}' && sleep 0.1", i),
+                        ],
+                        env_vars: None,
+                        payload: vec![],
+                    })
+                    .await;
                 (i, exec_start.elapsed(), result)
             });
             tasks.push(task);
@@ -262,17 +318,28 @@ async fn test_concurrent_execution_performance() {
         let results = futures::future::join_all(tasks).await;
         let total_time = start.elapsed();
 
-        let successful = results.iter().filter(|r| r.as_ref().unwrap().2.is_ok()).count();
-        let avg_individual = results.iter()
+        let successful = results
+            .iter()
+            .filter(|r| r.as_ref().unwrap().2.is_ok())
+            .count();
+        let avg_individual = results
+            .iter()
             .map(|r| r.as_ref().unwrap().1)
-            .sum::<Duration>() / count as u32;
+            .sum::<Duration>()
+            / count as u32;
 
         println!("  Total time: {:?}", total_time);
         println!("  Average individual: {:?}", avg_individual);
         println!("  Successful: {}/{}", successful, count);
-        println!("  Throughput: {:.2} exec/sec", count as f64 / total_time.as_secs_f64());
+        println!(
+            "  Throughput: {:.2} exec/sec",
+            count as f64 / total_time.as_secs_f64()
+        );
 
-        assert_eq!(successful, count, "All concurrent executions should succeed");
+        assert_eq!(
+            successful, count,
+            "All concurrent executions should succeed"
+        );
     }
 
     println!("\n✅ Concurrent execution scaling verified");
@@ -299,13 +366,15 @@ async fn test_memory_usage_under_load() {
             println!("  Progress: {}/50", i);
         }
 
-        let _ = executor.execute(SandboxConfig {
-            function_id: format!("memory-test-{}", i),
-            source: "alpine:latest".to_string(),
-            command: vec!["echo".to_string(), format!("test-{}", i)],
-            env_vars: None,
-            payload: vec![],
-        }).await;
+        let _ = executor
+            .execute(SandboxConfig {
+                function_id: format!("memory-test-{}", i),
+                source: "alpine:latest".to_string(),
+                command: vec!["echo".to_string(), format!("test-{}", i)],
+                env_vars: None,
+                payload: vec![],
+            })
+            .await;
 
         // Small delay to avoid overwhelming
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -353,10 +422,14 @@ async fn test_performance_metrics_accuracy() {
     println!("  Actual acquire time: {:?}", actual_acquire);
 
     // Verify times are realistic
-    assert!(actual_pre_warm > Duration::from_millis(100),
-            "Pre-warm should take time to create containers");
-    assert!(actual_acquire < Duration::from_millis(100),
-            "Acquire from pre-warmed pool should be fast");
+    assert!(
+        actual_pre_warm > Duration::from_millis(100),
+        "Pre-warm should take time to create containers"
+    );
+    assert!(
+        actual_acquire < Duration::from_millis(100),
+        "Acquire from pre-warmed pool should be fast"
+    );
 
     // Clean up
     pool.release(container).await.unwrap();

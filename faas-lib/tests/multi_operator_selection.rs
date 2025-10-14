@@ -1,6 +1,6 @@
 use blueprint_sdk::tangle::layers::TangleLayer;
 use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
-use blueprint_sdk::tangle::serde::{BoundedVec, new_bounded_string};
+use blueprint_sdk::tangle::serde::{new_bounded_string, BoundedVec};
 use blueprint_sdk::testing::tempfile;
 use blueprint_sdk::testing::utils::setup_log;
 use blueprint_sdk::testing::utils::tangle::{InputValue, OutputValue, TangleTestHarness};
@@ -75,7 +75,10 @@ fn create_execute_advanced_job_args(
         InputValue::String(new_bounded_string(mode)),
         InputValue::Optional(FieldType::String, Box::new(None)),
         InputValue::Optional(FieldType::String, Box::new(None)),
-        InputValue::Optional(FieldType::Uint64, Box::new(Some(InputValue::Uint64(timeout_secs)))),
+        InputValue::Optional(
+            FieldType::Uint64,
+            Box::new(Some(InputValue::Uint64(timeout_secs))),
+        ),
     ]
 }
 
@@ -111,10 +114,8 @@ async fn test_operator_load_balancing() -> Result<()> {
     // Submit 10 jobs
     let mut jobs = Vec::new();
     for i in 0..10 {
-        let job_args = create_execute_job_args(
-            "alpine:latest",
-            vec!["echo", &format!("Job {}", i)],
-        );
+        let job_args =
+            create_execute_job_args("alpine:latest", vec!["echo", &format!("Job {}", i)]);
 
         let job = harness
             .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
@@ -267,14 +268,21 @@ async fn test_concurrent_jobs_across_operators() -> Result<()> {
     for i in 0..20 {
         let job_args = create_execute_job_args(
             "alpine:latest",
-            vec!["sh", "-c", &format!("echo 'Concurrent job {}' && sleep 0.1", i)],
+            vec![
+                "sh",
+                "-c",
+                &format!("echo 'Concurrent job {}' && sleep 0.1", i),
+            ],
         );
 
         let job = harness
             .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
             .await?;
 
-        info!("Submitted concurrent job {} with call ID {}", i, job.call_id);
+        info!(
+            "Submitted concurrent job {} with call ID {}",
+            i, job.call_id
+        );
         jobs.push((i, job));
     }
 
@@ -392,10 +400,8 @@ async fn test_operator_stats_tracking() -> Result<()> {
 
     // Submit several jobs to build up stats
     for i in 0..5 {
-        let job_args = create_execute_job_args(
-            "alpine:latest",
-            vec!["echo", &format!("Stats test {}", i)],
-        );
+        let job_args =
+            create_execute_job_args("alpine:latest", vec!["echo", &format!("Stats test {}", i)]);
 
         let job = harness
             .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
@@ -466,14 +472,21 @@ async fn test_load_balancing_with_mixed_workloads() -> Result<()> {
 
         let job_args = create_execute_job_args(
             "alpine:latest",
-            vec!["sh", "-c", &format!("echo '{} job {}' && sleep {}", job_type, i, sleep_time)],
+            vec![
+                "sh",
+                "-c",
+                &format!("echo '{} job {}' && sleep {}", job_type, i, sleep_time),
+            ],
         );
 
         let job = harness
             .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
             .await?;
 
-        info!("Submitted {} job {} with call ID {}", job_type, i, job.call_id);
+        info!(
+            "Submitted {} job {} with call ID {}",
+            job_type, i, job.call_id
+        );
         jobs.push((job_type, i, job));
     }
 

@@ -1,5 +1,5 @@
 use crate::types::{Instance, Snapshot};
-use crate::{AppState, ExecuteRequest, InvokeResponse, create_app};
+use crate::{create_app, AppState, ExecuteRequest, InvokeResponse};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -30,7 +30,9 @@ mod gateway_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
         assert_eq!(json["status"], "healthy");
@@ -60,7 +62,9 @@ mod gateway_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let result: InvokeResponse = serde_json::from_slice(&body).unwrap();
 
         assert!(result.request_id.len() > 0);
@@ -80,7 +84,8 @@ mod gateway_tests {
                 "mode": mode
             });
 
-            let response = app.clone()
+            let response = app
+                .clone()
                 .oneshot(
                     Request::builder()
                         .method("POST")
@@ -94,7 +99,9 @@ mod gateway_tests {
 
             assert_eq!(response.status(), StatusCode::OK);
 
-            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
             let result: InvokeResponse = serde_json::from_slice(&body).unwrap();
 
             assert!(result.request_id.len() > 0);
@@ -111,7 +118,8 @@ mod gateway_tests {
             "container_id": "test-container"
         });
 
-        let create_response = app.clone()
+        let create_response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -125,12 +133,15 @@ mod gateway_tests {
 
         assert_eq!(create_response.status(), StatusCode::OK);
 
-        let body = hyper::body::to_bytes(create_response.into_body()).await.unwrap();
+        let body = hyper::body::to_bytes(create_response.into_body())
+            .await
+            .unwrap();
         let snapshot: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let snapshot_id = snapshot["id"].as_str().unwrap();
 
         // List snapshots
-        let list_response = app.clone()
+        let list_response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/api/v1/snapshots")
@@ -142,7 +153,9 @@ mod gateway_tests {
 
         assert_eq!(list_response.status(), StatusCode::OK);
 
-        let body = hyper::body::to_bytes(list_response.into_body()).await.unwrap();
+        let body = hyper::body::to_bytes(list_response.into_body())
+            .await
+            .unwrap();
         let snapshots: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
         assert!(snapshots.len() > 0);
 
@@ -172,7 +185,8 @@ mod gateway_tests {
             "memory_mb": 512
         });
 
-        let create_response = app.clone()
+        let create_response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -186,12 +200,15 @@ mod gateway_tests {
 
         assert_eq!(create_response.status(), StatusCode::OK);
 
-        let body = hyper::body::to_bytes(create_response.into_body()).await.unwrap();
+        let body = hyper::body::to_bytes(create_response.into_body())
+            .await
+            .unwrap();
         let instance: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let instance_id = instance["id"].as_str().unwrap();
 
         // Get instance
-        let get_response = app.clone()
+        let get_response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri(&format!("/api/v1/instances/{}", instance_id))
@@ -208,7 +225,8 @@ mod gateway_tests {
             "command": "uname -a"
         });
 
-        let exec_response = app.clone()
+        let exec_response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -242,7 +260,8 @@ mod gateway_tests {
         let app = create_test_app().await;
 
         // Test invalid JSON
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -302,7 +321,9 @@ mod gateway_tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let result: InvokeResponse = serde_json::from_slice(&body).unwrap();
 
         // Should succeed even on non-Linux (with fallback)

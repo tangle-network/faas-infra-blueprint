@@ -1,6 +1,6 @@
 use blueprint_sdk::build;
 use blueprint_sdk::tangle::blueprint;
-use faas_blueprint_lib::jobs::{execute_function_job, execute_advanced_job};
+use faas_blueprint_lib::jobs::{execute_advanced_job, execute_function_job};
 use std::path::Path;
 use std::process;
 

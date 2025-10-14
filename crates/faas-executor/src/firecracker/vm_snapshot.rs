@@ -79,7 +79,10 @@ impl VmSnapshotManager {
         snapshot_id: &str,
         fc_instance: &mut FcInstance,
     ) -> Result<VmSnapshot> {
-        info!("Creating VM snapshot via SDK: {} for VM: {}", snapshot_id, vm_id);
+        info!(
+            "Creating VM snapshot via SDK: {} for VM: {}",
+            snapshot_id, vm_id
+        );
         let start = Instant::now();
 
         let snapshot_path = self.snapshot_dir.join(snapshot_id);
@@ -103,7 +106,10 @@ impl VmSnapshotManager {
                 .create_snapshot(&snapshot_params)
                 .map_err(|e| anyhow!("Failed to create VM snapshot via SDK: {:?}", e))?;
 
-            info!("Snapshot created via SDK in {}ms", start.elapsed().as_millis());
+            info!(
+                "Snapshot created via SDK in {}ms",
+                start.elapsed().as_millis()
+            );
         }
 
         // For non-Linux, create placeholder files
@@ -131,7 +137,7 @@ impl VmSnapshotManager {
             state_file,
             disk_file: disk_file_clone.clone(),
             metadata: SnapshotMetadata {
-                vcpu_count: 2, // Get from VM config
+                vcpu_count: 2,        // Get from VM config
                 memory_size_mib: 512, // Get from VM config
                 kernel_version: "5.10".to_string(),
                 rootfs_hash: self.calculate_rootfs_hash(&disk_file_clone)?,
@@ -165,11 +171,15 @@ impl VmSnapshotManager {
         parent_id: &str,
         fc_instance: &mut FcInstance,
     ) -> Result<VmSnapshot> {
-        info!("Creating incremental snapshot via SDK: {} (parent: {})", snapshot_id, parent_id);
+        info!(
+            "Creating incremental snapshot via SDK: {} (parent: {})",
+            snapshot_id, parent_id
+        );
 
         // Verify parent exists
         let snapshots = self.snapshots.read().await;
-        let parent = snapshots.get(parent_id)
+        let parent = snapshots
+            .get(parent_id)
             .ok_or_else(|| anyhow!("Parent snapshot not found: {parent_id}"))?
             .clone();
         drop(snapshots);
@@ -191,11 +201,13 @@ impl VmSnapshotManager {
                 version: Some("1.0.0".to_string()),
             };
 
-            fc_instance.create_snapshot(&snapshot_params)
+            fc_instance
+                .create_snapshot(&snapshot_params)
                 .map_err(|e| anyhow!("Failed to create incremental snapshot via SDK: {:?}", e))?;
 
             // Create memory diff using our optimization
-            self.create_memory_diff(&parent.memory_file, &memory_file).await?;
+            self.create_memory_diff(&parent.memory_file, &memory_file)
+                .await?;
 
             info!("Incremental snapshot created via SDK");
         }
@@ -207,7 +219,9 @@ impl VmSnapshotManager {
         }
 
         // Create CoW disk snapshot
-        let disk_file = self.create_cow_disk_snapshot(&parent.disk_file, &snapshot_path).await?;
+        let disk_file = self
+            .create_cow_disk_snapshot(&parent.disk_file, &snapshot_path)
+            .await?;
 
         let memory_size = fs::metadata(&memory_file)?.len();
         let state_size = fs::metadata(&state_file)?.len();
@@ -241,11 +255,7 @@ impl VmSnapshotManager {
     }
 
     /// Restore a VM from snapshot
-    pub async fn restore_snapshot(
-        &self,
-        snapshot_id: &str,
-        new_vm_id: &str,
-    ) -> Result<RestoredVm> {
+    pub async fn restore_snapshot(&self, snapshot_id: &str, new_vm_id: &str) -> Result<RestoredVm> {
         info!("Restoring VM {} from snapshot {}", new_vm_id, snapshot_id);
         let start = Instant::now();
 
@@ -257,12 +267,15 @@ impl VmSnapshotManager {
 
         if let Some(cached) = cached_data {
             info!("Using cached snapshot for fast restore");
-            return self.restore_from_cache(snapshot_id, new_vm_id, &cached).await;
+            return self
+                .restore_from_cache(snapshot_id, new_vm_id, &cached)
+                .await;
         }
 
         // Get snapshot metadata
         let snapshots = self.snapshots.read().await;
-        let snapshot = snapshots.get(snapshot_id)
+        let snapshot = snapshots
+            .get(snapshot_id)
             .ok_or_else(|| anyhow!("Snapshot not found: {snapshot_id}"))?
             .clone();
         drop(snapshots);
@@ -285,12 +298,16 @@ impl VmSnapshotManager {
 
             // Start Firecracker process with restore parameters
             let mut cmd = std::process::Command::new("firecracker");
-            cmd.arg("--api-sock").arg(&socket_path)
-               .arg("--restore")
-               .arg("--restore-state-file").arg(&snapshot.state_file)
-               .arg("--restore-mem-file").arg(&final_memory);
+            cmd.arg("--api-sock")
+                .arg(&socket_path)
+                .arg("--restore")
+                .arg("--restore-state-file")
+                .arg(&snapshot.state_file)
+                .arg("--restore-mem-file")
+                .arg(&final_memory);
 
-            let child = cmd.spawn()
+            let child = cmd
+                .spawn()
                 .context("Failed to spawn Firecracker for restore")?;
 
             // Wait for API to be available
@@ -324,7 +341,8 @@ impl VmSnapshotManager {
         info!("Pre-warming snapshot: {}", snapshot_id);
 
         let snapshots = self.snapshots.read().await;
-        let snapshot = snapshots.get(snapshot_id)
+        let snapshot = snapshots
+            .get(snapshot_id)
             .ok_or_else(|| anyhow!("Snapshot not found"))?
             .clone();
         drop(snapshots);
@@ -392,7 +410,11 @@ impl VmSnapshotManager {
     }
 
     /// Create CoW disk snapshot from parent
-    async fn create_cow_disk_snapshot(&self, parent_disk: &Path, snapshot_path: &Path) -> Result<PathBuf> {
+    async fn create_cow_disk_snapshot(
+        &self,
+        parent_disk: &Path,
+        snapshot_path: &Path,
+    ) -> Result<PathBuf> {
         let disk_file = snapshot_path.join("disk.qcow2");
 
         #[cfg(target_os = "linux")]
@@ -473,7 +495,8 @@ impl VmSnapshotManager {
         // Build chain from child to parent
         while let Some(parent_id) = &current.metadata.parent_snapshot {
             let snapshots = self.snapshots.read().await;
-            let parent = snapshots.get(parent_id)
+            let parent = snapshots
+                .get(parent_id)
                 .ok_or_else(|| anyhow!("Parent snapshot not found in chain"))?
                 .clone();
             drop(snapshots);
@@ -485,7 +508,10 @@ impl VmSnapshotManager {
         // Apply from parent to child
         chain.reverse();
 
-        let merged_file = self.snapshot_dir.join("merged").join(format!("{}.mem", snapshot.id));
+        let merged_file = self
+            .snapshot_dir
+            .join("merged")
+            .join(format!("{}.mem", snapshot.id));
         fs::create_dir_all(merged_file.parent().unwrap())?;
 
         // Start with base snapshot
@@ -494,7 +520,8 @@ impl VmSnapshotManager {
         // Apply diffs
         for snap in &chain[1..] {
             if snap.metadata.incremental {
-                self.apply_memory_diff(&merged_file, &snap.memory_file).await?;
+                self.apply_memory_diff(&merged_file, &snap.memory_file)
+                    .await?;
             }
         }
 
@@ -557,10 +584,13 @@ impl VmSnapshotManager {
             let socket_path = format!("/tmp/firecracker-{}.sock", new_vm_id);
 
             let mut cmd = std::process::Command::new("firecracker");
-            cmd.arg("--api-sock").arg(&socket_path)
-               .arg("--restore")
-               .arg("--restore-state-file").arg(&state_file)
-               .arg("--restore-mem-file").arg(&mem_file);
+            cmd.arg("--api-sock")
+                .arg(&socket_path)
+                .arg("--restore")
+                .arg("--restore-state-file")
+                .arg(&state_file)
+                .arg("--restore-mem-file")
+                .arg(&mem_file);
 
             let child = cmd.spawn()?;
 
@@ -588,9 +618,11 @@ impl VmSnapshotManager {
 
     /// Evict coldest snapshot from cache
     async fn evict_coldest(&self, cache: &mut SnapshotCache) {
-        if let Some((coldest_id, _)) = cache.hot_snapshots.iter()
-            .min_by_key(|(_, snap)| snap.access_count) {
-
+        if let Some((coldest_id, _)) = cache
+            .hot_snapshots
+            .iter()
+            .min_by_key(|(_, snap)| snap.access_count)
+        {
             let id = coldest_id.clone();
             if let Some(removed) = cache.hot_snapshots.remove(&id) {
                 let size_mb = (removed.memory_data.len() + removed.state_data.len()) / 1_048_576;
@@ -607,7 +639,7 @@ impl VmSnapshotManager {
         let bytes_read = file.read(&mut buffer)?;
         buffer.truncate(bytes_read);
 
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&buffer);
         Ok(format!("{:x}", hasher.finalize()))
@@ -619,7 +651,10 @@ impl VmSnapshotManager {
         let cache = self.cache.read().await;
 
         let total_size: u64 = snapshots.values().map(|s| s.size_bytes).sum();
-        let incremental_count = snapshots.values().filter(|s| s.metadata.incremental).count();
+        let incremental_count = snapshots
+            .values()
+            .filter(|s| s.metadata.incremental)
+            .count();
 
         SnapshotStats {
             total_snapshots: snapshots.len(),

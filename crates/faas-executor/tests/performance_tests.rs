@@ -46,8 +46,7 @@ async fn test_real_cache_correctness() -> Result<()> {
 
     // CRITICAL: Verify cached output is IDENTICAL to original
     assert_eq!(
-        response1.stdout,
-        response2.stdout,
+        response1.stdout, response2.stdout,
         "Cached output must match original output exactly!"
     );
 
@@ -64,8 +63,7 @@ async fn test_real_cache_correctness() -> Result<()> {
 
     let response3 = executor.run(req3).await?;
     assert_ne!(
-        response3.stdout,
-        response1.stdout,
+        response3.stdout, response1.stdout,
         "Different code must produce different output!"
     );
 
@@ -95,11 +93,9 @@ async fn test_real_container_fork() -> Result<()> {
     ];
 
     println!("Creating base container with initial state...");
-    let _ = fork_manager.create_base_container(
-        base_id,
-        "alpine:latest",
-        setup_commands,
-    ).await?;
+    let _ = fork_manager
+        .create_base_container(base_id, "alpine:latest", setup_commands)
+        .await?;
 
     // Now use the executor to fork from this base
     let fork_code = r#"
@@ -239,8 +235,10 @@ async fn test_real_performance_workload() -> Result<()> {
         cache_time
     );
 
-    println!("✓ Cache provides real performance gain: {:.1}x speedup",
-        compute_time.as_secs_f64() / cache_time.as_secs_f64());
+    println!(
+        "✓ Cache provides real performance gain: {:.1}x speedup",
+        compute_time.as_secs_f64() / cache_time.as_secs_f64()
+    );
     Ok(())
 }
 
@@ -290,7 +288,10 @@ async fn test_real_memory_pressure() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let dedup_ratio = memory_pool.dedup_ratio();
-    println!("Deduplication ratio after identical allocations: {:.2}", dedup_ratio);
+    println!(
+        "Deduplication ratio after identical allocations: {:.2}",
+        dedup_ratio
+    );
 
     println!("✓ Memory pool handles real allocations correctly");
     Ok(())
@@ -304,11 +305,7 @@ async fn test_concurrent_optimization() -> Result<()> {
     let executor = Arc::new(Executor::new().await?);
 
     // Warm up cache with some computations
-    let warm_up_code = vec![
-        "echo 'Result: 1'",
-        "echo 'Result: 2'",
-        "echo 'Result: 3'",
-    ];
+    let warm_up_code = vec!["echo 'Result: 1'", "echo 'Result: 2'", "echo 'Result: 3'"];
 
     for (i, code) in warm_up_code.iter().enumerate() {
         let req = Request {
@@ -356,25 +353,36 @@ async fn test_concurrent_optimization() -> Result<()> {
     }
 
     let total_time = start.elapsed();
-    println!("Concurrent execution of {} requests took {:?}", num_concurrent, total_time);
+    println!(
+        "Concurrent execution of {} requests took {:?}",
+        num_concurrent, total_time
+    );
 
     // Verify all results are correct
     for (i, result) in results.iter().enumerate() {
         assert_eq!(result.exit_code, 0);
         let expected = format!("Result: {}", (i % 3) + 1);
         let output = String::from_utf8_lossy(&result.stdout);
-        assert!(output.contains(&expected),
-            "Request {} should contain '{}', got '{}'", i, expected, output);
+        assert!(
+            output.contains(&expected),
+            "Request {} should contain '{}', got '{}'",
+            i,
+            expected,
+            output
+        );
     }
 
     // Should be much faster than running sequentially
     let avg_time = total_time.as_secs_f64() / num_concurrent as f64;
     assert!(
         avg_time < 0.1, // Should average < 100ms per request with cache
-        "Concurrent cached execution too slow: {:.3}s average", avg_time
+        "Concurrent cached execution too slow: {:.3}s average",
+        avg_time
     );
 
-    println!("✓ Concurrent execution works correctly with {:.3}ms average per request",
-        avg_time * 1000.0);
+    println!(
+        "✓ Concurrent execution works correctly with {:.3}ms average per request",
+        avg_time * 1000.0
+    );
     Ok(())
 }

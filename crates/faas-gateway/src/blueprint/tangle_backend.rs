@@ -51,10 +51,7 @@ impl TangleBackend {
 
         // Initialize Tangle client if feature enabled
         #[cfg(feature = "tangle")]
-        let client = TangleClient::new(&tangle_endpoint)
-            .await
-            .ok()
-            .map(Arc::new);
+        let client = TangleClient::new(&tangle_endpoint).await.ok().map(Arc::new);
 
         Ok(Self {
             functions: Arc::new(RwLock::new(HashMap::new())),
@@ -121,7 +118,10 @@ impl ExecutionBackend for TangleBackend {
         // For now, we'll simulate it
         let service_id = rand::random::<u64>();
 
-        info!("Function registered on Tangle with service_id: {}", service_id);
+        info!(
+            "Function registered on Tangle with service_id: {}",
+            service_id
+        );
 
         // Store metadata
         let metadata = TangleFunction {
@@ -136,7 +136,10 @@ impl ExecutionBackend for TangleBackend {
 
         Ok(DeployInfo {
             function_id: function_id.clone(),
-            endpoint: format!("{}/api/blueprint/functions/{}/invoke", self.base_url, function_id),
+            endpoint: format!(
+                "{}/api/blueprint/functions/{}/invoke",
+                self.base_url, function_id
+            ),
             status: "deployed".to_string(),
             cold_start_ms: 2000, // Blockchain latency higher than local
             memory_mb: config.memory_mb,
@@ -149,15 +152,20 @@ impl ExecutionBackend for TangleBackend {
         // Get function metadata
         let metadata = {
             let functions = self.functions.read().await;
-            functions.get(&function_id)
+            functions
+                .get(&function_id)
                 .ok_or_else(|| BackendError::NotFound(function_id.clone()))?
                 .clone()
         };
 
-        let service_id = metadata.service_id
+        let service_id = metadata
+            .service_id
             .ok_or_else(|| BackendError::ExecutionFailed("Service not registered".to_string()))?;
 
-        info!("Submitting job to Tangle network: service_id={}", service_id);
+        info!(
+            "Submitting job to Tangle network: service_id={}",
+            service_id
+        );
 
         // TODO: Submit job to Tangle blockchain
         // This would:
@@ -174,10 +182,12 @@ impl ExecutionBackend for TangleBackend {
         let input: serde_json::Value = serde_json::from_slice(&payload)
             .map_err(|e| BackendError::ExecutionFailed(format!("Invalid JSON payload: {}", e)))?;
 
-        let job_id = input["job_id"].as_u64()
+        let job_id = input["job_id"]
+            .as_u64()
             .ok_or_else(|| BackendError::ExecutionFailed("Missing job_id".to_string()))?;
 
-        let args = input["args"].as_array()
+        let args = input["args"]
+            .as_array()
             .ok_or_else(|| BackendError::ExecutionFailed("Missing args array".to_string()))?
             .iter()
             .map(|v| v.as_u64().unwrap_or(0) as u8)
@@ -205,7 +215,8 @@ impl ExecutionBackend for TangleBackend {
 
     async fn health(&self, function_id: String) -> Result<HealthStatus> {
         let functions = self.functions.read().await;
-        let metadata = functions.get(&function_id)
+        let metadata = functions
+            .get(&function_id)
             .ok_or_else(|| BackendError::NotFound(function_id.clone()))?;
 
         // Check if service is registered on Tangle
@@ -225,12 +236,16 @@ impl ExecutionBackend for TangleBackend {
 
     async fn info(&self, function_id: String) -> Result<DeployInfo> {
         let functions = self.functions.read().await;
-        let metadata = functions.get(&function_id)
+        let metadata = functions
+            .get(&function_id)
             .ok_or_else(|| BackendError::NotFound(function_id.clone()))?;
 
         Ok(DeployInfo {
             function_id: function_id.clone(),
-            endpoint: format!("{}/api/blueprint/functions/{}/invoke", self.base_url, function_id),
+            endpoint: format!(
+                "{}/api/blueprint/functions/{}/invoke",
+                self.base_url, function_id
+            ),
             status: "deployed".to_string(),
             cold_start_ms: 2000, // Blockchain latency
             memory_mb: metadata.config.memory_mb,
@@ -241,7 +256,8 @@ impl ExecutionBackend for TangleBackend {
     async fn undeploy(&self, function_id: String) -> Result<()> {
         let metadata = {
             let mut functions = self.functions.write().await;
-            functions.remove(&function_id)
+            functions
+                .remove(&function_id)
                 .ok_or_else(|| BackendError::NotFound(function_id.clone()))?
         };
 
@@ -265,7 +281,10 @@ impl ExecutionBackend for TangleBackend {
     async fn warm(&self, function_id: String) -> Result<u32> {
         // Warming doesn't apply to Tangle backend
         // Operators manage their own warm pools
-        info!("Warm request for Tangle function {} (no-op on blockchain)", function_id);
+        info!(
+            "Warm request for Tangle function {} (no-op on blockchain)",
+            function_id
+        );
         Ok(0)
     }
 }

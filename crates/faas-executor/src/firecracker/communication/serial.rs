@@ -202,7 +202,8 @@ impl SerialConsole {
 
         while start.elapsed() < self.timeout {
             let mut line = String::new();
-            match tokio::time::timeout(Duration::from_millis(100), reader.read_line(&mut line)).await
+            match tokio::time::timeout(Duration::from_millis(100), reader.read_line(&mut line))
+                .await
             {
                 Ok(Ok(0)) => continue, // EOF
                 Ok(Ok(_)) => {

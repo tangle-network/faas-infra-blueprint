@@ -18,9 +18,9 @@ impl BlobCache {
     pub fn new(store: Arc<BlobStore>, capacity: usize, max_blob_size: usize) -> Self {
         Self {
             store,
-            cache: Arc::new(RwLock::new(
-                LruCache::new(NonZeroUsize::new(capacity).unwrap())
-            )),
+            cache: Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(capacity).unwrap(),
+            ))),
             max_blob_size,
         }
     }

@@ -147,7 +147,11 @@ impl VmResultCache {
         let result = if let Some(entry) = cache.entries.get_mut(key) {
             entry.last_accessed = Instant::now();
             entry.access_count += 1;
-            Some((entry.result.clone(), entry.uncompressed_size, entry.access_count))
+            Some((
+                entry.result.clone(),
+                entry.uncompressed_size,
+                entry.access_count,
+            ))
         } else {
             None
         };
@@ -171,7 +175,9 @@ impl VmResultCache {
 
             info!(
                 "Cache HIT: {} ({}x accessed, saved {:?})",
-                key, access_count, cached_result.execution_time.as_millis()
+                key,
+                access_count,
+                cached_result.execution_time.as_millis()
             );
 
             Ok(Some(cached_result))
@@ -184,12 +190,7 @@ impl VmResultCache {
     }
 
     /// Store result in cache
-    pub async fn put(
-        &self,
-        key: &str,
-        result: CacheResult,
-        ttl: Option<Duration>,
-    ) -> Result<()> {
+    pub async fn put(&self, key: &str, result: CacheResult, ttl: Option<Duration>) -> Result<()> {
         let serialized = bincode::serialize(&result)?;
 
         let (compressed_data, uncompressed_size) = if self.config.compression_enabled {
@@ -228,7 +229,9 @@ impl VmResultCache {
 
         info!(
             "Cached result: {} ({} bytes compressed, {:?} execution time)",
-            key, entry_size, result.execution_time.as_millis()
+            key,
+            entry_size,
+            result.execution_time.as_millis()
         );
 
         Ok(())
@@ -252,7 +255,10 @@ impl VmResultCache {
                     // In production, would execute and cache
                     debug!("Would prewarm: {}", key);
                 }
-                PrewarmPattern::PredictedNext { probability, params } => {
+                PrewarmPattern::PredictedNext {
+                    probability,
+                    params,
+                } => {
                     // ML-predicted next likely executions
                     if probability > 0.7 {
                         debug!("Would prewarm predicted: {:?}", params);
@@ -357,13 +363,13 @@ impl VmResultCache {
             return 1.0;
         }
 
-        let total_compressed: usize = cache.entries.values()
+        let total_compressed: usize = cache
+            .entries
+            .values()
             .map(|e| e.compressed_data.len())
             .sum();
 
-        let total_uncompressed: usize = cache.entries.values()
-            .map(|e| e.uncompressed_size)
-            .sum();
+        let total_uncompressed: usize = cache.entries.values().map(|e| e.uncompressed_size).sum();
 
         if total_uncompressed > 0 {
             total_compressed as f64 / total_uncompressed as f64
@@ -387,7 +393,9 @@ impl VmResultCache {
     pub async fn export(&self) -> Result<Vec<u8>> {
         let cache = self.cache.read().await;
 
-        let export_data: Vec<_> = cache.entries.values()
+        let export_data: Vec<_> = cache
+            .entries
+            .values()
             .map(|e| ExportEntry {
                 key: e.key.clone(),
                 compressed_data: e.compressed_data.clone(),
@@ -448,8 +456,8 @@ struct ExportEntry {
 
 /// Multi-level cache for VM results
 pub struct MultiLevelVmCache {
-    l1_memory: Arc<VmResultCache>,    // Hot in-memory cache
-    l2_disk: Arc<DiskCache>,          // Larger disk-backed cache
+    l1_memory: Arc<VmResultCache>,                 // Hot in-memory cache
+    l2_disk: Arc<DiskCache>,                       // Larger disk-backed cache
     l3_distributed: Option<Arc<DistributedCache>>, // Optional distributed cache
 }
 

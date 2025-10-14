@@ -92,11 +92,7 @@ pub struct MicroVMStrategy {
 
 impl MicroVMStrategy {
     /// Create a new MicroVM strategy with real Firecracker support
-    pub fn new(
-        firecracker_path: String,
-        kernel_path: String,
-        rootfs_path: String,
-    ) -> Self {
+    pub fn new(firecracker_path: String, kernel_path: String, rootfs_path: String) -> Self {
         // Try to initialize real Firecracker executor on Linux
         let firecracker_executor = if cfg!(target_os = "linux") {
             match crate::firecracker::FirecrackerExecutor::new(
@@ -174,24 +170,22 @@ impl HybridStrategy {
             warm_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             max_pool_size: 10,
             docker: docker.clone(),
-            snapshot_manager: Some(Arc::new(crate::docker_snapshot::DockerSnapshotManager::new(
-                docker.clone(),
-            ))),
-            pool_manager: Some(Arc::new(
-                crate::container_pool::ContainerPoolManager::new(
-                    docker.clone(),
-                    crate::container_pool::PoolConfig {
-                        min_size: 1,
-                        max_size: 10,
-                        max_idle_time: std::time::Duration::from_secs(300),
-                        max_use_count: 100,
-                        pre_warm: true,
-                        health_check_interval: std::time::Duration::from_secs(30),
-                        predictive_warming: true,
-                        target_acquisition_ms: 50,
-                    },
-                ),
+            snapshot_manager: Some(Arc::new(
+                crate::docker_snapshot::DockerSnapshotManager::new(docker.clone()),
             )),
+            pool_manager: Some(Arc::new(crate::container_pool::ContainerPoolManager::new(
+                docker.clone(),
+                crate::container_pool::PoolConfig {
+                    min_size: 1,
+                    max_size: 10,
+                    max_idle_time: std::time::Duration::from_secs(300),
+                    max_use_count: 100,
+                    pre_warm: true,
+                    health_check_interval: std::time::Duration::from_secs(30),
+                    predictive_warming: true,
+                    target_acquisition_ms: 50,
+                },
+            ))),
             build_cache_volumes: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             dependency_layers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             gpu_pools: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -991,10 +985,12 @@ impl SandboxExecutor for Executor {
 
         let result = if cache_hit {
             info!("Cache hit - executing with warm environment");
-            self.execute_from_cache_with_strategy(&config, &request_id, &selected_strategy).await
+            self.execute_from_cache_with_strategy(&config, &request_id, &selected_strategy)
+                .await
         } else {
             info!("Cache miss - cold start execution");
-            self.execute_cold_start_with_strategy(&config, &request_id, &selected_strategy).await
+            self.execute_cold_start_with_strategy(&config, &request_id, &selected_strategy)
+                .await
         };
 
         // Record metrics
@@ -1059,10 +1055,10 @@ impl Executor {
         // - Have side effects
 
         // For now, only cache specific whitelisted patterns
-        config.source.contains("compiler") ||
-        config.source.contains("transformer") ||
-        config.source.contains("parser") ||
-        config.source.contains("validator")
+        config.source.contains("compiler")
+            || config.source.contains("transformer")
+            || config.source.contains("parser")
+            || config.source.contains("validator")
     }
 
     async fn check_environment_cache(&self, config: &SandboxConfig) -> anyhow::Result<bool> {
@@ -1093,7 +1089,9 @@ impl Executor {
                         .await
                         .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
-                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                    Err(anyhow::anyhow!(
+                        "Firecracker not available on this platform"
+                    ))
                 }
             }
             ExecutionStrategy::Hybrid(_) => {
@@ -1124,7 +1122,9 @@ impl Executor {
                         .await
                         .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
-                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                    Err(anyhow::anyhow!(
+                        "Firecracker not available on this platform"
+                    ))
                 }
             }
             ExecutionStrategy::Hybrid(_) => {
@@ -1178,7 +1178,9 @@ impl Executor {
                         .await
                         .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
-                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                    Err(anyhow::anyhow!(
+                        "Firecracker not available on this platform"
+                    ))
                 }
             }
             ExecutionStrategy::Hybrid(_) => {
@@ -1232,7 +1234,9 @@ impl Executor {
                         .await
                         .map_err(|e| anyhow::anyhow!("Firecracker execution failed: {e}"))
                 } else {
-                    Err(anyhow::anyhow!("Firecracker not available on this platform"))
+                    Err(anyhow::anyhow!(
+                        "Firecracker not available on this platform"
+                    ))
                 }
             }
             ExecutionStrategy::Hybrid(_) => {
@@ -1252,15 +1256,18 @@ impl Executor {
         if let Some(pool_manager) = &strategy.pool_manager {
             match pool_manager.acquire(&config.source).await {
                 Ok(pooled_container) => {
-                    info!("Acquired pooled container {} in {}ms",
-                          pooled_container.container_id,
-                          pooled_container.startup_time_ms);
+                    info!(
+                        "Acquired pooled container {} in {}ms",
+                        pooled_container.container_id, pooled_container.startup_time_ms
+                    );
 
-                    let result = self.execute_with_existing_container(
-                        config,
-                        &pooled_container.container_id,
-                        strategy
-                    ).await;
+                    let result = self
+                        .execute_with_existing_container(
+                            config,
+                            &pooled_container.container_id,
+                            strategy,
+                        )
+                        .await;
 
                     // Release container back to pool
                     let _ = pool_manager.release(pooled_container).await;
@@ -1424,7 +1431,10 @@ impl Executor {
             .start_exec(&exec_result.id, Some(start_config))
             .await?
         {
-            docktopus::bollard::exec::StartExecResults::Attached { mut output, mut input } => {
+            docktopus::bollard::exec::StartExecResults::Attached {
+                mut output,
+                mut input,
+            } => {
                 let mut result_output = Vec::new();
 
                 // Write payload to stdin if we have data
@@ -1562,20 +1572,19 @@ impl RoutingRule {
             RoutingCondition::RequiresIsolation(_) => false, // Implement based on security requirements
             RoutingCondition::RequiresSecurity => {
                 // Security-sensitive workloads: crypto, auth, sensitive data processing
-                config.source.contains("secure") ||
-                config.function_id.contains("auth") ||
-                config.function_id.contains("crypto")
+                config.source.contains("secure")
+                    || config.function_id.contains("auth")
+                    || config.function_id.contains("crypto")
             }
             RoutingCondition::HighPerformance => {
                 // High-performance workloads: compute-intensive, ML inference
-                config.source.contains("gpu") ||
-                config.source.contains("ml") ||
-                config.function_id.contains("compute")
+                config.source.contains("gpu")
+                    || config.source.contains("ml")
+                    || config.function_id.contains("compute")
             }
             RoutingCondition::RequiresWarmPool => {
                 // Workloads that benefit from warm pools: frequent calls, low latency
-                !config.function_id.contains("batch") &&
-                !config.function_id.contains("cron")
+                !config.function_id.contains("batch") && !config.function_id.contains("cron")
             }
         }
     }

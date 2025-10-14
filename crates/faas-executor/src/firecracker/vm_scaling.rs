@@ -8,7 +8,7 @@ use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use super::vm_fork::{VmForkManager, FirecrackerVmConfig};
+use super::vm_fork::{FirecrackerVmConfig, VmForkManager};
 use super::vm_snapshot::VmSnapshotManager;
 
 /// Predictive VM Scaler with ML-based forecasting
@@ -133,12 +133,17 @@ impl VmPredictiveScaler {
     }
 
     /// Initialize pool for an environment
-    pub async fn initialize_pool(&self, environment: &str, base_config: &FirecrackerVmConfig) -> Result<()> {
+    pub async fn initialize_pool(
+        &self,
+        environment: &str,
+        base_config: &FirecrackerVmConfig,
+    ) -> Result<()> {
         info!("Initializing VM pool for environment: {}", environment);
 
         // Create base VM for forking
         let base_id = format!("{environment}-base");
-        let base_vm_id = self.fork_manager
+        let base_vm_id = self
+            .fork_manager
             .create_base_vm(&base_id, base_config)
             .await?;
 
@@ -146,9 +151,7 @@ impl VmPredictiveScaler {
         let mut warm_vms = VecDeque::new();
         for i in 0..self.config.min_warm_vms {
             let fork_id = format!("{environment}-warm-{i}");
-            let forked = self.fork_manager
-                .fork_vm(&base_id, &fork_id)
-                .await?;
+            let forked = self.fork_manager.fork_vm(&base_id, &fork_id).await?;
 
             warm_vms.push_back(WarmVm {
                 vm_id: forked.vm_id,
@@ -169,7 +172,10 @@ impl VmPredictiveScaler {
         let mut pools = self.pools.write().await;
         pools.insert(environment.to_string(), pool);
 
-        info!("VM pool initialized with {} warm VMs", self.config.min_warm_vms);
+        info!(
+            "VM pool initialized with {} warm VMs",
+            self.config.min_warm_vms
+        );
         Ok(())
     }
 
@@ -178,17 +184,23 @@ impl VmPredictiveScaler {
         let start = Instant::now();
 
         // Predict future load
-        let predicted_load = self.predict_load(environment, self.config.prediction_window).await?;
+        let predicted_load = self
+            .predict_load(environment, self.config.prediction_window)
+            .await?;
 
         // Scale proactively if needed
-        if predicted_load.confidence > 0.7 && predicted_load.expected_load > self.config.scale_up_threshold {
-            self.scale_up(environment, predicted_load.recommended_instances).await?;
+        if predicted_load.confidence > 0.7
+            && predicted_load.expected_load > self.config.scale_up_threshold
+        {
+            self.scale_up(environment, predicted_load.recommended_instances)
+                .await?;
         }
 
         // Get VM from pool
         let mut pools = self.pools.write().await;
-        let pool = pools.get_mut(environment)
-            .ok_or_else(|| anyhow::anyhow!("Pool not initialized for environment: {environment}"))?;
+        let pool = pools.get_mut(environment).ok_or_else(|| {
+            anyhow::anyhow!("Pool not initialized for environment: {environment}")
+        })?;
 
         // Try warm pool first
         if let Some(warm_vm) = pool.warm_vms.pop_front() {
@@ -212,8 +224,7 @@ impl VmPredictiveScaler {
             });
 
             let wait_time = start.elapsed();
-            pool.metrics.avg_wait_time =
-                (pool.metrics.avg_wait_time + wait_time) / 2;
+            pool.metrics.avg_wait_time = (pool.metrics.avg_wait_time + wait_time) / 2;
 
             info!("Acquired warm VM in {:?}", wait_time);
 
@@ -232,7 +243,9 @@ impl VmPredictiveScaler {
         info!("Cold start required for environment: {}", environment);
 
         // Fork new VM
-        let base_id = pool.cold_snapshots.first()
+        let base_id = pool
+            .cold_snapshots
+            .first()
             .ok_or_else(|| anyhow::anyhow!("No base snapshot available"))?;
 
         let fork_id = format!("{}-cold-{}", environment, uuid::Uuid::new_v4());
@@ -260,7 +273,8 @@ impl VmPredictiveScaler {
     /// Release VM back to pool
     pub async fn release_vm(&self, environment: &str, vm_id: &str) -> Result<()> {
         let mut pools = self.pools.write().await;
-        let pool = pools.get_mut(environment)
+        let pool = pools
+            .get_mut(environment)
             .ok_or_else(|| anyhow::anyhow!("Pool not found"))?;
 
         // Find in hot pool
@@ -370,7 +384,11 @@ impl VmPredictiveScaler {
         1.0 / (1.0 + (-result).exp())
     }
 
-    fn calculate_confidence(&self, model: Option<&PredictionModel>, history: &[LoadDataPoint]) -> f64 {
+    fn calculate_confidence(
+        &self,
+        model: Option<&PredictionModel>,
+        history: &[LoadDataPoint],
+    ) -> f64 {
         let mut confidence: f64 = 0.5;
 
         // Model accuracy contributes to confidence
@@ -405,7 +423,8 @@ impl VmPredictiveScaler {
     /// Scale up pool
     async fn scale_up(&self, environment: &str, target_size: usize) -> Result<()> {
         let mut pools = self.pools.write().await;
-        let pool = pools.get_mut(environment)
+        let pool = pools
+            .get_mut(environment)
             .ok_or_else(|| anyhow::anyhow!("Pool not found"))?;
 
         let current_size = pool.warm_vms.len() + pool.hot_vms.len();
@@ -418,7 +437,9 @@ impl VmPredictiveScaler {
 
         info!("Scaling up pool for {}: adding {} VMs", environment, to_add);
 
-        let base_id = pool.cold_snapshots.first()
+        let base_id = pool
+            .cold_snapshots
+            .first()
             .ok_or_else(|| anyhow::anyhow!("No base snapshot"))?
             .clone();
 
@@ -447,7 +468,8 @@ impl VmPredictiveScaler {
     /// Scale down pool
     async fn scale_down(&self, environment: &str) -> Result<()> {
         let mut pools = self.pools.write().await;
-        let pool = pools.get_mut(environment)
+        let pool = pools
+            .get_mut(environment)
             .ok_or_else(|| anyhow::anyhow!("Pool not found"))?;
 
         // Remove oldest warm VMs
@@ -480,14 +502,17 @@ impl VmPredictiveScaler {
     /// Replenish warm pool
     async fn replenish_warm_pool(&self, environment: &str) -> Result<()> {
         let mut pools = self.pools.write().await;
-        let pool = pools.get_mut(environment)
+        let pool = pools
+            .get_mut(environment)
             .ok_or_else(|| anyhow::anyhow!("Pool not found"))?;
 
         if pool.warm_vms.len() >= self.config.min_warm_vms {
             return Ok(());
         }
 
-        let base_id = pool.cold_snapshots.first()
+        let base_id = pool
+            .cold_snapshots
+            .first()
             .ok_or_else(|| anyhow::anyhow!("No base snapshot"))?
             .clone();
 
@@ -505,7 +530,12 @@ impl VmPredictiveScaler {
     }
 
     /// Record actual usage for model training
-    pub async fn record_usage(&self, environment: &str, load: f64, concurrent: usize) -> Result<()> {
+    pub async fn record_usage(
+        &self,
+        environment: &str,
+        load: f64,
+        concurrent: usize,
+    ) -> Result<()> {
         let mut predictor = self.predictor.write().await;
 
         let data_point = LoadDataPoint {
@@ -515,7 +545,8 @@ impl VmPredictiveScaler {
             avg_execution_time: Duration::from_millis(100), // Would track actual
         };
 
-        predictor.history
+        predictor
+            .history
             .entry(environment.to_string())
             .or_insert_with(Vec::new)
             .push(data_point);
@@ -530,7 +561,9 @@ impl VmPredictiveScaler {
 
     /// Train prediction model
     async fn train_model(&self, predictor: &mut LoadPredictor, environment: &str) -> Result<()> {
-        let history = predictor.history.get(environment)
+        let history = predictor
+            .history
+            .get(environment)
             .ok_or_else(|| anyhow::anyhow!("No history for training"))?;
 
         if history.len() < 100 {

@@ -52,13 +52,18 @@ impl Backend for LocalBackend {
 
         fs::rename(temp_path, path).await?;
 
-        debug!("Stored blob {} ({} bytes) to local", id.as_str(), data.len());
+        debug!(
+            "Stored blob {} ({} bytes) to local",
+            id.as_str(),
+            data.len()
+        );
         Ok(id)
     }
 
     async fn get(&self, id: &BlobId) -> Result<Vec<u8>> {
         let path = id.path(&self.root);
-        fs::read(&path).await
+        fs::read(&path)
+            .await
             .map_err(|e| anyhow!("Failed to read blob {}: {}", id.as_str(), e))
     }
 
@@ -94,11 +99,11 @@ impl ObjectBackend {
     pub async fn from_url(url: &str) -> Result<Self> {
         use object_store::{parse_url, ClientOptions};
 
-        let parsed_url = url::Url::parse(url)
-            .map_err(|e| anyhow!("Invalid object store URL: {e}"))?;
+        let parsed_url =
+            url::Url::parse(url).map_err(|e| anyhow!("Invalid object store URL: {e}"))?;
 
-        let (store, path) = parse_url(&parsed_url)
-            .map_err(|e| anyhow!("Failed to parse object store URL: {e}"))?;
+        let (store, path) =
+            parse_url(&parsed_url).map_err(|e| anyhow!("Failed to parse object store URL: {e}"))?;
 
         Ok(Self {
             store: Arc::from(store),
@@ -121,7 +126,8 @@ impl ObjectBackend {
         // Allow anonymous access or credentials from environment
         builder = builder.with_allow_http(true);
 
-        let store = builder.build()
+        let store = builder
+            .build()
             .map_err(|e| anyhow!("Failed to create S3 backend: {e}"))?;
 
         Ok(Self {
@@ -149,7 +155,8 @@ impl Backend for ObjectBackend {
         let path = self.blob_path(&id);
 
         let payload = PutPayload::from(Bytes::copy_from_slice(data));
-        self.store.put(&path, payload)
+        self.store
+            .put(&path, payload)
             .await
             .map_err(|e| anyhow!("Failed to put blob to object store: {e}"))?;
 
@@ -162,11 +169,14 @@ impl Backend for ObjectBackend {
 
         let path = self.blob_path(id);
 
-        let result = self.store.get(&path)
+        let result = self
+            .store
+            .get(&path)
             .await
             .map_err(|e| anyhow!("Failed to get blob from object store: {e}"))?;
 
-        let bytes = result.bytes()
+        let bytes = result
+            .bytes()
             .await
             .map_err(|e| anyhow!("Failed to read blob bytes: {e}"))?;
 
@@ -186,7 +196,8 @@ impl Backend for ObjectBackend {
     async fn delete(&self, id: &BlobId) -> Result<()> {
         let path = self.blob_path(id);
 
-        self.store.delete(&path)
+        self.store
+            .delete(&path)
             .await
             .map_err(|e| anyhow!("Failed to delete blob from object store: {e}"))?;
 
@@ -196,7 +207,9 @@ impl Backend for ObjectBackend {
     async fn size(&self, id: &BlobId) -> Result<u64> {
         let path = self.blob_path(id);
 
-        let meta = self.store.head(&path)
+        let meta = self
+            .store
+            .head(&path)
             .await
             .map_err(|e| anyhow!("Failed to get blob metadata: {e}"))?;
 
@@ -214,7 +227,9 @@ pub struct ObjectBackend {
 impl ObjectBackend {
     #[allow(dead_code)]
     pub fn new(_bucket: String, _region: String, _endpoint: Option<String>) -> Result<Self> {
-        Err(anyhow!("Object storage feature not enabled. Enable with --features object-storage"))
+        Err(anyhow!(
+            "Object storage feature not enabled. Enable with --features object-storage"
+        ))
     }
 }
 

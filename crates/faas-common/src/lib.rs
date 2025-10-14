@@ -114,7 +114,7 @@ impl blueprint_sdk::tangle::metadata::IntoTangleFieldTypes for ExecuteFunctionAr
     fn into_tangle_fields() -> Vec<blueprint_sdk::tangle::metadata::macros::ext::FieldType> {
         use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
         vec![
-            FieldType::String,                    // image
+            FieldType::String,                            // image
             FieldType::List(Box::new(FieldType::String)), // command
             FieldType::Optional(Box::new(FieldType::List(Box::new(FieldType::String)))), // env_vars
             FieldType::List(Box::new(FieldType::Uint8)),  // payload
@@ -132,8 +132,8 @@ pub struct SandboxConfig {
     pub payload: Vec<u8>,
     pub runtime: Option<Runtime>,
     pub execution_mode: Option<ExecutionMode>,
-    pub memory_limit: Option<u32>,  // MB
-    pub timeout: Option<u64>,        // milliseconds
+    pub memory_limit: Option<u32>, // MB
+    pub timeout: Option<u64>,      // milliseconds
 }
 
 // Define the SandboxExecutor trait
@@ -145,7 +145,7 @@ pub trait SandboxExecutor: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-     // Import for test
+    // Import for test
 
     #[test]
     fn test_serialization() {

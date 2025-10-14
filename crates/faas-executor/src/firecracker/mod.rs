@@ -2,11 +2,11 @@
 //! Provides complete VM lifecycle management with KVM acceleration
 
 pub mod communication;
-pub mod vm_manager;
-pub mod vm_snapshot;
 pub mod vm_cache;
 pub mod vm_fork;
+pub mod vm_manager;
 pub mod vm_scaling;
+pub mod vm_snapshot;
 
 // Guest agent source is included for documentation
 // It should be compiled separately and included in rootfs
@@ -14,11 +14,11 @@ pub mod vm_scaling;
 pub const GUEST_AGENT_SOURCE: &str = include_str!("guest_agent.rs");
 
 pub use communication::{CommunicationConfig as CommConfig, VmCommandExecutor};
+pub use vm_cache::{CacheConfig, VmResultCache as MultiLevelVmCache};
+pub use vm_fork::{ForkTree, ForkedVm, VmForkManager};
 pub use vm_manager::{FirecrackerManager, NetworkConfig, VmConfig, VmInstance, VmState};
-pub use vm_snapshot::{VmSnapshotManager, VmSnapshot, RestoredVm};
-pub use vm_cache::{VmResultCache as MultiLevelVmCache, CacheConfig};
-pub use vm_fork::{VmForkManager, ForkedVm, ForkTree};
-pub use vm_scaling::{VmPredictiveScaler, ScalingConfig, VmPool};
+pub use vm_scaling::{ScalingConfig, VmPool, VmPredictiveScaler};
+pub use vm_snapshot::{RestoredVm, VmSnapshot, VmSnapshotManager};
 
 use async_trait::async_trait;
 use faas_common::{InvocationResult, Result as CommonResult, SandboxConfig, SandboxExecutor};
@@ -54,82 +54,87 @@ impl FirecrackerExecutor {
         }
 
         // Initialize optimization components only on Linux
-        let (vm_manager, snapshot_manager, cache, fork_manager, scaler) = if cfg!(target_os = "linux") {
-            let vm_mgr = match FirecrackerManager::new(PathBuf::from("/var/lib/firecracker")) {
-                Ok(mgr) => Arc::new(mgr),
-                Err(e) => {
-                    warn!("Failed to initialize VM manager: {}", e);
-                    return Ok(Self {
-                        fc_binary_path,
-                        kernel_image_path,
-                        rootfs_path,
-                        api_socket_base: "/tmp/firecracker".to_string(),
-                        vsock_enabled: cfg!(target_os = "linux"),
-                        vm_manager: None,
-                        snapshot_manager: None,
-                        cache: None,
-                        fork_manager: None,
-                        scaler: None,
-                    });
-                }
+        let (vm_manager, snapshot_manager, cache, fork_manager, scaler) =
+            if cfg!(target_os = "linux") {
+                let vm_mgr = match FirecrackerManager::new(PathBuf::from("/var/lib/firecracker")) {
+                    Ok(mgr) => Arc::new(mgr),
+                    Err(e) => {
+                        warn!("Failed to initialize VM manager: {}", e);
+                        return Ok(Self {
+                            fc_binary_path,
+                            kernel_image_path,
+                            rootfs_path,
+                            api_socket_base: "/tmp/firecracker".to_string(),
+                            vsock_enabled: cfg!(target_os = "linux"),
+                            vm_manager: None,
+                            snapshot_manager: None,
+                            cache: None,
+                            fork_manager: None,
+                            scaler: None,
+                        });
+                    }
+                };
+
+                let snapshot_mgr =
+                    match VmSnapshotManager::new(PathBuf::from("/var/lib/firecracker/snapshots")) {
+                        Ok(mgr) => Arc::new(mgr),
+                        Err(e) => {
+                            warn!("Failed to initialize snapshot manager: {}", e);
+                            return Ok(Self {
+                                fc_binary_path,
+                                kernel_image_path,
+                                rootfs_path,
+                                api_socket_base: "/tmp/firecracker".to_string(),
+                                vsock_enabled: cfg!(target_os = "linux"),
+                                vm_manager: Some(vm_mgr),
+                                snapshot_manager: None,
+                                cache: None,
+                                fork_manager: None,
+                                scaler: None,
+                            });
+                        }
+                    };
+
+                let cache_config = CacheConfig {
+                    max_size_bytes: 100 * 1024 * 1024, // 100MB
+                    max_entries: 1000,
+                    default_ttl: Some(Duration::from_secs(3600)),
+                    compression_enabled: true,
+                    eviction_policy: vm_cache::EvictionPolicy::Adaptive,
+                };
+                let vm_cache = Arc::new(MultiLevelVmCache::new(cache_config));
+
+                let fork_mgr = VmForkManager::new(
+                    snapshot_mgr.clone(),
+                    vm_mgr.clone(),
+                    vm_fork::ForkConfig::default(),
+                );
+                let fork_mgr = Arc::new(fork_mgr);
+
+                let scaling_config = ScalingConfig {
+                    min_warm_vms: 1,
+                    max_warm_vms: 10,
+                    scale_up_threshold: 0.8,
+                    scale_down_threshold: 0.2,
+                    prediction_window: Duration::from_secs(300),
+                    warmup_time: Duration::from_secs(5),
+                };
+                let scaler = Arc::new(VmPredictiveScaler::new(
+                    fork_mgr.clone(),
+                    snapshot_mgr.clone(),
+                    scaling_config,
+                ));
+
+                (
+                    Some(vm_mgr),
+                    Some(snapshot_mgr),
+                    Some(vm_cache),
+                    Some(fork_mgr),
+                    Some(scaler),
+                )
+            } else {
+                (None, None, None, None, None)
             };
-
-            let snapshot_mgr = match VmSnapshotManager::new(
-                PathBuf::from("/var/lib/firecracker/snapshots")
-            ) {
-                Ok(mgr) => Arc::new(mgr),
-                Err(e) => {
-                    warn!("Failed to initialize snapshot manager: {}", e);
-                    return Ok(Self {
-                        fc_binary_path,
-                        kernel_image_path,
-                        rootfs_path,
-                        api_socket_base: "/tmp/firecracker".to_string(),
-                        vsock_enabled: cfg!(target_os = "linux"),
-                        vm_manager: Some(vm_mgr),
-                        snapshot_manager: None,
-                        cache: None,
-                        fork_manager: None,
-                        scaler: None,
-                    });
-                }
-            };
-
-            let cache_config = CacheConfig {
-                max_size_bytes: 100 * 1024 * 1024, // 100MB
-                max_entries: 1000,
-                default_ttl: Some(Duration::from_secs(3600)),
-                compression_enabled: true,
-                eviction_policy: vm_cache::EvictionPolicy::Adaptive,
-            };
-            let vm_cache = Arc::new(MultiLevelVmCache::new(cache_config));
-
-            let fork_mgr = VmForkManager::new(
-                snapshot_mgr.clone(),
-                vm_mgr.clone(),
-                vm_fork::ForkConfig::default()
-            );
-            let fork_mgr = Arc::new(fork_mgr);
-
-
-            let scaling_config = ScalingConfig {
-                min_warm_vms: 1,
-                max_warm_vms: 10,
-                scale_up_threshold: 0.8,
-                scale_down_threshold: 0.2,
-                prediction_window: Duration::from_secs(300),
-                warmup_time: Duration::from_secs(5),
-            };
-            let scaler = Arc::new(VmPredictiveScaler::new(
-                fork_mgr.clone(),
-                snapshot_mgr.clone(),
-                scaling_config,
-            ));
-
-            (Some(vm_mgr), Some(snapshot_mgr), Some(vm_cache), Some(fork_mgr), Some(scaler))
-        } else {
-            (None, None, None, None, None)
-        };
 
         Ok(Self {
             fc_binary_path,
@@ -182,8 +187,11 @@ impl FirecrackerExecutor {
         #[cfg(target_os = "linux")]
         {
             // Create VM manager
-            let manager = vm_manager::FirecrackerManager::new(PathBuf::from("/var/lib/firecracker"))
-                .map_err(|e| faas_common::FaasError::Executor(format!("Failed to create manager: {}", e)))?;
+            let manager =
+                vm_manager::FirecrackerManager::new(PathBuf::from("/var/lib/firecracker"))
+                    .map_err(|e| {
+                        faas_common::FaasError::Executor(format!("Failed to create manager: {}", e))
+                    })?;
 
             // Set up network if needed
             let _ = manager.setup_network().await;
@@ -209,8 +217,9 @@ impl FirecrackerExecutor {
             };
 
             // Launch the VM
-            let launched_vm_id = manager.launch_vm(vm_config).await
-                .map_err(|e| faas_common::FaasError::Executor(format!("Failed to launch VM: {}", e)))?;
+            let launched_vm_id = manager.launch_vm(vm_config).await.map_err(|e| {
+                faas_common::FaasError::Executor(format!("Failed to launch VM: {}", e))
+            })?;
 
             Ok((launched_vm_id, vsock_cid, false))
         }
@@ -275,13 +284,20 @@ impl FirecrackerExecutor {
                 info!("Forking VM from parent: {}", parent_vm_id);
 
                 // Fork the VM
-                let forked = fork_mgr.fork_vm(parent_vm_id, &fork_id, &api_socket).await
-                    .map_err(|e| faas_common::FaasError::Executor(format!("Failed to fork VM: {}", e)))?;
+                let forked = fork_mgr
+                    .fork_vm(parent_vm_id, &fork_id, &api_socket)
+                    .await
+                    .map_err(|e| {
+                        faas_common::FaasError::Executor(format!("Failed to fork VM: {}", e))
+                    })?;
 
                 info!("Created VM fork {} from parent {}", fork_id, parent_vm_id);
 
                 // Execute in forked VM
-                let output = match self.execute_in_vm(&forked.vm_id, &config, forked.vsock_cid, &api_socket).await {
+                let output = match self
+                    .execute_in_vm(&forked.vm_id, &config, forked.vsock_cid, &api_socket)
+                    .await
+                {
                     Ok(output) => output,
                     Err(e) => {
                         error!("Failed to execute in forked VM: {}", e);
@@ -289,7 +305,10 @@ impl FirecrackerExecutor {
                         // Clean up fork
                         let _ = fork_mgr.cleanup_fork(&fork_id).await;
 
-                        return Err(faas_common::FaasError::Executor(format!("Fork execution failed: {}", e)));
+                        return Err(faas_common::FaasError::Executor(format!(
+                            "Fork execution failed: {}",
+                            e
+                        )));
                     }
                 };
 
@@ -301,25 +320,46 @@ impl FirecrackerExecutor {
 
                 Ok(InvocationResult {
                     request_id: fork_id,
-                    response: if output.is_empty() { None } else { Some(output) },
-                    logs: Some(format!("VM fork execution completed (parent: {})", parent_vm_id)),
+                    response: if output.is_empty() {
+                        None
+                    } else {
+                        Some(output)
+                    },
+                    logs: Some(format!(
+                        "VM fork execution completed (parent: {})",
+                        parent_vm_id
+                    )),
                     error: None,
                 })
             } else {
                 // Fall back to snapshot-based branching if fork manager unavailable
                 if let Some(ref snapshot_mgr) = self.snapshot_manager {
-                    info!("Using snapshot-based branching from parent: {}", parent_vm_id);
+                    info!(
+                        "Using snapshot-based branching from parent: {}",
+                        parent_vm_id
+                    );
 
                     // Check for parent snapshot
                     let parent_snapshot_id = format!("snap-{}", parent_vm_id);
 
                     // Try to restore from parent snapshot
-                    match snapshot_mgr.restore_snapshot(&parent_snapshot_id, &fork_id).await {
+                    match snapshot_mgr
+                        .restore_snapshot(&parent_snapshot_id, &fork_id)
+                        .await
+                    {
                         Ok(restored) => {
                             info!("Restored VM {} from parent snapshot", fork_id);
 
                             // Execute in restored VM
-                            let output = match self.execute_in_vm(&restored.vm_id, &config, restored.vsock_cid, &restored.api_socket).await {
+                            let output = match self
+                                .execute_in_vm(
+                                    &restored.vm_id,
+                                    &config,
+                                    restored.vsock_cid,
+                                    &restored.api_socket,
+                                )
+                                .await
+                            {
                                 Ok(output) => output,
                                 Err(e) => {
                                     error!("Failed to execute in restored VM: {}", e);
@@ -329,8 +369,15 @@ impl FirecrackerExecutor {
 
                             Ok(InvocationResult {
                                 request_id: fork_id,
-                                response: if output.is_empty() { None } else { Some(output) },
-                                logs: Some(format!("VM snapshot branch execution completed (parent: {})", parent_vm_id)),
+                                response: if output.is_empty() {
+                                    None
+                                } else {
+                                    Some(output)
+                                },
+                                logs: Some(format!(
+                                    "VM snapshot branch execution completed (parent: {})",
+                                    parent_vm_id
+                                )),
                                 error: None,
                             })
                         }
@@ -389,7 +436,10 @@ impl SandboxExecutor for FirecrackerExecutor {
                     return Ok(InvocationResult {
                         request_id: vm_id,
                         response: cached.response,
-                        logs: Some(format!("VM execution cached (hit rate: {:.2}%)", cached.hit_rate)),
+                        logs: Some(format!(
+                            "VM execution cached (hit rate: {:.2}%)",
+                            cached.hit_rate
+                        )),
                         error: cached.error,
                     });
                 }
@@ -398,10 +448,15 @@ impl SandboxExecutor for FirecrackerExecutor {
             // Try to acquire VM from warm pool
             let (launched_vm_id, vsock_cid, was_warm) = if let Some(ref scaler) = self.scaler {
                 // Record request for prediction
-                scaler.record_request(&config.function_name.clone().unwrap_or_default()).await;
+                scaler
+                    .record_request(&config.function_name.clone().unwrap_or_default())
+                    .await;
 
                 // Try to get warm VM
-                match scaler.acquire_vm(&config.function_name.clone().unwrap_or_default()).await {
+                match scaler
+                    .acquire_vm(&config.function_name.clone().unwrap_or_default())
+                    .await
+                {
                     Ok(warm_vm) => {
                         info!("Acquired warm VM from pool");
                         (warm_vm.vm_id, warm_vm.vsock_cid, true)
@@ -413,11 +468,7 @@ impl SandboxExecutor for FirecrackerExecutor {
                 }
             } else if let Some(ref fork_mgr) = self.fork_manager {
                 // Try VM forking for fast startup
-                if let Ok(forked) = fork_mgr.fork_vm(
-                    "base-vm",
-                    &vm_id,
-                    &api_socket,
-                ).await {
+                if let Ok(forked) = fork_mgr.fork_vm("base-vm", &vm_id, &api_socket).await {
                     info!("Forked VM for faster startup");
                     (forked.vm_id, forked.vsock_cid, true)
                 } else {
@@ -429,7 +480,10 @@ impl SandboxExecutor for FirecrackerExecutor {
             };
 
             // Execute command in VM
-            let output = match self.execute_in_vm(&launched_vm_id, &config, vsock_cid, &api_socket).await {
+            let output = match self
+                .execute_in_vm(&launched_vm_id, &config, vsock_cid, &api_socket)
+                .await
+            {
                 Ok(output) => output,
                 Err(e) => {
                     error!("Failed to execute in VM: {}", e);
@@ -437,19 +491,34 @@ impl SandboxExecutor for FirecrackerExecutor {
                     // Return VM to pool if warm
                     if was_warm {
                         if let Some(ref scaler) = self.scaler {
-                            let _ = scaler.release_vm(&config.function_name.clone().unwrap_or_default(), &launched_vm_id).await;
+                            let _ = scaler
+                                .release_vm(
+                                    &config.function_name.clone().unwrap_or_default(),
+                                    &launched_vm_id,
+                                )
+                                .await;
                         }
                     }
 
-                    return Err(faas_common::FaasError::Executor(format!("VM execution failed: {}", e)));
+                    return Err(faas_common::FaasError::Executor(format!(
+                        "VM execution failed: {}",
+                        e
+                    )));
                 }
             };
 
             // Create result
             let result = InvocationResult {
                 request_id: launched_vm_id.clone(),
-                response: if output.is_empty() { None } else { Some(output.clone()) },
-                logs: Some(format!("VM execution completed ({})", if was_warm { "warm" } else { "cold" })),
+                response: if output.is_empty() {
+                    None
+                } else {
+                    Some(output.clone())
+                },
+                logs: Some(format!(
+                    "VM execution completed ({})",
+                    if was_warm { "warm" } else { "cold" }
+                )),
                 error: None,
             };
 
@@ -468,7 +537,9 @@ impl SandboxExecutor for FirecrackerExecutor {
             if !was_warm {
                 if let Some(ref snapshot_mgr) = self.snapshot_manager {
                     let snapshot_id = format!("snap-{}", launched_vm_id);
-                    let _ = snapshot_mgr.create_snapshot(&launched_vm_id, &snapshot_id, &api_socket).await;
+                    let _ = snapshot_mgr
+                        .create_snapshot(&launched_vm_id, &snapshot_id, &api_socket)
+                        .await;
                 }
             }
 
@@ -476,12 +547,23 @@ impl SandboxExecutor for FirecrackerExecutor {
             if was_warm && self.scaler.is_some() {
                 // Return to pool for reuse
                 if let Some(ref scaler) = self.scaler {
-                    let _ = scaler.release_vm(&config.function_name.clone().unwrap_or_default(), &launched_vm_id).await;
+                    let _ = scaler
+                        .release_vm(
+                            &config.function_name.clone().unwrap_or_default(),
+                            &launched_vm_id,
+                        )
+                        .await;
                 }
             } else {
                 // Stop the VM if not managed by pool
-                let manager = vm_manager::FirecrackerManager::new(PathBuf::from("/var/lib/firecracker"))
-                    .map_err(|e| faas_common::FaasError::Executor(format!("Failed to create manager: {}", e)))?;
+                let manager =
+                    vm_manager::FirecrackerManager::new(PathBuf::from("/var/lib/firecracker"))
+                        .map_err(|e| {
+                            faas_common::FaasError::Executor(format!(
+                                "Failed to create manager: {}",
+                                e
+                            ))
+                        })?;
                 let _ = manager.stop_vm(&launched_vm_id).await;
             }
 

@@ -1,10 +1,10 @@
 //! Production performance benchmarks for FaaS executor
 //! Measures cold start, warm start, and throughput
 
+use bollard::Docker;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use faas_common::{SandboxConfig, SandboxExecutor};
 use faas_executor::DockerExecutor;
-use bollard::Docker;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;

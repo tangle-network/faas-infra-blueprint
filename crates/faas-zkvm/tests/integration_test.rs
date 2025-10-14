@@ -35,13 +35,19 @@ async fn test_zk_prover_integration() {
     assert_eq!(proof.program, "fibonacci");
     assert_eq!(proof.public_inputs, vec!["10"]);
     assert!(!proof.proof_id.is_empty(), "Proof ID should not be empty");
-    assert!(!proof.proof_data.is_empty(), "Proof data should not be empty");
+    assert!(
+        !proof.proof_data.is_empty(),
+        "Proof data should not be empty"
+    );
     assert_eq!(proof.backend, "SP1 Local");
     assert_eq!(proof.execution_mode, "remote");
     assert!(proof.proving_time_ms > 0, "Proving time should be > 0");
 
     println!("✓ Proof generated successfully");
-    println!("  Proof ID: {}...", &proof.proof_id[..16.min(proof.proof_id.len())]);
+    println!(
+        "  Proof ID: {}...",
+        &proof.proof_id[..16.min(proof.proof_id.len())]
+    );
     println!("  Proof size: {} bytes", proof.proof_data.len());
     println!("  Proving time: {}ms", proof.proving_time_ms);
     println!("  Backend: {}", proof.backend);

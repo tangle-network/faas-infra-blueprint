@@ -239,7 +239,8 @@ impl SnapshotOptimizer {
 
     async fn capture_process_state(&self, process_id: &str) -> Result<(Vec<u8>, SnapshotMetadata)> {
         // Parse process_id to get actual PID
-        let pid = process_id.parse::<u32>()
+        let pid = process_id
+            .parse::<u32>()
             .or_else(|_| {
                 // If not a direct PID, try to find by name or other identifier
                 self.find_process_by_name(process_id)
@@ -269,9 +270,12 @@ impl SnapshotOptimizer {
                         match self.read_memory_region(pid, &region).await {
                             Ok(region_data) => {
                                 captured_data.extend_from_slice(&region_data);
-                            },
+                            }
                             Err(e) => {
-                                debug!("Skipping region {:x}-{:x}: {}", region.start_addr, region.end_addr, e);
+                                debug!(
+                                    "Skipping region {:x}-{:x}: {}",
+                                    region.start_addr, region.end_addr, e
+                                );
                             }
                         }
                     }
@@ -298,8 +302,13 @@ impl SnapshotOptimizer {
             checksum: String::new(),       // Will be calculated by caller
         };
 
-        info!("Captured process {} state: {} bytes, {} pages, {} FDs",
-            pid, captured_data.len(), total_memory_pages, file_descriptors);
+        info!(
+            "Captured process {} state: {} bytes, {} pages, {} FDs",
+            pid,
+            captured_data.len(),
+            total_memory_pages,
+            file_descriptors
+        );
 
         Ok((captured_data, metadata))
     }
@@ -384,19 +393,19 @@ impl MemoryRegion {
     }
 
     fn is_capturable(&self) -> bool {
-        self.readable &&
-        !self.is_device_mapping() &&
-        !self.is_vsyscall()
+        self.readable && !self.is_device_mapping() && !self.is_vsyscall()
     }
 
     fn is_device_mapping(&self) -> bool {
-        self.pathname.as_ref()
+        self.pathname
+            .as_ref()
             .map(|p| p.starts_with("/dev/"))
             .unwrap_or(false)
     }
 
     fn is_vsyscall(&self) -> bool {
-        self.pathname.as_ref()
+        self.pathname
+            .as_ref()
             .map(|p| p.contains("vsyscall"))
             .unwrap_or(false)
     }
@@ -728,10 +737,7 @@ mod tests {
         let pid = std::process::id().to_string();
 
         let start = Instant::now();
-        let (snapshot_id, metadata) = optimizer
-            .create_snapshot(&pid, None)
-            .await
-            .unwrap();
+        let (snapshot_id, metadata) = optimizer.create_snapshot(&pid, None).await.unwrap();
 
         let elapsed = start.elapsed();
         assert!(elapsed < Duration::from_secs(5)); // Lenient timeout for test environments
@@ -749,10 +755,7 @@ mod tests {
         let pid = std::process::id().to_string();
 
         // Create base snapshot
-        let (base_id, _) = optimizer
-            .create_snapshot(&pid, None)
-            .await
-            .unwrap();
+        let (base_id, _) = optimizer.create_snapshot(&pid, None).await.unwrap();
 
         // Create incremental snapshot
         let start = Instant::now();
@@ -776,10 +779,7 @@ mod tests {
         let pid = std::process::id().to_string();
 
         // Create base snapshot
-        let (base_id, _) = optimizer
-            .create_snapshot(&pid, None)
-            .await
-            .unwrap();
+        let (base_id, _) = optimizer.create_snapshot(&pid, None).await.unwrap();
 
         // Create multiple branches
         let branch_configs = vec![

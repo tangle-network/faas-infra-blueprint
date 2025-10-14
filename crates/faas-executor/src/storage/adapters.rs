@@ -36,7 +36,10 @@ impl DockerSnapshotAdapter {
         name: Option<String>,
         metadata: HashMap<String, String>,
     ) -> Result<String> {
-        info!("Creating Docker snapshot via blob adapter: {}", container_id);
+        info!(
+            "Creating Docker snapshot via blob adapter: {}",
+            container_id
+        );
 
         // Export container filesystem
         let export_stream = self.docker.export_container(container_id);
@@ -79,9 +82,16 @@ impl DockerSnapshotAdapter {
         }
 
         // Store manifest
-        self.manifests.write().await.insert(snapshot_id.clone(), manifest);
+        self.manifests
+            .write()
+            .await
+            .insert(snapshot_id.clone(), manifest);
 
-        info!("Docker snapshot created: {} ({} bytes)", snapshot_id, tar_data.len());
+        info!(
+            "Docker snapshot created: {} ({} bytes)",
+            snapshot_id,
+            tar_data.len()
+        );
         Ok(snapshot_id)
     }
 
@@ -190,7 +200,10 @@ impl VmSnapshotAdapter {
         snapshot_id: &str,
         fc_instance: &mut FcInstance,
     ) -> Result<VmSnapshotInfo> {
-        info!("Creating Firecracker snapshot via blob adapter: {}", snapshot_id);
+        info!(
+            "Creating Firecracker snapshot via blob adapter: {}",
+            snapshot_id
+        );
 
         let snapshot_path = self.snapshot_dir.join(snapshot_id);
         tokio::fs::create_dir_all(&snapshot_path).await?;
@@ -255,9 +268,15 @@ impl VmSnapshotAdapter {
 
         let total_size = memory_data.len() + state_data.len();
 
-        self.manifests.write().await.insert(snapshot_id.to_string(), manifest);
+        self.manifests
+            .write()
+            .await
+            .insert(snapshot_id.to_string(), manifest);
 
-        info!("Firecracker snapshot created: {} ({} bytes)", snapshot_id, total_size);
+        info!(
+            "Firecracker snapshot created: {} ({} bytes)",
+            snapshot_id, total_size
+        );
 
         Ok(VmSnapshotInfo {
             id: snapshot_id.to_string(),
@@ -269,7 +288,10 @@ impl VmSnapshotAdapter {
 
     /// Restore VM snapshot (replaces VmSnapshotManager::restore_snapshot)
     pub async fn restore_snapshot(&self, snapshot_id: &str, new_vm_id: &str) -> Result<PathBuf> {
-        info!("Restoring Firecracker snapshot: {} -> {}", snapshot_id, new_vm_id);
+        info!(
+            "Restoring Firecracker snapshot: {} -> {}",
+            snapshot_id, new_vm_id
+        );
 
         let manifests = self.manifests.read().await;
         let manifest = manifests
@@ -322,8 +344,16 @@ impl CriuCheckpointAdapter {
     }
 
     /// Store CRIU checkpoint directory as blobs
-    pub async fn store_checkpoint(&self, checkpoint_id: &str, images_dir: &PathBuf, pid: u32) -> Result<()> {
-        info!("Storing CRIU checkpoint via blob adapter: {}", checkpoint_id);
+    pub async fn store_checkpoint(
+        &self,
+        checkpoint_id: &str,
+        images_dir: &PathBuf,
+        pid: u32,
+    ) -> Result<()> {
+        info!(
+            "Storing CRIU checkpoint via blob adapter: {}",
+            checkpoint_id
+        );
 
         let mut manifest = Manifest::new(
             checkpoint_id.to_string(),
@@ -352,14 +382,25 @@ impl CriuCheckpointAdapter {
             }
         }
 
-        self.manifests.write().await.insert(checkpoint_id.to_string(), manifest);
+        self.manifests
+            .write()
+            .await
+            .insert(checkpoint_id.to_string(), manifest);
 
-        info!("CRIU checkpoint stored: {} ({} files)", checkpoint_id, manifest.entries.len());
+        info!(
+            "CRIU checkpoint stored: {} ({} files)",
+            checkpoint_id,
+            manifest.entries.len()
+        );
         Ok(())
     }
 
     /// Restore CRIU checkpoint from blobs
-    pub async fn restore_checkpoint(&self, checkpoint_id: &str, restore_dir: &PathBuf) -> Result<()> {
+    pub async fn restore_checkpoint(
+        &self,
+        checkpoint_id: &str,
+        restore_dir: &PathBuf,
+    ) -> Result<()> {
         info!("Restoring CRIU checkpoint: {}", checkpoint_id);
 
         let manifests = self.manifests.read().await;
@@ -376,7 +417,11 @@ impl CriuCheckpointAdapter {
             tokio::fs::write(&file_path, data).await?;
         }
 
-        info!("CRIU checkpoint restored: {} ({} files)", checkpoint_id, manifest.entries.len());
+        info!(
+            "CRIU checkpoint restored: {} ({} files)",
+            checkpoint_id,
+            manifest.entries.len()
+        );
         Ok(())
     }
 }

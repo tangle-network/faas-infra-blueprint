@@ -2,12 +2,12 @@
 //!
 //! Production-ready CI/CD pipeline - runs tests, builds code, handles results
 
-use faas_executor::DockerExecutor;
-use faas_common::{SandboxConfig, SandboxExecutor};
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use faas_common::{SandboxConfig, SandboxExecutor};
+use faas_executor::DockerExecutor;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Pipeline {
@@ -49,7 +49,10 @@ impl CICDRunner {
     }
 
     /// Run a real CI pipeline
-    pub async fn run_pipeline(&mut self, yaml_path: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    pub async fn run_pipeline(
+        &mut self,
+        yaml_path: &str,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         // Parse real CI config
         let config = std::fs::read_to_string(yaml_path)?;
         let pipeline: Pipeline = serde_yaml::from_str(&config)?;
@@ -75,23 +78,27 @@ impl CICDRunner {
                     source: stage.image.clone(),
                     command: vec!["sh".to_string(), "-c".to_string(), script],
                     env_vars: Some(
-                        pipeline.environment.iter()
+                        pipeline
+                            .environment
+                            .iter()
                             .map(|(k, v)| format!("{}={}", k, v))
-                            .collect()
+                            .collect(),
                     ),
                     payload: vec![],
                     runtime: None,
                     execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
                     memory_limit: None,
                     timeout: Some(stage.timeout_seconds * 1000),
-                })
-            ).await;
+                }),
+            )
+            .await;
 
             let duration = start.elapsed();
 
             match result {
                 Ok(Ok(exec_result)) => {
-                    let output = exec_result.response
+                    let output = exec_result
+                        .response
                         .map(|r| String::from_utf8_lossy(&r).to_string())
                         .unwrap_or_default();
 
@@ -101,8 +108,10 @@ impl CICDRunner {
                     println!("  Duration: {}ms", duration.as_millis());
 
                     if !output.is_empty() {
-                        println!("  Output:\n{}",
-                            output.lines()
+                        println!(
+                            "  Output:\n{}",
+                            output
+                                .lines()
                                 .take(10)
                                 .map(|l| format!("    {}", l))
                                 .collect::<Vec<_>>()
@@ -125,12 +134,12 @@ impl CICDRunner {
                             break; // Stop on first failure
                         }
                     }
-                },
+                }
                 Ok(Err(e)) => {
                     println!("  Status: ❌ ERROR - {}", e);
                     all_success = false;
                     break;
-                },
+                }
                 Err(_) => {
                     println!("  Status: ⏱️ TIMEOUT after {}s", stage.timeout_seconds);
                     all_success = false;
@@ -144,7 +153,9 @@ impl CICDRunner {
 
     /// Get test coverage from actual test runs
     pub fn get_coverage_report(&self) -> String {
-        let test_stages: Vec<_> = self.results.iter()
+        let test_stages: Vec<_> = self
+            .results
+            .iter()
             .filter(|r| r.stage.contains("test"))
             .collect();
 
@@ -155,8 +166,12 @@ impl CICDRunner {
         let passed = test_stages.iter().filter(|r| r.success).count();
         let total = test_stages.len();
 
-        format!("Test Coverage: {}/{} stages passed ({}%)",
-            passed, total, (passed * 100) / total)
+        format!(
+            "Test Coverage: {}/{} stages passed ({}%)",
+            passed,
+            total,
+            (passed * 100) / total
+        )
     }
 }
 
@@ -186,7 +201,8 @@ pub async fn handle_github_webhook(
     let push: GithubPush = serde_json::from_str(payload)?;
 
     // Create temporary CI config for this repo
-    let ci_config = format!(r#"
+    let ci_config = format!(
+        r#"
 name: {}-ci
 stages:
   - name: checkout
@@ -214,7 +230,9 @@ stages:
 environment:
   CI: "true"
   COMMIT_SHA: "{}"
-"#, push.repository.name, push.repository.clone_url, push.head_commit.id, push.head_commit.id);
+"#,
+        push.repository.name, push.repository.clone_url, push.head_commit.id, push.head_commit.id
+    );
 
     // Write config and run
     let config_path = format!("/tmp/{}-ci.yaml", push.repository.name);
@@ -222,7 +240,8 @@ environment:
 
     let success = runner.run_pipeline(&config_path).await?;
 
-    Ok(format!("CI {} for commit {}",
+    Ok(format!(
+        "CI {} for commit {}",
         if success { "passed" } else { "failed" },
         &push.head_commit.id[..7]
     ))
@@ -281,7 +300,10 @@ environment:
     std::fs::write("/tmp/node-ci.yaml", node_pipeline)?;
     let success = runner.run_pipeline("/tmp/node-ci.yaml").await?;
 
-    println!("\n📊 Pipeline Result: {}", if success { "✅ SUCCESS" } else { "❌ FAILED" });
+    println!(
+        "\n📊 Pipeline Result: {}",
+        if success { "✅ SUCCESS" } else { "❌ FAILED" }
+    );
 
     // Example 2: Python project with actual tests
     println!("\n\nExample 2: Real Python Project CI");
@@ -316,10 +338,12 @@ environment:
     // Show real metrics
     println!("\n📈 CI Metrics:");
     println!("  Total stages run: {}", runner.results.len());
-    println!("  Success rate: {}%",
+    println!(
+        "  Success rate: {}%",
         (runner.results.iter().filter(|r| r.success).count() * 100) / runner.results.len()
     );
-    println!("  Average duration: {}ms",
+    println!(
+        "  Average duration: {}ms",
         runner.results.iter().map(|r| r.duration_ms).sum::<u128>() / runner.results.len() as u128
     );
 

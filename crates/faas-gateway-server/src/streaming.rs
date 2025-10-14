@@ -12,7 +12,6 @@
 /// - ML Training: Live metrics streaming
 /// - Interactive shells: Terminal multiplexing
 /// - Debug sessions: Live debugging output
-
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -151,7 +150,11 @@ impl StreamingManager {
     pub fn total_clients(&self) -> usize {
         self.streams
             .iter()
-            .map(|entry| entry.client_count.load(std::sync::atomic::Ordering::Relaxed))
+            .map(|entry| {
+                entry
+                    .client_count
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            })
             .sum()
     }
 }
@@ -166,24 +169,28 @@ pub async fn ws_stream_handler(
 }
 
 /// Handle individual WebSocket connection
-async fn handle_websocket(
-    socket: WebSocket,
-    container_id: String,
-    manager: Arc<StreamingManager>,
-) {
+async fn handle_websocket(socket: WebSocket, container_id: String, manager: Arc<StreamingManager>) {
     let stream = manager.get_or_create_stream(container_id.clone());
 
     // Increment client count
-    let client_count = stream.client_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let client_count = stream
+        .client_count
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
 
     // Check max clients limit
     if client_count > MAX_CLIENTS_PER_CONTAINER {
         warn!("Max clients reached for container {}", container_id);
-        stream.client_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        stream
+            .client_count
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
-    info!("WebSocket connected to container {} (clients: {})", container_id, client_count);
+    info!(
+        "WebSocket connected to container {} (clients: {})",
+        container_id, client_count
+    );
 
     // Split socket into sender and receiver
     let (mut ws_tx, mut ws_rx) = socket.split();
@@ -204,7 +211,10 @@ async fn handle_websocket(
             };
 
             if let Err(e) = ws_tx.send(Message::Text(json)).await {
-                debug!("WebSocket send error for container {}: {}", container_id_clone, e);
+                debug!(
+                    "WebSocket send error for container {}: {}",
+                    container_id_clone, e
+                );
                 break;
             }
         }
@@ -216,17 +226,15 @@ async fn handle_websocket(
     let receive_task = tokio::spawn(async move {
         while let Some(msg) = ws_rx.next().await {
             match msg {
-                Ok(Message::Text(text)) => {
-                    match serde_json::from_str::<StreamCommand>(&text) {
-                        Ok(cmd) => {
-                            debug!("Received command for {}: {:?}", container_id_clone, cmd);
-                            handle_command(&container_id_clone, cmd, &manager_clone).await;
-                        }
-                        Err(e) => {
-                            warn!("Invalid command JSON: {}", e);
-                        }
+                Ok(Message::Text(text)) => match serde_json::from_str::<StreamCommand>(&text) {
+                    Ok(cmd) => {
+                        debug!("Received command for {}: {:?}", container_id_clone, cmd);
+                        handle_command(&container_id_clone, cmd, &manager_clone).await;
                     }
-                }
+                    Err(e) => {
+                        warn!("Invalid command JSON: {}", e);
+                    }
+                },
                 Ok(Message::Close(_)) => {
                     debug!("WebSocket close for container {}", container_id_clone);
                     break;
@@ -236,7 +244,10 @@ async fn handle_websocket(
                     debug!("Received ping for container {}", container_id_clone);
                 }
                 Err(e) => {
-                    error!("WebSocket error for container {}: {}", container_id_clone, e);
+                    error!(
+                        "WebSocket error for container {}: {}",
+                        container_id_clone, e
+                    );
                     break;
                 }
                 _ => {}
@@ -251,7 +262,9 @@ async fn handle_websocket(
     }
 
     // Decrement client count on disconnect
-    stream.client_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    stream
+        .client_count
+        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     info!("WebSocket disconnected from container {}", container_id);
 }
 
@@ -261,8 +274,8 @@ async fn handle_command(
     command: StreamCommand,
     manager: &Arc<StreamingManager>,
 ) {
-    use bollard::Docker;
     use bollard::exec::{CreateExecOptions, StartExecResults};
+    use bollard::Docker;
     use futures::StreamExt;
 
     match command {
@@ -298,7 +311,8 @@ async fn handle_command(
                             Ok(StartExecResults::Attached { mut output, .. }) => {
                                 // Stream output back to client
                                 while let Some(Ok(msg)) = output.next().await {
-                                    let data = String::from_utf8_lossy(&msg.into_bytes()).to_string();
+                                    let data =
+                                        String::from_utf8_lossy(&msg.into_bytes()).to_string();
                                     manager.emit_event(container_id, StreamEvent::Stdout { data });
                                 }
                             }
@@ -375,8 +389,12 @@ async fn handle_command(
         }
 
         StreamCommand::Checkpoint { name } => {
-            let checkpoint_name = name.unwrap_or_else(|| format!("checkpoint-{}", chrono::Utc::now().timestamp()));
-            info!("Creating checkpoint for container {}: {}", container_id, checkpoint_name);
+            let checkpoint_name =
+                name.unwrap_or_else(|| format!("checkpoint-{}", chrono::Utc::now().timestamp()));
+            info!(
+                "Creating checkpoint for container {}: {}",
+                container_id, checkpoint_name
+            );
 
             // Emit checkpoint created event
             manager.emit_event(
@@ -443,7 +461,12 @@ mod tests {
         let stream = manager.get_or_create_stream("container-1".to_string());
         let mut rx = stream.events_tx.subscribe();
 
-        manager.emit_event("container-1", StreamEvent::Stdout { data: "Hello".to_string() });
+        manager.emit_event(
+            "container-1",
+            StreamEvent::Stdout {
+                data: "Hello".to_string(),
+            },
+        );
 
         let event = rx.try_recv().unwrap();
         match event {

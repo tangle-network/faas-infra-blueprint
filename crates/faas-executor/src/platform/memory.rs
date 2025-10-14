@@ -45,10 +45,10 @@ struct MemoryMetrics {
 
 #[derive(Debug, Clone)]
 pub enum NumaPolicy {
-    LocalAlloc,      // Allocate on current node
-    Interleave,      // Round-robin across all nodes
+    LocalAlloc,        // Allocate on current node
+    Interleave,        // Round-robin across all nodes
     PreferNode(usize), // Prefer specific node, fallback to others
-    BindNode(usize), // Strict binding to specific node
+    BindNode(usize),   // Strict binding to specific node
 }
 
 impl MemoryPool {
@@ -135,11 +135,7 @@ impl MemoryPool {
         std::fs::write("/sys/block/zram0/disksize", size_bytes.to_string()).ok();
 
         // Make swap on ZRAM
-        Command::new("mkswap")
-            .arg("/dev/zram0")
-            .output()
-            .await
-            .ok();
+        Command::new("mkswap").arg("/dev/zram0").output().await.ok();
 
         Command::new("swapon")
             .args(["-p", "100", "/dev/zram0"])
@@ -213,18 +209,19 @@ impl MemoryPool {
                         if let Ok(node_id) = name.strip_prefix("node").unwrap().parse::<usize>() {
                             // Read available memory for this node
                             let meminfo_path = path.join("meminfo");
-                            let available_mb = if let Ok(meminfo) = std::fs::read_to_string(meminfo_path) {
-                                // Parse "Node X MemFree: XXXXXX kB"
-                                meminfo
-                                    .lines()
-                                    .find(|line| line.contains("MemFree"))
-                                    .and_then(|line| line.split_whitespace().nth(3))
-                                    .and_then(|kb| kb.parse::<u64>().ok())
-                                    .map(|kb| kb / 1024) // Convert KB to MB
-                                    .unwrap_or(8192) // Default 8GB
-                            } else {
-                                8192
-                            };
+                            let available_mb =
+                                if let Ok(meminfo) = std::fs::read_to_string(meminfo_path) {
+                                    // Parse "Node X MemFree: XXXXXX kB"
+                                    meminfo
+                                        .lines()
+                                        .find(|line| line.contains("MemFree"))
+                                        .and_then(|line| line.split_whitespace().nth(3))
+                                        .and_then(|kb| kb.parse::<u64>().ok())
+                                        .map(|kb| kb / 1024) // Convert KB to MB
+                                        .unwrap_or(8192) // Default 8GB
+                                } else {
+                                    8192
+                                };
 
                             nodes.push(NumaNode {
                                 id: node_id,
@@ -256,11 +253,18 @@ impl MemoryPool {
     }
 
     /// Allocate memory with NUMA-aware placement
-    pub async fn allocate_numa_aware(&self, size_mb: u64, preferred_node: Option<usize>) -> Result<Vec<u8>> {
+    pub async fn allocate_numa_aware(
+        &self,
+        size_mb: u64,
+        preferred_node: Option<usize>,
+    ) -> Result<Vec<u8>> {
         let size_bytes = (size_mb * 1024 * 1024) as usize;
         let target_node = self.select_numa_node(preferred_node).await;
 
-        info!("Allocating {}MB on NUMA node {} with policy {:?}", size_mb, target_node, self.numa_policy);
+        info!(
+            "Allocating {}MB on NUMA node {} with policy {:?}",
+            size_mb, target_node, self.numa_policy
+        );
 
         self.allocate_on_node(size_bytes, target_node).await
     }
@@ -327,12 +331,16 @@ impl MemoryPool {
                         libc::MPOL_BIND,
                         &node_mask as *const u64 as *const libc::c_ulong,
                         64,
-                        0
+                        0,
                     );
                 }
             }
 
-            info!("Allocated {}MB with THP support on NUMA node {}", size_bytes / 1024 / 1024, node);
+            info!(
+                "Allocated {}MB with THP support on NUMA node {}",
+                size_bytes / 1024 / 1024,
+                node
+            );
             buf
         } else {
             // Regular allocation with NUMA binding
@@ -349,12 +357,16 @@ impl MemoryPool {
                         libc::MPOL_BIND,
                         &node_mask as *const u64 as *const libc::c_ulong,
                         64,
-                        0
+                        0,
                     );
                 }
             }
 
-            info!("Allocated {}MB on NUMA node {}", size_bytes / 1024 / 1024, node);
+            info!(
+                "Allocated {}MB on NUMA node {}",
+                size_bytes / 1024 / 1024,
+                node
+            );
             buf
         };
 

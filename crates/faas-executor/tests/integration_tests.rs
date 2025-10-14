@@ -1,8 +1,8 @@
 /// Comprehensive integration tests that validate end-to-end functionality
 /// These tests ensure all components work together in real production scenarios
 use anyhow::Result;
-use faas_executor::platform::executor::*;
 use faas_executor::performance::*;
+use faas_executor::platform::executor::*;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -23,7 +23,8 @@ async fn test_complete_execution_pipeline() -> Result<()> {
             echo "System info: $(uname -a)"
             echo "Memory: $(free -h | head -2)"
             echo "Processes: $(ps aux | wc -l)"
-        "#.to_string(),
+        "#
+        .to_string(),
         mode: Mode::Ephemeral,
         env: "alpine:latest".to_string(),
         timeout: Duration::from_secs(30),
@@ -55,7 +56,8 @@ async fn test_complete_execution_pipeline() -> Result<()> {
             done
             echo "10! = $result"
             echo "Cached execution complete"
-        "#.to_string(),
+        "#
+        .to_string(),
         mode: Mode::Cached,
         env: "alpine:latest".to_string(),
         timeout: Duration::from_secs(30),
@@ -88,12 +90,17 @@ async fn test_complete_execution_pipeline() -> Result<()> {
     println!("   Cache hit took: {:?}", cache_hit_time);
 
     // Verify cache provides significant speedup
-    assert!(cache_hit_time < first_cached_time / 100,
+    assert!(
+        cache_hit_time < first_cached_time / 100,
         "Cache hit should be at least 100x faster! First: {:?}, Hit: {:?}",
-        first_cached_time, cache_hit_time);
+        first_cached_time,
+        cache_hit_time
+    );
 
-    println!("✓ Complete execution pipeline working with {:.0}x cache speedup",
-        first_cached_time.as_nanos() as f64 / cache_hit_time.as_nanos() as f64);
+    println!(
+        "✓ Complete execution pipeline working with {:.0}x cache speedup",
+        first_cached_time.as_nanos() as f64 / cache_hit_time.as_nanos() as f64
+    );
 
     Ok(())
 }
@@ -107,14 +114,19 @@ async fn test_concurrent_execution_scaling() -> Result<()> {
 
     // Prepare different workloads
     let workloads = vec![
-        ("cpu", r#"
+        (
+            "cpu",
+            r#"
             echo "CPU intensive task"
             for i in $(seq 1 1000); do
                 echo "Processing $i" > /dev/null
             done
             echo "CPU task complete"
-        "#),
-        ("io", r#"
+        "#,
+        ),
+        (
+            "io",
+            r#"
             echo "I/O intensive task"
             for i in $(seq 1 100); do
                 echo "Data chunk $i" > /tmp/test_$i.txt
@@ -122,14 +134,18 @@ async fn test_concurrent_execution_scaling() -> Result<()> {
                 rm /tmp/test_$i.txt
             done
             echo "I/O task complete"
-        "#),
-        ("mixed", r#"
+        "#,
+        ),
+        (
+            "mixed",
+            r#"
             echo "Mixed workload task"
             echo "test data" > /tmp/mixed.txt
             wc -l /tmp/mixed.txt
             rm /tmp/mixed.txt
             echo "Mixed task complete"
-        "#),
+        "#,
+        ),
     ];
 
     let num_concurrent = 15;
@@ -153,7 +169,7 @@ async fn test_concurrent_execution_scaling() -> Result<()> {
                 timeout: Duration::from_secs(45),
                 checkpoint: None,
                 branch_from: None,
-        runtime: None,
+                runtime: None,
             };
 
             let start_individual = Instant::now();
@@ -171,7 +187,10 @@ async fn test_concurrent_execution_scaling() -> Result<()> {
     }
 
     let total_time = start.elapsed();
-    println!("All {} concurrent executions completed in {:?}", num_concurrent, total_time);
+    println!(
+        "All {} concurrent executions completed in {:?}",
+        num_concurrent, total_time
+    );
 
     // Verify all executions succeeded
     let mut successful = 0;
@@ -198,8 +217,11 @@ async fn test_concurrent_execution_scaling() -> Result<()> {
     println!("  Concurrency efficiency: {:.1}x", efficiency);
 
     // Efficiency should be > 2x due to caching and parallelism
-    assert!(efficiency > 2.0,
-        "Concurrent execution should show significant efficiency gains! Got: {:.1}x", efficiency);
+    assert!(
+        efficiency > 2.0,
+        "Concurrent execution should show significant efficiency gains! Got: {:.1}x",
+        efficiency
+    );
 
     Ok(())
 }
@@ -219,7 +241,8 @@ async fn test_error_handling_and_recovery() -> Result<()> {
             echo "Starting task"
             invalid_command_that_does_not_exist
             echo "This should not execute"
-        "#.to_string(),
+        "#
+        .to_string(),
         mode: Mode::Ephemeral,
         env: "alpine:latest".to_string(),
         timeout: Duration::from_secs(10),
@@ -230,7 +253,10 @@ async fn test_error_handling_and_recovery() -> Result<()> {
 
     let response_bad = executor.run(req_bad_syntax).await?;
     assert_ne!(response_bad.exit_code, 0); // Should fail
-    println!("   ✓ Syntax error correctly handled with exit code: {}", response_bad.exit_code);
+    println!(
+        "   ✓ Syntax error correctly handled with exit code: {}",
+        response_bad.exit_code
+    );
 
     // Test 2: Recovery with valid execution
     println!("2. Testing recovery after error...");
@@ -240,7 +266,8 @@ async fn test_error_handling_and_recovery() -> Result<()> {
             echo "Recovery execution"
             echo "System is healthy"
             exit 0
-        "#.to_string(),
+        "#
+        .to_string(),
         mode: Mode::Ephemeral,
         env: "alpine:latest".to_string(),
         timeout: Duration::from_secs(10),
@@ -263,7 +290,8 @@ async fn test_error_handling_and_recovery() -> Result<()> {
             echo "Starting long task..."
             sleep 30
             echo "This should timeout"
-        "#.to_string(),
+        "#
+        .to_string(),
         mode: Mode::Ephemeral,
         env: "alpine:latest".to_string(),
         timeout: Duration::from_secs(2), // Short timeout
@@ -277,8 +305,11 @@ async fn test_error_handling_and_recovery() -> Result<()> {
     let timeout_duration = start.elapsed();
 
     // Should complete quickly due to timeout, not wait 30 seconds
-    assert!(timeout_duration < Duration::from_secs(5),
-        "Timeout should terminate execution quickly, took {:?}", timeout_duration);
+    assert!(
+        timeout_duration < Duration::from_secs(5),
+        "Timeout should terminate execution quickly, took {:?}",
+        timeout_duration
+    );
     println!("   ✓ Timeout handled correctly in {:?}", timeout_duration);
 
     println!("✓ Error handling and recovery working correctly");
@@ -355,8 +386,10 @@ async fn test_execution_modes_integration() -> Result<()> {
     let checkpoint_resp = executor.run(checkpoint_req).await?;
     assert_eq!(checkpoint_resp.exit_code, 0);
     assert!(checkpoint_resp.snapshot.is_some());
-    println!("   ✓ Checkpointed mode successful with snapshot: {:?}",
-        checkpoint_resp.snapshot.as_ref().unwrap());
+    println!(
+        "   ✓ Checkpointed mode successful with snapshot: {:?}",
+        checkpoint_resp.snapshot.as_ref().unwrap()
+    );
 
     // Test persistent mode
     println!("4. Testing persistent mode...");
@@ -396,17 +429,20 @@ async fn test_performance_monitoring() -> Result<()> {
     for i in 0..5 {
         let req = Request {
             id: format!("metrics-test-{}", i),
-            code: format!(r#"
+            code: format!(
+                r#"
                 echo "Metrics test iteration {}"
                 sleep 0.1
                 echo "Completed iteration {}"
-            "#, i, i),
+            "#,
+                i, i
+            ),
             mode: Mode::Cached,
             env: "alpine:latest".to_string(),
             timeout: Duration::from_secs(10),
             checkpoint: None,
             branch_from: None,
-        runtime: None,
+            runtime: None,
         };
 
         let response = executor.run(req).await?;
@@ -420,12 +456,14 @@ async fn test_performance_monitoring() -> Result<()> {
             disk_writes_mb: 1,
         };
 
-        metrics.record_execution(
-            "cached",
-            Duration::from_millis(150 + i * 10),
-            true,
-            resource_snapshot,
-        ).await?;
+        metrics
+            .record_execution(
+                "cached",
+                Duration::from_millis(150 + i * 10),
+                true,
+                resource_snapshot,
+            )
+            .await?;
     }
 
     // Get and verify metrics
@@ -437,10 +475,19 @@ async fn test_performance_monitoring() -> Result<()> {
     assert!(current_metrics.avg_execution_time > Duration::ZERO);
 
     println!("   Total executions: {}", current_metrics.total_executions);
-    println!("   Successful executions: {}", current_metrics.successful_executions);
-    println!("   Average duration: {:?}", current_metrics.avg_execution_time);
-    println!("   Success rate: {:.1}%",
-        (current_metrics.successful_executions as f64 / current_metrics.total_executions as f64) * 100.0);
+    println!(
+        "   Successful executions: {}",
+        current_metrics.successful_executions
+    );
+    println!(
+        "   Average duration: {:?}",
+        current_metrics.avg_execution_time
+    );
+    println!(
+        "   Success rate: {:.1}%",
+        (current_metrics.successful_executions as f64 / current_metrics.total_executions as f64)
+            * 100.0
+    );
 
     // Test predictive scaling
     println!("3. Testing predictive scaling...");
@@ -454,8 +501,10 @@ async fn test_performance_monitoring() -> Result<()> {
 
     // Get prediction
     if let Ok(Some(prediction)) = scaler.predict_scaling("alpine").await {
-        println!("   Prediction - Load: {:.2}, Confidence: {:.2}",
-            prediction.predicted_load, prediction.confidence);
+        println!(
+            "   Prediction - Load: {:.2}, Confidence: {:.2}",
+            prediction.predicted_load, prediction.confidence
+        );
         assert!(prediction.confidence > 0.0 && prediction.confidence <= 1.0);
         assert!(prediction.predicted_load > 0.0);
     }
@@ -506,7 +555,7 @@ async fn test_resource_utilization() -> Result<()> {
                 timeout: Duration::from_secs(30),
                 checkpoint: None,
                 branch_from: None,
-        runtime: None,
+                runtime: None,
             };
 
             executor_clone.run(req).await
@@ -532,7 +581,10 @@ async fn test_resource_utilization() -> Result<()> {
     let total_time = start.elapsed();
 
     assert_eq!(successful, 8);
-    println!("   ✓ {} memory-intensive tasks completed in {:?}", successful, total_time);
+    println!(
+        "   ✓ {} memory-intensive tasks completed in {:?}",
+        successful, total_time
+    );
 
     // Test CPU-intensive workload
     println!("2. Running CPU-intensive workload...");

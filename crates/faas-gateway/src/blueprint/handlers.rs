@@ -108,10 +108,7 @@ pub async fn health_check(
     let backend_type = parse_backend_header(&headers);
     let backend = state.router.get_backend(backend_type);
 
-    let health = backend
-        .health(function_id)
-        .await
-        .map_err(AppError::from)?;
+    let health = backend.health(function_id).await.map_err(AppError::from)?;
 
     Ok(Json(HealthResponse {
         function_id: health.function_id,
@@ -294,7 +291,10 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, format!("Function not found: {}", msg)),
+            AppError::NotFound(msg) => (
+                StatusCode::NOT_FOUND,
+                format!("Function not found: {}", msg),
+            ),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
 
@@ -313,13 +313,10 @@ impl IntoResponse for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        body::Body,
-        http::Request,
-    };
+    use axum::{body::Body, http::Request};
     use serde_json::json;
-    use tower::ServiceExt;
     use std::io::Write;
+    use tower::ServiceExt;
 
     async fn create_test_app() -> Router {
         let base_url = "http://localhost:8080".to_string();

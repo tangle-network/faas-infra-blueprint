@@ -2,13 +2,9 @@ use blueprint_sdk::{
     contexts::tangle::TangleClientContext,
     crypto::{sp_core::SpSr25519, tangle_pair_signer::TanglePairSigner},
     keystore::backends::Backend,
-    runner::{BlueprintRunner, config::BlueprintEnvironment, tangle::config::TangleConfig},
+    runner::{config::BlueprintEnvironment, tangle::config::TangleConfig, BlueprintRunner},
+    tangle::{consumer::TangleConsumer, layers::TangleLayer, producer::TangleProducer},
     Job, Router,
-    tangle::{
-        consumer::TangleConsumer,
-        layers::TangleLayer,
-        producer::TangleProducer,
-    },
 };
 use color_eyre::eyre;
 use faas_blueprint_lib::api_server::{ApiBackgroundService, ApiKeyPermissions, ApiServerConfig};

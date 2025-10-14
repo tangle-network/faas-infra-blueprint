@@ -1,10 +1,13 @@
+use faas_executor::bollard::Docker;
+use faas_executor::container_pool::{ContainerPoolManager, PoolConfig};
+use faas_executor::{
+    common::{SandboxConfig, SandboxExecutor},
+    DockerExecutor,
+};
 /// REAL Failure Scenario Tests - No Mocks, Real Systems Under Stress
 /// These tests verify behavior under actual failure conditions
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use faas_executor::bollard::Docker;
-use faas_executor::{DockerExecutor, common::{SandboxConfig, SandboxExecutor}};
-use faas_executor::container_pool::{ContainerPoolManager, PoolConfig};
 
 /// Test behavior when Docker daemon is overloaded
 #[tokio::test]
@@ -20,21 +23,29 @@ async fn test_docker_overload_handling() {
     let overload_count = 50;
     let mut tasks = vec![];
 
-    println!("🔥 Creating {} simultaneous container requests...", overload_count);
+    println!(
+        "🔥 Creating {} simultaneous container requests...",
+        overload_count
+    );
 
     let start = Instant::now();
     for i in 0..overload_count {
         let executor = executor.clone();
         let task = tokio::spawn(async move {
             let start = Instant::now();
-            let result = executor.execute(SandboxConfig {
-                function_id: format!("overload-{}", i),
-                source: "alpine:latest".to_string(),
-                command: vec!["sh".to_string(), "-c".to_string(),
-                              format!("echo 'Task {}' && sleep 0.5", i)],
-                env_vars: None,
-                payload: vec![],
-            }).await;
+            let result = executor
+                .execute(SandboxConfig {
+                    function_id: format!("overload-{}", i),
+                    source: "alpine:latest".to_string(),
+                    command: vec![
+                        "sh".to_string(),
+                        "-c".to_string(),
+                        format!("echo 'Task {}' && sleep 0.5", i),
+                    ],
+                    env_vars: None,
+                    payload: vec![],
+                })
+                .await;
             (i, start.elapsed(), result.is_ok())
         });
         tasks.push(task);
@@ -50,11 +61,20 @@ async fn test_docker_overload_handling() {
     println!("  Total time: {:?}", total_duration);
     println!("  Successful: {}/{}", successful, overload_count);
     println!("  Failed: {}", failed);
-    println!("  Success rate: {:.1}%", (successful as f64 / overload_count as f64) * 100.0);
+    println!(
+        "  Success rate: {:.1}%",
+        (successful as f64 / overload_count as f64) * 100.0
+    );
 
     // Under extreme load, some failures are expected but system should remain stable
-    assert!(successful > overload_count / 2, "More than half should succeed even under load");
-    assert!(total_duration < Duration::from_secs(60), "Should complete within reasonable time");
+    assert!(
+        successful > overload_count / 2,
+        "More than half should succeed even under load"
+    );
+    assert!(
+        total_duration < Duration::from_secs(60),
+        "Should complete within reasonable time"
+    );
 
     println!("✅ System remains stable under Docker overload");
 }
@@ -72,50 +92,64 @@ async fn test_network_failure_resilience() {
     // Test 1: Container tries to access unreachable network
     println!("🔌 Testing unreachable network access...");
     let start = Instant::now();
-    let result = executor.execute(SandboxConfig {
-        function_id: "network-fail-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            // Try to reach unreachable IP with short timeout
-            "timeout 2 wget -O - http://192.0.2.1/test 2>&1 || echo 'NETWORK_FAILED'".to_string()
-        ],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "network-fail-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                // Try to reach unreachable IP with short timeout
+                "timeout 2 wget -O - http://192.0.2.1/test 2>&1 || echo 'NETWORK_FAILED'"
+                    .to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
     let duration = start.elapsed();
-    assert!(result.is_ok(), "Container should handle network failure gracefully");
+    assert!(
+        result.is_ok(),
+        "Container should handle network failure gracefully"
+    );
 
     let response = result.unwrap().response.unwrap();
     let output = String::from_utf8_lossy(&response);
     println!("  Network failure output: {}", output.trim());
 
-    assert!(output.contains("NETWORK_FAILED") || output.contains("timeout"),
-            "Should handle network timeout gracefully");
+    assert!(
+        output.contains("NETWORK_FAILED") || output.contains("timeout"),
+        "Should handle network timeout gracefully"
+    );
     assert!(duration < Duration::from_secs(5), "Should timeout quickly");
 
     // Test 2: DNS resolution failure
     println!("\n🌍 Testing DNS resolution failure...");
-    let result = executor.execute(SandboxConfig {
-        function_id: "dns-fail-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            "timeout 2 nslookup nonexistent.invalid.domain 2>&1 || echo 'DNS_FAILED'".to_string()
-        ],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "dns-fail-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "timeout 2 nslookup nonexistent.invalid.domain 2>&1 || echo 'DNS_FAILED'"
+                    .to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
 
     let response = result.response.unwrap();
     let output = String::from_utf8_lossy(&response);
     println!("  DNS failure output: {}", output.trim());
 
-    assert!(output.contains("DNS_FAILED") || output.contains("can't resolve"),
-            "Should handle DNS failure gracefully");
+    assert!(
+        output.contains("DNS_FAILED") || output.contains("can't resolve"),
+        "Should handle DNS failure gracefully"
+    );
 
     println!("✅ Network failures handled correctly");
 }
@@ -132,30 +166,39 @@ async fn test_disk_space_exhaustion() {
 
     // Try to fill container's available disk space
     println!("📁 Testing disk space limits...");
-    let result = executor.execute(SandboxConfig {
-        function_id: "disk-full-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            // Try to create a large file that might exhaust available space
-            "dd if=/dev/zero of=/tmp/largefile bs=1M count=1000 2>&1 || echo 'DISK_LIMIT_HIT'".to_string()
-        ],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "disk-full-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                // Try to create a large file that might exhaust available space
+                "dd if=/dev/zero of=/tmp/largefile bs=1M count=1000 2>&1 || echo 'DISK_LIMIT_HIT'"
+                    .to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
-    assert!(result.is_ok(), "Container should handle disk limits gracefully");
+    assert!(
+        result.is_ok(),
+        "Container should handle disk limits gracefully"
+    );
 
     let response = result.unwrap().response.unwrap();
     let output = String::from_utf8_lossy(&response);
-    println!("  Disk limit test output: {}", output.lines().last().unwrap_or(""));
+    println!(
+        "  Disk limit test output: {}",
+        output.lines().last().unwrap_or("")
+    );
 
     // Either succeeds within limits or hits a limit gracefully
     assert!(
-        output.contains("DISK_LIMIT_HIT") ||
-        output.contains("No space left") ||
-        output.contains("1000+0 records"),
+        output.contains("DISK_LIMIT_HIT")
+            || output.contains("No space left")
+            || output.contains("1000+0 records"),
         "Should either hit limit gracefully or succeed within bounds"
     );
 
@@ -174,13 +217,14 @@ async fn test_memory_pressure_handling() {
 
     // Test container that gradually increases memory usage
     println!("📈 Testing incremental memory pressure...");
-    let result = executor.execute(SandboxConfig {
-        function_id: "memory-pressure-test".to_string(),
-        source: "python:3.11-slim".to_string(),
-        command: vec![
-            "python3".to_string(),
-            "-c".to_string(),
-            r#"
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "memory-pressure-test".to_string(),
+            source: "python:3.11-slim".to_string(),
+            command: vec![
+                "python3".to_string(),
+                "-c".to_string(),
+                r#"
 import sys
 import time
 data = []
@@ -197,13 +241,18 @@ except MemoryError:
     print('MEMORY_ERROR_CAUGHT')
 except Exception as e:
     print(f'OTHER_ERROR: {e}')
-            "#.to_string()
-        ],
-        env_vars: None,
-        payload: vec![],
-    }).await;
+            "#
+                .to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await;
 
-    assert!(result.is_ok(), "Container should handle memory pressure gracefully");
+    assert!(
+        result.is_ok(),
+        "Container should handle memory pressure gracefully"
+    );
 
     let response = result.unwrap().response.unwrap();
     let output = String::from_utf8_lossy(&response);
@@ -214,10 +263,10 @@ except Exception as e:
 
     // Should either complete allocation or hit memory limits gracefully
     assert!(
-        output.contains("MEMORY_ALLOCATION_COMPLETE") ||
-        output.contains("MEMORY_ERROR_CAUGHT") ||
-        output.contains("Killed") ||
-        output.contains("Allocated"),
+        output.contains("MEMORY_ALLOCATION_COMPLETE")
+            || output.contains("MEMORY_ERROR_CAUGHT")
+            || output.contains("Killed")
+            || output.contains("Allocated"),
         "Should handle memory pressure scenarios gracefully"
     );
 
@@ -239,13 +288,18 @@ async fn test_concurrent_container_failures() {
     let concurrent_pools = 20;
     let mut tasks = vec![];
 
-    println!("🚀 Creating {} concurrent container pools...", concurrent_pools);
+    println!(
+        "🚀 Creating {} concurrent container pools...",
+        concurrent_pools
+    );
 
     for i in 0..concurrent_pools {
         let pool_manager = pool_manager.clone();
         let task = tokio::spawn(async move {
             let start = Instant::now();
-            let pool = pool_manager.get_pool(&format!("alpine:latest-{}", i % 3)).await;
+            let pool = pool_manager
+                .get_pool(&format!("alpine:latest-{}", i % 3))
+                .await;
 
             // Try to pre-warm
             let pre_warm_result = pool.pre_warm().await;
@@ -257,25 +311,38 @@ async fn test_concurrent_container_failures() {
                 Err(anyhow::anyhow!("Pre-warm failed"))
             };
 
-            (i, start.elapsed(), pre_warm_result.is_ok(), acquire_result.is_ok())
+            (
+                i,
+                start.elapsed(),
+                pre_warm_result.is_ok(),
+                acquire_result.is_ok(),
+            )
         });
         tasks.push(task);
     }
 
     let results = futures::future::join_all(tasks).await;
 
-    let successful = results.iter().filter(|r| {
-        let (_, _, pre_warm_ok, acquire_ok) = r.as_ref().unwrap();
-        *pre_warm_ok && *acquire_ok
-    }).count();
+    let successful = results
+        .iter()
+        .filter(|r| {
+            let (_, _, pre_warm_ok, acquire_ok) = r.as_ref().unwrap();
+            *pre_warm_ok && *acquire_ok
+        })
+        .count();
 
     println!("\n📊 Concurrent Pool Results:");
     println!("  Successful pools: {}/{}", successful, concurrent_pools);
-    println!("  Success rate: {:.1}%", (successful as f64 / concurrent_pools as f64) * 100.0);
+    println!(
+        "  Success rate: {:.1}%",
+        (successful as f64 / concurrent_pools as f64) * 100.0
+    );
 
     // At least half should succeed under normal conditions
-    assert!(successful >= concurrent_pools / 2,
-            "At least half of concurrent pools should succeed");
+    assert!(
+        successful >= concurrent_pools / 2,
+        "At least half of concurrent pools should succeed"
+    );
 
     println!("✅ Concurrent container creation handled correctly");
 }
@@ -297,10 +364,27 @@ async fn test_cleanup_under_failure() {
     // Create executions that will fail in various ways
     let failure_tests = vec![
         ("timeout", vec!["sleep".to_string(), "60".to_string()]),
-        ("segfault", vec!["sh".to_string(), "-c".to_string(), "kill -SEGV $$".to_string()]),
-        ("exit-error", vec!["sh".to_string(), "-c".to_string(), "exit 1".to_string()]),
+        (
+            "segfault",
+            vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "kill -SEGV $$".to_string(),
+            ],
+        ),
+        (
+            "exit-error",
+            vec!["sh".to_string(), "-c".to_string(), "exit 1".to_string()],
+        ),
         ("invalid-command", vec!["nonexistent-command".to_string()]),
-        ("large-output", vec!["sh".to_string(), "-c".to_string(), "yes | head -100000".to_string()]),
+        (
+            "large-output",
+            vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "yes | head -100000".to_string(),
+            ],
+        ),
     ];
 
     for (test_name, command) in failure_tests {
@@ -315,8 +399,9 @@ async fn test_cleanup_under_failure() {
                 command,
                 env_vars: None,
                 payload: vec![],
-            })
-        ).await;
+            }),
+        )
+        .await;
 
         let duration = start.elapsed();
 
@@ -342,7 +427,11 @@ async fn test_cleanup_under_failure() {
     println!("🔍 Potential leaks: {}", leaked);
 
     // Allow for some pooled containers but not unbounded growth
-    assert!(leaked < 10, "Too many containers leaked after failures: {}", leaked);
+    assert!(
+        leaked < 10,
+        "Too many containers leaked after failures: {}",
+        leaked
+    );
 
     println!("✅ Container cleanup works correctly under failures");
 }
@@ -381,18 +470,22 @@ async fn test_real_resource_limit_enforcement() {
     println!("  CPU limit result: {}", output.trim());
 
     // Should be terminated by timeout, not run indefinitely
-    assert!(cpu_duration < Duration::from_secs(5), "CPU should be limited");
+    assert!(
+        cpu_duration < Duration::from_secs(5),
+        "CPU should be limited"
+    );
 
     // Test file descriptor limits
     println!("\n📂 Testing file descriptor limits...");
-    let result = executor.execute(SandboxConfig {
-        function_id: "fd-limit-test".to_string(),
-        source: "alpine:latest".to_string(),
-        command: vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            // Try to open many files
-            r#"
+    let result = executor
+        .execute(SandboxConfig {
+            function_id: "fd-limit-test".to_string(),
+            source: "alpine:latest".to_string(),
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                // Try to open many files
+                r#"
             count=0
             for i in $(seq 1 2000); do
                 if exec 3</dev/null; then
@@ -403,11 +496,14 @@ async fn test_real_resource_limit_enforcement() {
                 fi
             done
             echo "OPENED_$count"
-            "#.to_string()
-        ],
-        env_vars: None,
-        payload: vec![],
-    }).await.unwrap();
+            "#
+                .to_string(),
+            ],
+            env_vars: None,
+            payload: vec![],
+        })
+        .await
+        .unwrap();
 
     let response = result.response.unwrap();
     let output = String::from_utf8_lossy(&response);

@@ -21,7 +21,10 @@ impl VsockConnection {
 
     /// Execute a command in the VM via vsock
     pub async fn execute_command(&self, command: &str, payload: &[u8]) -> Result<Vec<u8>> {
-        info!("Executing command via vsock: CID={}, port={}", self.cid, self.port);
+        info!(
+            "Executing command via vsock: CID={}, port={}",
+            self.cid, self.port
+        );
 
         // On Linux, connect to vsock
         #[cfg(target_os = "linux")]
@@ -59,9 +62,10 @@ impl VsockConnection {
                     let err = std::io::Error::last_os_error();
                     if err.raw_os_error() != Some(libc::EINPROGRESS) {
                         libc::close(sock_fd);
-                        return Err(CommunicationError::ConnectionFailed(
-                            format!("Failed to connect to vsock: {}", err),
-                        ));
+                        return Err(CommunicationError::ConnectionFailed(format!(
+                            "Failed to connect to vsock: {}",
+                            err
+                        )));
                     }
 
                     // Wait for connection with select
@@ -215,9 +219,10 @@ impl VsockServer {
 
                 if libc::bind(sock_fd, addr_ptr, addr_len) < 0 {
                     libc::close(sock_fd);
-                    return Err(CommunicationError::ConnectionFailed(
-                        format!("Failed to bind vsock: {}", std::io::Error::last_os_error()),
-                    ));
+                    return Err(CommunicationError::ConnectionFailed(format!(
+                        "Failed to bind vsock: {}",
+                        std::io::Error::last_os_error()
+                    )));
                 }
 
                 // Listen
@@ -232,7 +237,8 @@ impl VsockServer {
 
                 // Accept loop
                 loop {
-                    let client_fd = libc::accept(sock_fd, std::ptr::null_mut(), std::ptr::null_mut());
+                    let client_fd =
+                        libc::accept(sock_fd, std::ptr::null_mut(), std::ptr::null_mut());
                     if client_fd < 0 {
                         continue;
                     }

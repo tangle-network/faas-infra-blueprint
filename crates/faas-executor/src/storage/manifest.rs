@@ -18,10 +18,7 @@ pub struct Manifest {
 pub enum ManifestKind {
     /// CRIU process checkpoint (Linux only)
     #[cfg(target_os = "linux")]
-    CriuCheckpoint {
-        pid: u32,
-        images_dir: String,
-    },
+    CriuCheckpoint { pid: u32, images_dir: String },
     /// Firecracker VM snapshot
     FirecrackerSnapshot {
         vm_id: String,

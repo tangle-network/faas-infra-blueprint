@@ -21,7 +21,12 @@ pub const EXECUTE_FUNCTION_JOB_ID: u64 = 0;
 pub async fn execute_function_job(
     Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
-    TangleArgs4(image, command, _env_vars, _payload): TangleArgs4<String, Vec<String>, Option<Vec<String>>, Vec<u8>>,
+    TangleArgs4(image, command, _env_vars, _payload): TangleArgs4<
+        String,
+        Vec<String>,
+        Option<Vec<String>>,
+        Vec<u8>,
+    >,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
     // Check operator assignment
     if !_ctx.is_assigned_to_job(call_id).await.unwrap_or(true) {
@@ -83,11 +88,11 @@ impl blueprint_sdk::tangle::metadata::IntoTangleFieldTypes for ExecuteAdvancedAr
     fn into_tangle_fields() -> Vec<blueprint_sdk::tangle::metadata::macros::ext::FieldType> {
         use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
         vec![
-            FieldType::String,                    // image
+            FieldType::String,                            // image
             FieldType::List(Box::new(FieldType::String)), // command
             FieldType::Optional(Box::new(FieldType::List(Box::new(FieldType::String)))), // env_vars
             FieldType::List(Box::new(FieldType::Uint8)),  // payload
-            FieldType::String,                    // mode
+            FieldType::String,                            // mode
             FieldType::Optional(Box::new(FieldType::String)), // checkpoint_id
             FieldType::Optional(Box::new(FieldType::String)), // branch_from
             FieldType::Optional(Box::new(FieldType::Uint64)), // timeout_secs
@@ -100,8 +105,25 @@ impl blueprint_sdk::tangle::metadata::IntoTangleFieldTypes for ExecuteAdvancedAr
 pub async fn execute_advanced_job(
     Context(_ctx): Context<FaaSContext>,
     CallId(call_id): CallId,
-    TangleArgs8(image, command, _env_vars, _payload, mode_str, checkpoint_id, branch_from, timeout_secs):
-        TangleArgs8<String, Vec<String>, Option<Vec<String>>, Vec<u8>, String, Option<String>, Option<String>, Option<u64>>,
+    TangleArgs8(
+        image,
+        command,
+        _env_vars,
+        _payload,
+        mode_str,
+        checkpoint_id,
+        branch_from,
+        timeout_secs,
+    ): TangleArgs8<
+        String,
+        Vec<String>,
+        Option<Vec<String>>,
+        Vec<u8>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<u64>,
+    >,
 ) -> Result<TangleResult<Vec<u8>>, JobError> {
     // Check operator assignment
     if !_ctx.is_assigned_to_job(call_id).await.unwrap_or(true) {

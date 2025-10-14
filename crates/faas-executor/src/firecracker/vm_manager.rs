@@ -6,7 +6,8 @@ use firecracker_rs_sdk::{
     firecracker::FirecrackerOption,
     instance::Instance as FcInstance,
     models::{
-        BootSource, Drive, MachineConfiguration, NetworkInterface as FcNetworkInterface, Vsock as FcVsock,
+        BootSource, Drive, MachineConfiguration, NetworkInterface as FcNetworkInterface,
+        Vsock as FcVsock,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -427,7 +428,9 @@ impl FirecrackerManager {
             fc_instance
                 .put_guest_network_interface_by_id(&fc_net_iface)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to configure network interface {idx}: {e:?}"))?;
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to configure network interface {idx}: {e:?}")
+                })?;
         }
 
         // Configure vsock if requested
@@ -446,7 +449,8 @@ impl FirecrackerManager {
         }
 
         // Start the VM using SDK
-        fc_instance.start()
+        fc_instance
+            .start()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to start VM: {e:?}"))?;
 
@@ -496,7 +500,11 @@ impl FirecrackerManager {
         )
     }
 
-    pub async fn execute_in_vm(&self, vm_id: &str, config: &faas_common::SandboxConfig) -> Result<Vec<u8>> {
+    pub async fn execute_in_vm(
+        &self,
+        vm_id: &str,
+        config: &faas_common::SandboxConfig,
+    ) -> Result<Vec<u8>> {
         // Execute command in VM via serial console
         let vms = self.vms.read().await;
 
@@ -522,9 +530,12 @@ impl FirecrackerManager {
             // Execute command via real VM communication
             match executor.execute(config).await {
                 Ok(output) => {
-                    info!("Command executed successfully in VM {} via real communication", vm_id);
+                    info!(
+                        "Command executed successfully in VM {} via real communication",
+                        vm_id
+                    );
                     Ok(output)
-                },
+                }
                 Err(e) => {
                     warn!("VM communication failed for {}, error: {}", vm_id, e);
                     // Return error instead of fallback simulation
@@ -544,7 +555,8 @@ impl FirecrackerManager {
             let mut vm = vm_arc.write().await;
 
             // Use SDK's stop method
-            vm.fc_instance.stop()
+            vm.fc_instance
+                .stop()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to stop VM via SDK: {e:?}"))?;
 

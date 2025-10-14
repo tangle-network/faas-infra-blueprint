@@ -96,7 +96,6 @@ use tokio::sync::RwLock;
 /// Execution result type alias for convenience
 pub type ExecutionResult = ExecuteResponse;
 
-
 #[derive(Error, Debug)]
 pub enum SdkError {
     #[error("HTTP request failed: {0}")]
@@ -225,10 +224,10 @@ pub type AdvancedExecuteRequest = ExecuteRequest;
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ExecutionMode {
-    Ephemeral,   // No persistence
-    Cached,      // Use cache for repeated executions
-    Checkpointed,// CRIU checkpoint/restore
-    Branched,    // Fork from base environment
+    Ephemeral,    // No persistence
+    Cached,       // Use cache for repeated executions
+    Checkpointed, // CRIU checkpoint/restore
+    Branched,     // Fork from base environment
 }
 
 /// Function execution response
@@ -291,8 +290,8 @@ pub struct ForkBranch {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ForkStrategy {
-    Parallel,  // Run all branches in parallel
-    Fastest,   // Select fastest completion
+    Parallel,   // Run all branches in parallel
+    Fastest,    // Select fastest completion
     Sequential, // Run sequentially
 }
 
@@ -496,13 +495,15 @@ impl FaasClient {
         // Handle payload by sending as stdin directly in the JSON request
         let response = if let Some(_payload) = &request.payload {
             // For now, just use JSON and let the server handle stdin
-            self.client.post(&url)
+            self.client
+                .post(&url)
                 .header("Content-Type", "application/json")
                 .json(&request)
                 .send()
                 .await?
         } else {
-            self.client.post(&url)
+            self.client
+                .post(&url)
                 .header("Content-Type", "application/json")
                 .json(&request)
                 .send()
@@ -517,7 +518,9 @@ impl FaasClient {
         if !response.status().is_success() {
             metrics.errors += 1;
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         let result: ExecuteResponse = response.json().await?;
@@ -567,13 +570,18 @@ impl FaasClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn execute_advanced(&self, request: AdvancedExecuteRequest) -> Result<ExecuteResponse, SdkError> {
+    pub async fn execute_advanced(
+        &self,
+        request: AdvancedExecuteRequest,
+    ) -> Result<ExecuteResponse, SdkError> {
         let url = format!("{}/api/v1/execute", self.base_url);
         let response = self.client.post(&url).json(&request).send().await?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(response.json().await?)
@@ -625,13 +633,18 @@ impl FaasClient {
     /// - **Warm Starts**: Pre-initialize environments for instant execution
     /// - **A/B Testing**: Create branching points for different execution paths
     /// - **Fault Tolerance**: Recover from failures using saved states
-    pub async fn create_snapshot(&self, request: CreateSnapshotRequest) -> Result<SnapshotResponse, SdkError> {
+    pub async fn create_snapshot(
+        &self,
+        request: CreateSnapshotRequest,
+    ) -> Result<SnapshotResponse, SdkError> {
         let url = format!("{}/api/v1/snapshots", self.base_url);
         let response = self.client.post(&url).json(&request).send().await?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(response.json().await?)
@@ -644,7 +657,9 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(response.json().await?)
@@ -657,20 +672,27 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(())
     }
 
     /// Create persistent instance
-    pub async fn create_instance(&self, request: CreateInstanceRequest) -> Result<InstanceResponse, SdkError> {
+    pub async fn create_instance(
+        &self,
+        request: CreateInstanceRequest,
+    ) -> Result<InstanceResponse, SdkError> {
         let url = format!("{}/api/v1/instances", self.base_url);
         let response = self.client.post(&url).json(&request).send().await?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(response.json().await?)
@@ -683,7 +705,9 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(response.json().await?)
@@ -696,7 +720,9 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(())
@@ -709,7 +735,9 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(())
@@ -722,7 +750,9 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(response.json().await?)
@@ -735,7 +765,9 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(response.json().await?)
@@ -797,7 +829,8 @@ impl FaasClient {
             cache_key: Some(format!("{:x}", md5::compute(code.as_bytes()))),
             payload: Some(code.as_bytes().to_vec()),
             ..Default::default()
-        }).await
+        })
+        .await
     }
 
     /// Execute JavaScript/Node.js code
@@ -811,7 +844,8 @@ impl FaasClient {
             cache_key: Some(format!("{:x}", md5::compute(code.as_bytes()))),
             payload: Some(code.as_bytes().to_vec()),
             ..Default::default()
-        }).await
+        })
+        .await
     }
 
     /// Execute Bash script
@@ -823,11 +857,16 @@ impl FaasClient {
             timeout_ms: Some(30000),
             cache_key: Some(format!("{:x}", md5::compute(script.as_bytes()))),
             ..Default::default()
-        }).await
+        })
+        .await
     }
 
     /// Fork execution from parent for A/B testing
-    pub async fn fork_execution(&self, parent_id: &str, command: &str) -> Result<ExecuteResponse, SdkError> {
+    pub async fn fork_execution(
+        &self,
+        parent_id: &str,
+        command: &str,
+    ) -> Result<ExecuteResponse, SdkError> {
         self.execute(ExecuteRequest {
             command: command.to_string(),
             image: Some("alpine:latest".to_string()),
@@ -842,22 +881,29 @@ impl FaasClient {
             cache_key: None,
             snapshot_id: None,
             payload: None,
-        }).await
+        })
+        .await
     }
 
     /// Create checkpoint for stateful workflow
-    pub async fn checkpoint_execution(&self, execution_id: &str) -> Result<SnapshotResponse, SdkError> {
+    pub async fn checkpoint_execution(
+        &self,
+        execution_id: &str,
+    ) -> Result<SnapshotResponse, SdkError> {
         self.create_snapshot(CreateSnapshotRequest {
             name: format!("checkpoint-{execution_id}"),
             container_id: execution_id.to_string(),
             description: Some("Execution checkpoint".to_string()),
-        }).await
+        })
+        .await
     }
 
     /// Pre-warm containers for zero cold starts
     pub async fn prewarm(&self, image: &str, count: u32) -> Result<(), SdkError> {
         let url = format!("{}/api/v1/prewarm", self.base_url);
-        let response = self.client.post(&url)
+        let response = self
+            .client
+            .post(&url)
             .json(&serde_json::json!({
                 "image": image,
                 "count": count,
@@ -868,7 +914,9 @@ impl FaasClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(SdkError::Api { message: error_text });
+            return Err(SdkError::Api {
+                message: error_text,
+            });
         }
 
         Ok(())
@@ -968,7 +1016,6 @@ impl FaasClient {
         let response = self.create_instance(request).await?;
         Ok(response.instance_id)
     }
-
 }
 
 // Tangle blockchain client (optional, gated behind 'tangle' feature)

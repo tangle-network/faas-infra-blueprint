@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
 use crate::bollard::container::{CreateContainerOptions, StartContainerOptions};
 use crate::bollard::exec::{CreateExecOptions, StartExecResults};
 use crate::bollard::image::CommitContainerOptions;
 use crate::bollard::Docker;
+use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -39,8 +39,15 @@ impl DockerForkManager {
     }
 
     /// Create a checkpoint of a running container for later forking
-    pub async fn checkpoint_container(&self, container_id: &str, checkpoint_id: &str) -> Result<String> {
-        info!("Creating checkpoint of container {} as {}", container_id, checkpoint_id);
+    pub async fn checkpoint_container(
+        &self,
+        container_id: &str,
+        checkpoint_id: &str,
+    ) -> Result<String> {
+        info!(
+            "Creating checkpoint of container {} as {}",
+            container_id, checkpoint_id
+        );
 
         // Commit the container to create an image with its current state
         let options = CommitContainerOptions {
@@ -51,29 +58,43 @@ impl DockerForkManager {
             ..Default::default()
         };
 
-        let commit_result = self.docker.commit_container(options, crate::bollard::container::Config::<String>::default()).await
+        let commit_result = self
+            .docker
+            .commit_container(
+                options,
+                crate::bollard::container::Config::<String>::default(),
+            )
+            .await
             .map_err(|e| anyhow!("Failed to commit container: {e}"))?;
 
         // Use the returned ID or fall back to the image name we specified
-        let image_id = commit_result.id
+        let image_id = commit_result
+            .id
             .unwrap_or_else(|| format!("faas-checkpoint-{checkpoint_id}:latest"));
 
         // Store the checkpoint mapping
         let mut checkpoints = self.checkpoints.write().await;
         checkpoints.insert(checkpoint_id.to_string(), image_id.clone());
 
-        info!("Created checkpoint {} with image {}", checkpoint_id, image_id);
+        info!(
+            "Created checkpoint {} with image {}",
+            checkpoint_id, image_id
+        );
         Ok(image_id)
     }
 
     /// Fork a container from a checkpoint, preserving all state
     pub async fn fork_from_checkpoint(&self, checkpoint_id: &str, fork_id: &str) -> Result<String> {
         let start = Instant::now();
-        info!("Forking from checkpoint {} to create {}", checkpoint_id, fork_id);
+        info!(
+            "Forking from checkpoint {} to create {}",
+            checkpoint_id, fork_id
+        );
 
         // Get the checkpoint image
         let checkpoints = self.checkpoints.read().await;
-        let image_id = checkpoints.get(checkpoint_id)
+        let image_id = checkpoints
+            .get(checkpoint_id)
             .ok_or_else(|| anyhow!("Checkpoint {checkpoint_id} not found"))?
             .clone();
         drop(checkpoints);
@@ -96,11 +117,16 @@ impl DockerForkManager {
             ..Default::default()
         };
 
-        let container = self.docker.create_container(Some(config), container_config).await
+        let container = self
+            .docker
+            .create_container(Some(config), container_config)
+            .await
             .map_err(|e| anyhow!("Failed to create forked container: {e}"))?;
 
         // Start the forked container
-        self.docker.start_container(&container.id, None::<StartContainerOptions<String>>).await
+        self.docker
+            .start_container(&container.id, None::<StartContainerOptions<String>>)
+            .await
             .map_err(|e| anyhow!("Failed to start forked container: {e}"))?;
 
         // Store branch info
@@ -124,7 +150,8 @@ impl DockerForkManager {
     /// Execute code in a forked container
     pub async fn execute_in_fork(&self, fork_id: &str, command: &str) -> Result<Vec<u8>> {
         let branches = self.branches.read().await;
-        let branch_info = branches.get(fork_id)
+        let branch_info = branches
+            .get(fork_id)
             .ok_or_else(|| anyhow!("Fork {fork_id} not found"))?;
         let container_id = branch_info.container_id.clone();
         drop(branches);
@@ -137,11 +164,17 @@ impl DockerForkManager {
             ..Default::default()
         };
 
-        let exec = self.docker.create_exec(&container_id, exec_config).await
+        let exec = self
+            .docker
+            .create_exec(&container_id, exec_config)
+            .await
             .map_err(|e| anyhow!("Failed to create exec: {e}"))?;
 
         // Start exec and collect output
-        let start_result = self.docker.start_exec(&exec.id, None).await
+        let start_result = self
+            .docker
+            .start_exec(&exec.id, None)
+            .await
             .map_err(|e| anyhow!("Failed to start exec: {e}"))?;
 
         let output = match start_result {
@@ -151,7 +184,7 @@ impl DockerForkManager {
                     result.extend_from_slice(&msg.into_bytes());
                 }
                 result
-            },
+            }
             _ => return Err(anyhow!("Unexpected exec result")),
         };
 
@@ -159,7 +192,12 @@ impl DockerForkManager {
     }
 
     /// Create a base container with initial state
-    pub async fn create_base_container(&self, base_id: &str, image: &str, setup_commands: Vec<&str>) -> Result<String> {
+    pub async fn create_base_container(
+        &self,
+        base_id: &str,
+        image: &str,
+        setup_commands: Vec<&str>,
+    ) -> Result<String> {
         info!("Creating base container {} from image {}", base_id, image);
 
         // Create container
@@ -180,11 +218,16 @@ impl DockerForkManager {
             ..Default::default()
         };
 
-        let container = self.docker.create_container(Some(config), container_config).await
+        let container = self
+            .docker
+            .create_container(Some(config), container_config)
+            .await
             .map_err(|e| anyhow!("Failed to create base container: {e}"))?;
 
         // Start container
-        self.docker.start_container(&container.id, None::<StartContainerOptions<String>>).await
+        self.docker
+            .start_container(&container.id, None::<StartContainerOptions<String>>)
+            .await
             .map_err(|e| anyhow!("Failed to start base container: {e}"))?;
 
         // Execute setup commands
@@ -213,8 +256,14 @@ impl DockerForkManager {
 
         if let Some(branch_info) = branches.remove(fork_id) {
             // Stop and remove container
-            let _ = self.docker.stop_container(&branch_info.container_id, None).await;
-            let _ = self.docker.remove_container(&branch_info.container_id, None).await;
+            let _ = self
+                .docker
+                .stop_container(&branch_info.container_id, None)
+                .await;
+            let _ = self
+                .docker
+                .remove_container(&branch_info.container_id, None)
+                .await;
 
             info!("Cleaned up fork {}", fork_id);
         }
@@ -256,7 +305,9 @@ mod tests {
         let fork_id = format!("test-fork-{}", &test_id[0..8]);
 
         // Clean up any existing containers first
-        let _ = docker.remove_container(&format!("faas-base-{}", base_id), None).await;
+        let _ = docker
+            .remove_container(&format!("faas-base-{}", base_id), None)
+            .await;
 
         // Create base container with state
         let setup_commands = vec![
@@ -264,25 +315,31 @@ mod tests {
             "echo 'data' > /tmp/data.txt",
         ];
 
-        let container_id = fork_manager.create_base_container(
-            &base_id,
-            "alpine:latest",
-            setup_commands,
-        ).await?;
+        let container_id = fork_manager
+            .create_base_container(&base_id, "alpine:latest", setup_commands)
+            .await?;
 
         // Fork from the base
-        let forked_container = fork_manager.fork_from_checkpoint(&base_id, &fork_id).await?;
+        let forked_container = fork_manager
+            .fork_from_checkpoint(&base_id, &fork_id)
+            .await?;
 
         // Verify state is preserved in fork
-        let output = fork_manager.execute_in_fork(&fork_id, "cat /tmp/state.txt").await?;
+        let output = fork_manager
+            .execute_in_fork(&fork_id, "cat /tmp/state.txt")
+            .await?;
         assert!(String::from_utf8_lossy(&output).contains("initial state"));
 
-        let output = fork_manager.execute_in_fork(&fork_id, "cat /tmp/data.txt").await?;
+        let output = fork_manager
+            .execute_in_fork(&fork_id, "cat /tmp/data.txt")
+            .await?;
         assert!(String::from_utf8_lossy(&output).contains("data"));
 
         // Cleanup
         fork_manager.cleanup_fork(&fork_id).await?;
-        let _ = docker.remove_container(&format!("faas-base-{}", base_id), None).await;
+        let _ = docker
+            .remove_container(&format!("faas-base-{}", base_id), None)
+            .await;
 
         Ok(())
     }

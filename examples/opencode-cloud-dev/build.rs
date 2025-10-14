@@ -6,12 +6,12 @@ fn main() {
     println!("cargo:rerun-if-changed=opencode-server/package.json");
 
     // Check if docker is available
-    let docker_check = Command::new("docker")
-        .arg("--version")
-        .output();
+    let docker_check = Command::new("docker").arg("--version").output();
 
     if docker_check.is_err() {
-        println!("cargo:warning=Docker is not available. Please install Docker to run this example.");
+        println!(
+            "cargo:warning=Docker is not available. Please install Docker to run this example."
+        );
         println!("cargo:warning=Download from: https://www.docker.com/products/docker-desktop");
         return;
     }
@@ -46,7 +46,10 @@ fn main() {
             println!("cargo:warning=✅ Successfully built Docker image 'opencode-chat:latest'");
         }
         Ok(status) => {
-            println!("cargo:warning=❌ Docker build failed with exit code: {:?}", status.code());
+            println!(
+                "cargo:warning=❌ Docker build failed with exit code: {:?}",
+                status.code()
+            );
             println!("cargo:warning=To build manually, run:");
             println!("cargo:warning=  cd examples/opencode-cloud-dev/opencode-server && docker build -t opencode-chat:latest .");
         }

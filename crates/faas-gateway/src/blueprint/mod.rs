@@ -83,7 +83,9 @@ impl ExecutionBackend for BackendRouter {
     }
 
     async fn undeploy(&self, function_id: String) -> Result<()> {
-        self.select(self.default_backend).undeploy(function_id).await
+        self.select(self.default_backend)
+            .undeploy(function_id)
+            .await
     }
 
     async fn warm(&self, function_id: String) -> Result<u32> {

@@ -4,7 +4,9 @@
 
 use super::backend::*;
 use async_trait::async_trait;
-use faas_executor::platform::executor::{Executor as PlatformExecutor, Mode, Request as ExecRequest};
+use faas_executor::platform::executor::{
+    Executor as PlatformExecutor, Mode, Request as ExecRequest,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -90,17 +92,20 @@ impl LocalBackend {
                 .map_err(|e| BackendError::Storage(format!("Failed to read zip: {}", e)))?;
 
             // Extract bootstrap
-            let mut bootstrap_file = archive.by_name("bootstrap")
-                .map_err(|_| BackendError::Storage("bootstrap executable not found in zip".to_string()))?;
+            let mut bootstrap_file = archive.by_name("bootstrap").map_err(|_| {
+                BackendError::Storage("bootstrap executable not found in zip".to_string())
+            })?;
 
             let bootstrap_path = func_dir_clone.join("bootstrap");
             let mut output = File::create(&bootstrap_path)
                 .map_err(|e| BackendError::Storage(format!("Failed to create bootstrap: {}", e)))?;
 
             let mut buffer = Vec::new();
-            bootstrap_file.read_to_end(&mut buffer)
+            bootstrap_file
+                .read_to_end(&mut buffer)
                 .map_err(|e| BackendError::Storage(format!("Failed to read bootstrap: {}", e)))?;
-            output.write_all(&buffer)
+            output
+                .write_all(&buffer)
                 .map_err(|e| BackendError::Storage(format!("Failed to write bootstrap: {}", e)))?;
 
             // Make executable
@@ -111,8 +116,9 @@ impl LocalBackend {
                     .map_err(|e| BackendError::Storage(format!("Failed to get metadata: {}", e)))?
                     .permissions();
                 perms.set_mode(0o755);
-                std::fs::set_permissions(&bootstrap_path, perms)
-                    .map_err(|e| BackendError::Storage(format!("Failed to set permissions: {}", e)))?;
+                std::fs::set_permissions(&bootstrap_path, perms).map_err(|e| {
+                    BackendError::Storage(format!("Failed to set permissions: {}", e))
+                })?;
             }
 
             Ok::<PathBuf, BackendError>(bootstrap_path)
@@ -162,7 +168,10 @@ impl ExecutionBackend for LocalBackend {
 
         Ok(DeployInfo {
             function_id: function_id.clone(),
-            endpoint: format!("{}/api/blueprint/functions/{}/invoke", self.base_url, function_id),
+            endpoint: format!(
+                "{}/api/blueprint/functions/{}/invoke",
+                self.base_url, function_id
+            ),
             status: "deployed".to_string(),
             cold_start_ms: 125, // Firecracker on Linux, Docker on others
             memory_mb: config.memory_mb,
@@ -175,7 +184,8 @@ impl ExecutionBackend for LocalBackend {
         // Get function metadata
         let metadata = {
             let functions = self.functions.read().await;
-            functions.get(&function_id)
+            functions
+                .get(&function_id)
                 .ok_or_else(|| BackendError::NotFound(function_id.clone()))?
                 .clone()
         };
@@ -183,7 +193,9 @@ impl ExecutionBackend for LocalBackend {
         info!("Invoking function: {}", function_id);
 
         // Update metrics
-        metadata.invocation_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        metadata
+            .invocation_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         *metadata.last_invocation.write().await = Some(chrono::Utc::now());
 
         // Mount function directory as volume
@@ -195,7 +207,11 @@ impl ExecutionBackend for LocalBackend {
             id: uuid::Uuid::new_v4().to_string(),
             // Command to run: /functions/{function_id}/bootstrap
             // We'll use alpine with volume mount for simplicity
-            code: format!("echo '{}' | {}", String::from_utf8_lossy(&payload), binary_path_str),
+            code: format!(
+                "echo '{}' | {}",
+                String::from_utf8_lossy(&payload),
+                binary_path_str
+            ),
             mode: Mode::Cached, // Use cached mode for performance
             env: "alpine:latest".to_string(),
             timeout: Duration::from_secs(metadata.config.timeout_secs),
@@ -207,7 +223,9 @@ impl ExecutionBackend for LocalBackend {
 
         // Execute
         let start = std::time::Instant::now();
-        let response = self.executor.run(exec_request)
+        let response = self
+            .executor
+            .run(exec_request)
             .await
             .map_err(|e| BackendError::ExecutionFailed(e.to_string()))?;
         let execution_ms = start.elapsed().as_millis() as u64;
@@ -217,18 +235,25 @@ impl ExecutionBackend for LocalBackend {
         let result_json: serde_json::Value = serde_json::from_slice(&response.stdout)
             .map_err(|e| BackendError::ExecutionFailed(format!("Invalid JSON response: {}", e)))?;
 
-        let job_id = result_json["job_id"].as_u64()
-            .ok_or_else(|| BackendError::ExecutionFailed("Missing job_id in response".to_string()))?;
+        let job_id = result_json["job_id"].as_u64().ok_or_else(|| {
+            BackendError::ExecutionFailed("Missing job_id in response".to_string())
+        })?;
 
-        let result_bytes = result_json["result"].as_array()
+        let result_bytes = result_json["result"]
+            .as_array()
             .ok_or_else(|| BackendError::ExecutionFailed("Missing result array".to_string()))?
             .iter()
             .map(|v| v.as_u64().unwrap_or(0) as u8)
             .collect::<Vec<u8>>();
 
-        let success = result_json["success"].as_bool().unwrap_or(response.exit_code == 0);
+        let success = result_json["success"]
+            .as_bool()
+            .unwrap_or(response.exit_code == 0);
 
-        info!("Function invoked successfully: {} ({}ms)", function_id, execution_ms);
+        info!(
+            "Function invoked successfully: {} ({}ms)",
+            function_id, execution_ms
+        );
 
         Ok(InvokeResult {
             job_id,
@@ -240,13 +265,19 @@ impl ExecutionBackend for LocalBackend {
 
     async fn health(&self, function_id: String) -> Result<HealthStatus> {
         let functions = self.functions.read().await;
-        let metadata = functions.get(&function_id)
+        let metadata = functions
+            .get(&function_id)
             .ok_or_else(|| BackendError::NotFound(function_id.clone()))?;
 
-        let last_invocation = metadata.last_invocation.read().await
+        let last_invocation = metadata
+            .last_invocation
+            .read()
+            .await
             .map(|dt| dt.to_rfc3339());
 
-        let total_invocations = metadata.invocation_count.load(std::sync::atomic::Ordering::Relaxed);
+        let total_invocations = metadata
+            .invocation_count
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         Ok(HealthStatus {
             function_id: function_id.clone(),
@@ -258,12 +289,16 @@ impl ExecutionBackend for LocalBackend {
 
     async fn info(&self, function_id: String) -> Result<DeployInfo> {
         let functions = self.functions.read().await;
-        let metadata = functions.get(&function_id)
+        let metadata = functions
+            .get(&function_id)
             .ok_or_else(|| BackendError::NotFound(function_id.clone()))?;
 
         Ok(DeployInfo {
             function_id: function_id.clone(),
-            endpoint: format!("{}/api/blueprint/functions/{}/invoke", self.base_url, function_id),
+            endpoint: format!(
+                "{}/api/blueprint/functions/{}/invoke",
+                self.base_url, function_id
+            ),
             status: "deployed".to_string(),
             cold_start_ms: 125,
             memory_mb: metadata.config.memory_mb,
@@ -274,7 +309,8 @@ impl ExecutionBackend for LocalBackend {
     async fn undeploy(&self, function_id: String) -> Result<()> {
         let metadata = {
             let mut functions = self.functions.write().await;
-            functions.remove(&function_id)
+            functions
+                .remove(&function_id)
                 .ok_or_else(|| BackendError::NotFound(function_id.clone()))?
         };
 

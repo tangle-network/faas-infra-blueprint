@@ -84,7 +84,10 @@ impl ZkProverClient {
             .await?;
 
         if !resp.status().is_success() {
-            let error_msg = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_msg = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ZkProverError::Server(error_msg));
         }
 

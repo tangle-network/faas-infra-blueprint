@@ -1,17 +1,19 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{IntoResponse, sse::{Event, Sse}},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse,
+    },
     routing::{get, post},
     Json, Router,
 };
-use faas_common::{Runtime, ExecutionMode};
-use faas_executor::platform;
 use dashmap::DashMap;
+use faas_common::{ExecutionMode, Runtime};
+use faas_executor::platform;
 use faas_gateway_server::{
-    CreateInstanceRequest, CreateSnapshotRequest, InvokeResponse,
-    PrewarmRequest, Snapshot, Instance, ExecutionMetrics,
-    types::*,
+    types::*, CreateInstanceRequest, CreateSnapshotRequest, ExecutionMetrics, Instance,
+    InvokeResponse, PrewarmRequest, Snapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
@@ -24,9 +26,9 @@ use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 mod streaming;
-mod types;
 #[cfg(test)]
 mod tests;
+mod types;
 
 // Health check response
 #[derive(Debug, Serialize)]
@@ -43,7 +45,7 @@ struct ExecuteRequest {
     command: String,
     image: Option<String>,
     runtime: Option<Runtime>,
-    mode: Option<String>,  // ephemeral, cached, checkpointed, branched, persistent
+    mode: Option<String>, // ephemeral, cached, checkpointed, branched, persistent
     timeout_ms: Option<u64>,
     memory_mb: Option<u32>,
     cpu_cores: Option<u8>,
@@ -83,13 +85,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("✅ FaaS Gateway initialized with dual runtime support");
 
     // Initialize Blueprint backend router
-    let base_url = std::env::var("FAAS_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    let tangle_endpoint = std::env::var("TANGLE_ENDPOINT").unwrap_or_else(|_| "ws://localhost:9944".to_string());
+    let base_url =
+        std::env::var("FAAS_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let tangle_endpoint =
+        std::env::var("TANGLE_ENDPOINT").unwrap_or_else(|_| "ws://localhost:9944".to_string());
 
     let blueprint_router = Arc::new(
         faas_gateway::blueprint::BackendRouter::new(base_url, tangle_endpoint)
             .await
-            .expect("Failed to initialize Blueprint backend router")
+            .expect("Failed to initialize Blueprint backend router"),
     );
 
     info!("✅ Blueprint SDK integration enabled");
@@ -112,7 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn create_app(state: AppState, blueprint_router: Arc<faas_gateway::blueprint::BackendRouter>) -> Router {
+fn create_app(
+    state: AppState,
+    blueprint_router: Arc<faas_gateway::blueprint::BackendRouter>,
+) -> Router {
     // Create Blueprint app state
     let blueprint_state = Arc::new(faas_gateway::blueprint::AppState {
         router: blueprint_router,
@@ -121,40 +128,37 @@ fn create_app(state: AppState, blueprint_router: Arc<faas_gateway::blueprint::Ba
     Router::new()
         // Single consolidated execution endpoint
         .route("/api/v1/execute", post(execute_handler))
-
         // Branched execution for A/B testing
         .route("/api/v1/fork", post(fork_execution_handler))
-        .route("/api/v1/executions/:id/fork", post(fork_from_parent_handler))
-
+        .route(
+            "/api/v1/executions/:id/fork",
+            post(fork_from_parent_handler),
+        )
         // Pre-warming for zero cold starts
         .route("/api/v1/prewarm", post(prewarm_handler))
         .route("/api/v1/pools", get(list_warm_pools_handler))
-
         // Snapshot endpoints
         .route("/api/v1/snapshots", post(create_snapshot_handler))
         .route("/api/v1/snapshots", get(list_snapshots_handler))
-        .route("/api/v1/snapshots/:id/restore", post(restore_snapshot_handler))
-
+        .route(
+            "/api/v1/snapshots/:id/restore",
+            post(restore_snapshot_handler),
+        )
         // Instance endpoints
         .route("/api/v1/instances", post(create_instance_handler))
         .route("/api/v1/instances", get(list_instances_handler))
         .route("/api/v1/instances/:id", get(get_instance_handler))
         .route("/api/v1/instances/:id/exec", post(exec_instance_handler))
         .route("/api/v1/instances/:id/stop", post(stop_instance_handler))
-
         // Metrics and monitoring
         .route("/api/v1/metrics", get(metrics_handler))
         .route("/api/v1/metrics/detailed", get(detailed_metrics_handler))
-
         // Server-sent events for real-time logs (deprecated, use WebSocket)
         .route("/api/v1/logs/:id/stream", get(stream_logs_handler))
-
         // WebSocket streaming (bidirectional, real-time)
         .route("/api/v1/containers/:id/stream", get(ws_stream_wrapper))
-
         // Health check with runtime status
         .route("/health", get(health_handler))
-
         .layer(CorsLayer::permissive())
         .with_state(state)
         // Merge Blueprint SDK routes
@@ -169,7 +173,10 @@ async fn execute_handler(
     let start = Instant::now();
 
     // Update metrics
-    state.metrics.total_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    state
+        .metrics
+        .total_requests
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     // Parse execution mode
     let mode = req.mode.as_deref().unwrap_or("ephemeral");
@@ -183,7 +190,8 @@ async fn execute_handler(
 
     // Convert env_vars from Vec to HashMap
     let env_vars = req.env_vars.map(|vec| {
-        vec.into_iter().collect::<std::collections::HashMap<String, String>>()
+        vec.into_iter()
+            .collect::<std::collections::HashMap<String, String>>()
     });
 
     // Create platform request
@@ -204,7 +212,10 @@ async fn execute_handler(
         Ok(response) => {
             // Check for cache hit (fast response)
             if start.elapsed().as_millis() < 10 {
-                state.metrics.cache_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                state
+                    .metrics
+                    .cache_hits
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
 
             Ok(Json(InvokeResponse {
@@ -238,7 +249,8 @@ async fn fork_execution_handler(
 
     // Convert env_vars from Vec to HashMap
     let env_vars = req.env_vars.map(|vec| {
-        vec.into_iter().collect::<std::collections::HashMap<String, String>>()
+        vec.into_iter()
+            .collect::<std::collections::HashMap<String, String>>()
     });
 
     // Create base request
@@ -288,7 +300,8 @@ async fn fork_from_parent_handler(
 ) -> Result<Json<InvokeResponse>, StatusCode> {
     // Convert env_vars from Vec to HashMap
     let env_vars = req.env_vars.map(|vec| {
-        vec.into_iter().collect::<std::collections::HashMap<String, String>>()
+        vec.into_iter()
+            .collect::<std::collections::HashMap<String, String>>()
     });
 
     let platform_req = platform::executor::Request {
@@ -304,18 +317,16 @@ async fn fork_from_parent_handler(
     };
 
     match state.executor.run(platform_req).await {
-        Ok(response) => {
-            Ok(Json(InvokeResponse {
-                request_id: response.id,
-                exit_code: response.exit_code,
-                stdout: String::from_utf8_lossy(&response.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&response.stderr).to_string(),
-                duration_ms: response.duration.as_millis() as u64,
-                output: Some(String::from_utf8_lossy(&response.stdout).to_string()),
-                logs: Some(String::from_utf8_lossy(&response.stderr).to_string()),
-                error: None,
-            }))
-        }
+        Ok(response) => Ok(Json(InvokeResponse {
+            request_id: response.id,
+            exit_code: response.exit_code,
+            stdout: String::from_utf8_lossy(&response.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&response.stderr).to_string(),
+            duration_ms: response.duration.as_millis() as u64,
+            output: Some(String::from_utf8_lossy(&response.stdout).to_string()),
+            logs: Some(String::from_utf8_lossy(&response.stderr).to_string()),
+            error: None,
+        })),
         Err(e) => {
             error!("Fork from parent failed: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
@@ -327,7 +338,10 @@ async fn prewarm_handler(
     State(_state): State<AppState>,
     Json(req): Json<PrewarmRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    info!("Pre-warming {} containers for image {}", req.count, req.image);
+    info!(
+        "Pre-warming {} containers for image {}",
+        req.count, req.image
+    );
     // Platform executor handles container pooling internally
     Ok(StatusCode::OK)
 }
@@ -348,11 +362,13 @@ async fn create_snapshot_handler(
         name: req.name.clone(),
         container_id: req.container_id.clone(),
         created_at: chrono::Utc::now().to_rfc3339(),
-        size_bytes: 1024 * 1024,  // Mock 1MB size
+        size_bytes: 1024 * 1024, // Mock 1MB size
     };
 
     // Store snapshot in state
-    state.snapshots.insert(snapshot.id.clone(), snapshot.clone());
+    state
+        .snapshots
+        .insert(snapshot.id.clone(), snapshot.clone());
     info!("Created snapshot: {}", snapshot.id);
 
     Ok(Json(snapshot))
@@ -361,7 +377,8 @@ async fn create_snapshot_handler(
 async fn list_snapshots_handler(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Snapshot>>, StatusCode> {
-    let snapshots: Vec<Snapshot> = state.snapshots
+    let snapshots: Vec<Snapshot> = state
+        .snapshots
         .iter()
         .map(|entry| entry.value().clone())
         .collect();
@@ -386,8 +403,13 @@ async fn restore_snapshot_handler(
         };
 
         // Store the instance
-        state.instances.insert(instance.id.clone(), instance.clone());
-        info!("Restored snapshot {} as instance {}", snapshot_id, instance.id);
+        state
+            .instances
+            .insert(instance.id.clone(), instance.clone());
+        info!(
+            "Restored snapshot {} as instance {}",
+            snapshot_id, instance.id
+        );
 
         Ok(Json(instance))
     } else {
@@ -410,7 +432,9 @@ async fn create_instance_handler(
     };
 
     // Store the instance in state
-    state.instances.insert(instance.id.clone(), instance.clone());
+    state
+        .instances
+        .insert(instance.id.clone(), instance.clone());
 
     Ok(Json(instance))
 }
@@ -418,7 +442,8 @@ async fn create_instance_handler(
 async fn list_instances_handler(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Instance>>, StatusCode> {
-    let instances: Vec<Instance> = state.instances
+    let instances: Vec<Instance> = state
+        .instances
         .iter()
         .map(|entry| entry.value().clone())
         .collect();
@@ -451,10 +476,22 @@ async fn stop_instance_handler(
 async fn metrics_handler(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let total = state.metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed);
-    let cache_hits = state.metrics.cache_hits.load(std::sync::atomic::Ordering::Relaxed);
-    let docker_execs = state.metrics.docker_executions.load(std::sync::atomic::Ordering::Relaxed);
-    let vm_execs = state.metrics.vm_executions.load(std::sync::atomic::Ordering::Relaxed);
+    let total = state
+        .metrics
+        .total_requests
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let cache_hits = state
+        .metrics
+        .cache_hits
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let docker_execs = state
+        .metrics
+        .docker_executions
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let vm_execs = state
+        .metrics
+        .vm_executions
+        .load(std::sync::atomic::Ordering::Relaxed);
 
     Ok(Json(serde_json::json!({
         "total_requests": total,
@@ -468,10 +505,22 @@ async fn metrics_handler(
 async fn detailed_metrics_handler(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let total = state.metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed);
-    let cache_hits = state.metrics.cache_hits.load(std::sync::atomic::Ordering::Relaxed);
-    let docker_execs = state.metrics.docker_executions.load(std::sync::atomic::Ordering::Relaxed);
-    let vm_execs = state.metrics.vm_executions.load(std::sync::atomic::Ordering::Relaxed);
+    let total = state
+        .metrics
+        .total_requests
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let cache_hits = state
+        .metrics
+        .cache_hits
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let docker_execs = state
+        .metrics
+        .docker_executions
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let vm_execs = state
+        .metrics
+        .vm_executions
+        .load(std::sync::atomic::Ordering::Relaxed);
 
     Ok(Json(serde_json::json!({
         "summary": {

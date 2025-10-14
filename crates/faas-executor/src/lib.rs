@@ -286,9 +286,7 @@ async fn run_container_inner(
             error!(%container_id, error=%e, "Container wait() returned Docker error");
             (
                 None,
-                Some(format!(
-                    "Container wait failed: {e}. Logs: {logs_string}"
-                )),
+                Some(format!("Container wait failed: {e}. Logs: {logs_string}")),
             )
         }
         None => {

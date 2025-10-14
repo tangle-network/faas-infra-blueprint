@@ -2,11 +2,11 @@
 //!
 //! Production ETL pipeline with pandas transformations and real data processing
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use faas_common::{InvocationResult, SandboxConfig, SandboxExecutor};
 use faas_executor::DockerExecutor;
-use faas_common::{SandboxConfig, SandboxExecutor, InvocationResult};
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct DataPipeline {
@@ -23,10 +23,14 @@ impl DataPipeline {
     }
 
     /// Extract data from source (CSV generation)
-    pub async fn extract_data(&mut self, rows: usize) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub async fn extract_data(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         println!("📥 Extracting data ({} rows)...", rows);
 
-        let script = format!(r#"
+        let script = format!(
+            r#"
 cat << 'EOF'
 id,name,age,salary,department
 1,Alice Johnson,28,65000,Engineering
@@ -40,19 +44,24 @@ EOF
 for i in $(seq 6 {}); do
     echo "$i,User$i,$((20 + $i % 40)),$((50000 + $i * 1000)),Department$((i % 3))"
 done
-"#, rows);
+"#,
+            rows
+        );
 
-        let result = self.executor.execute(SandboxConfig {
-            function_id: "extract".to_string(),
-            source: "alpine:latest".to_string(),
-            command: vec!["sh".to_string(), "-c".to_string(), script.to_string()],
-            env_vars: None,
-            payload: vec![],
-            runtime: None,
-            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
-            memory_limit: None,
-            timeout: Some(30000),
-        }).await?;
+        let result = self
+            .executor
+            .execute(SandboxConfig {
+                function_id: "extract".to_string(),
+                source: "alpine:latest".to_string(),
+                command: vec!["sh".to_string(), "-c".to_string(), script.to_string()],
+                env_vars: None,
+                payload: vec![],
+                runtime: None,
+                execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+                memory_limit: None,
+                timeout: Some(30000),
+            })
+            .await?;
 
         let data = result.response.ok_or("No data extracted")?;
         println!("  ✓ Extracted {} bytes of CSV data", data.len());
@@ -62,7 +71,10 @@ done
     }
 
     /// Transform data using pandas
-    pub async fn transform_data(&mut self, input: Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub async fn transform_data(
+        &mut self,
+        input: Vec<u8>,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         println!("🔄 Transforming data...");
 
         // Real pandas transformation
@@ -107,7 +119,8 @@ print(json.dumps(result, indent=2))
 "#;
 
         // Write the CSV data to a temp file, install pandas, run the transform script
-        let script_with_setup = format!(r#"
+        let script_with_setup = format!(
+            r#"
 # Save stdin (CSV data) to a file
 cat > /tmp/input.csv
 
@@ -118,22 +131,24 @@ pip install pandas >/dev/null 2>&1
 python3 << 'PYTHON_SCRIPT'
 {}
 PYTHON_SCRIPT
-"#, transform_script);
+"#,
+            transform_script
+        );
 
-        let result = self.executor.execute(SandboxConfig {
-            function_id: "transform".to_string(),
-            source: "python:3.11-slim".to_string(),
-            command: vec![
-                "sh".to_string(), "-c".to_string(),
-                script_with_setup
-            ],
-            env_vars: None,
-            payload: input,
-            runtime: None,
-            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
-            memory_limit: None,
-            timeout: Some(120000),
-        }).await?;
+        let result = self
+            .executor
+            .execute(SandboxConfig {
+                function_id: "transform".to_string(),
+                source: "python:3.11-slim".to_string(),
+                command: vec!["sh".to_string(), "-c".to_string(), script_with_setup],
+                env_vars: None,
+                payload: input,
+                runtime: None,
+                execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+                memory_limit: None,
+                timeout: Some(120000),
+            })
+            .await?;
 
         let output = result.response.ok_or_else(|| {
             let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
@@ -168,26 +183,35 @@ echo "Records processed: $(echo $1 | grep -o '[0-9]*' | head -1)"
 
         let data_encoded = STANDARD.encode(&data);
 
-        let result = self.executor.execute(SandboxConfig {
-            function_id: "load".to_string(),
-            source: "alpine:latest".to_string(),
-            command: vec![
-                "sh".to_string(), "-c".to_string(),
-                format!("{} '{}'", script, data_encoded)
-            ],
-            env_vars: Some(vec!["DB_HOST=localhost".to_string()]),
-            payload: vec![],
-            runtime: None,
-            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
-            memory_limit: None,
-            timeout: Some(60000),
-        }).await?;
+        let result = self
+            .executor
+            .execute(SandboxConfig {
+                function_id: "load".to_string(),
+                source: "alpine:latest".to_string(),
+                command: vec![
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    format!("{} '{}'", script, data_encoded),
+                ],
+                env_vars: Some(vec!["DB_HOST=localhost".to_string()]),
+                payload: vec![],
+                runtime: None,
+                execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+                memory_limit: None,
+                timeout: Some(60000),
+            })
+            .await?;
 
-        let output = String::from_utf8_lossy(
-            &result.response.unwrap_or_default()
-        ).to_string();
+        let output = String::from_utf8_lossy(&result.response.unwrap_or_default()).to_string();
 
-        println!("  {}", output.lines().filter(|l| l.contains("✓")).collect::<Vec<_>>().join("\n  "));
+        println!(
+            "  {}",
+            output
+                .lines()
+                .filter(|l| l.contains("✓"))
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        );
         self.stages_completed.push("load".to_string());
 
         Ok(output)
@@ -210,7 +234,10 @@ echo "Records processed: $(echo $1 | grep -o '[0-9]*' | head -1)"
         if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&transformed) {
             println!("\n📊 Pipeline Results:");
             println!("  Rows processed: {}", json["transformed_rows"]);
-            println!("  Average salary: ${:.2}", json["avg_salary"].as_f64().unwrap_or(0.0));
+            println!(
+                "  Average salary: ${:.2}",
+                json["avg_salary"].as_f64().unwrap_or(0.0)
+            );
 
             if let Some(brackets) = json["salary_brackets"].as_object() {
                 println!("\n  Salary Distribution:");
@@ -227,7 +254,10 @@ echo "Records processed: $(echo $1 | grep -o '[0-9]*' | head -1)"
     }
 
     /// Stream processing example - real log analysis
-    pub async fn process_log_stream(&mut self, log_data: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn process_log_stream(
+        &mut self,
+        log_data: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         println!("\n📡 Processing log stream...");
 
         let script = r#"
@@ -250,17 +280,20 @@ END {
 }'
 "#;
 
-        let result = self.executor.execute(SandboxConfig {
-            function_id: "log-processor".to_string(),
-            source: "alpine:latest".to_string(),
-            command: vec!["sh".to_string(), "-c".to_string(), script.to_string()],
-            env_vars: None,
-            payload: log_data.as_bytes().to_vec(),
-            runtime: None,
-            execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
-            memory_limit: None,
-            timeout: Some(30000),
-        }).await?;
+        let result = self
+            .executor
+            .execute(SandboxConfig {
+                function_id: "log-processor".to_string(),
+                source: "alpine:latest".to_string(),
+                command: vec!["sh".to_string(), "-c".to_string(), script.to_string()],
+                env_vars: None,
+                payload: log_data.as_bytes().to_vec(),
+                runtime: None,
+                execution_mode: Some(faas_common::ExecutionMode::Ephemeral),
+                memory_limit: None,
+                timeout: Some(30000),
+            })
+            .await?;
 
         if let Some(output) = result.response {
             println!("{}", String::from_utf8_lossy(&output));

@@ -10,9 +10,8 @@ use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
 
-use super::vm_snapshot::VmSnapshotManager;
 use super::vm_manager::FirecrackerManager;
-
+use super::vm_snapshot::VmSnapshotManager;
 
 /// VM Fork Manager for instant VM branching
 pub struct VmForkManager {
@@ -40,7 +39,6 @@ struct ForkMetadata {
     memory_pages_private: usize,
     cow_enabled: bool,
 }
-
 
 /// Tree structure tracking fork lineage
 pub struct ForkTree {
@@ -110,7 +108,8 @@ impl VmForkManager {
 
         // Get FcInstance from vm_manager
         let vms = self.vm_manager.vms.read().await;
-        let vm_arc = vms.get(&vm_id)
+        let vm_arc = vms
+            .get(&vm_id)
             .ok_or_else(|| anyhow!("VM {vm_id} not found in manager"))?;
         let mut vm = vm_arc.write().await;
 
@@ -158,28 +157,30 @@ impl VmForkManager {
     }
 
     /// Fork a VM instantly from parent
-    pub async fn fork_vm(
-        &self,
-        parent_id: &str,
-        fork_id: &str,
-    ) -> Result<ForkedVm> {
+    pub async fn fork_vm(&self, parent_id: &str, fork_id: &str) -> Result<ForkedVm> {
         let start = Instant::now();
         info!("Forking VM: {} from parent {}", fork_id, parent_id);
 
         // Get parent fork info
         let forks = self.forks.read().await;
-        let parent = forks.get(parent_id)
+        let parent = forks
+            .get(parent_id)
             .ok_or_else(|| anyhow!("Parent fork not found: {parent_id}"))?
             .clone();
         drop(forks);
 
         // Check fork depth
         let tree = self.fork_tree.read().await;
-        let parent_node = tree.nodes.get(parent_id)
+        let parent_node = tree
+            .nodes
+            .get(parent_id)
             .ok_or_else(|| anyhow!("Parent node not found in tree"))?;
 
         if parent_node.depth >= self.config.max_fork_depth {
-            return Err(anyhow!("Maximum fork depth ({}) exceeded", self.config.max_fork_depth));
+            return Err(anyhow!(
+                "Maximum fork depth ({}) exceeded",
+                self.config.max_fork_depth
+            ));
         }
         let new_depth = parent_node.depth + 1;
         drop(tree);
@@ -194,7 +195,8 @@ impl VmForkManager {
 
         // Restore VM from snapshot (ultra-fast with pre-warmed cache)
         let new_vm_id = format!("vm-fork-{}", Uuid::new_v4());
-        let restored = self.snapshot_manager
+        let restored = self
+            .snapshot_manager
             .restore_snapshot(&snapshot_id, &new_vm_id)
             .await?;
 
@@ -248,24 +250,20 @@ impl VmForkManager {
     }
 
     /// Create CoW fork with shared memory pages
-    async fn create_cow_fork(
-        &self,
-        parent: &VmFork,
-        fork_id: &str,
-    ) -> Result<(String, usize)> {
+    async fn create_cow_fork(&self, parent: &VmFork, fork_id: &str) -> Result<(String, usize)> {
         let snapshot_id = format!("cow-fork-{fork_id}");
 
         #[cfg(target_os = "linux")]
         {
             // Use Linux-specific CoW mechanisms
-            let cow_pages = self.setup_cow_memory_mapping(
-                &parent.snapshot_id,
-                &snapshot_id,
-            ).await?;
+            let cow_pages = self
+                .setup_cow_memory_mapping(&parent.snapshot_id, &snapshot_id)
+                .await?;
 
             // Get FcInstance from vm_manager
             let vms = self.vm_manager.vms.read().await;
-            let vm_arc = vms.get(&parent.vm_id)
+            let vm_arc = vms
+                .get(&parent.vm_id)
                 .ok_or_else(|| anyhow!("VM {} not found in manager", parent.vm_id))?;
             let mut vm = vm_arc.write().await;
 
@@ -303,7 +301,8 @@ impl VmForkManager {
         use std::os::unix::io::AsRawFd;
 
         // Get parent snapshot memory file
-        let parent_snap = self.snapshot_manager
+        let parent_snap = self
+            .snapshot_manager
             .snapshots
             .read()
             .await
@@ -338,19 +337,16 @@ impl VmForkManager {
             let page_count = file_size / 4096;
 
             // Create child snapshot file with CoW mapping
-            let child_path = self.snapshot_manager.snapshot_dir
+            let child_path = self
+                .snapshot_manager
+                .snapshot_dir
                 .join(child_snapshot)
                 .join("memory.cow");
 
             std::fs::create_dir_all(child_path.parent().unwrap())?;
 
             // Use mremap for efficient CoW
-            let child_addr = libc::mremap(
-                addr,
-                file_size,
-                file_size,
-                libc::MREMAP_MAYMOVE,
-            );
+            let child_addr = libc::mremap(addr, file_size, file_size, libc::MREMAP_MAYMOVE);
 
             if child_addr == libc::MAP_FAILED {
                 libc::munmap(addr, file_size);
@@ -382,16 +378,13 @@ impl VmForkManager {
     }
 
     /// Create full fork (without CoW)
-    async fn create_full_fork(
-        &self,
-        parent: &VmFork,
-        fork_id: &str,
-    ) -> Result<(String, usize)> {
+    async fn create_full_fork(&self, parent: &VmFork, fork_id: &str) -> Result<(String, usize)> {
         let snapshot_id = format!("full-fork-{fork_id}");
 
         // Get FcInstance from vm_manager
         let vms = self.vm_manager.vms.read().await;
-        let vm_arc = vms.get(&parent.vm_id)
+        let vm_arc = vms
+            .get(&parent.vm_id)
             .ok_or_else(|| anyhow!("VM {} not found in manager", parent.vm_id))?;
         let mut vm = vm_arc.write().await;
 
@@ -406,10 +399,7 @@ impl VmForkManager {
     }
 
     /// Launch VM with fork-optimized settings
-    async fn launch_fork_optimized_vm(
-        &self,
-        config: &FirecrackerVmConfig,
-    ) -> Result<String> {
+    async fn launch_fork_optimized_vm(&self, config: &FirecrackerVmConfig) -> Result<String> {
         let vm_id = Uuid::new_v4().to_string();
 
         #[cfg(target_os = "linux")]
@@ -466,7 +456,8 @@ impl VmForkManager {
         payload: &[u8],
     ) -> Result<Vec<u8>> {
         let forks = self.forks.read().await;
-        let fork = forks.get(fork_id)
+        let fork = forks
+            .get(fork_id)
             .ok_or_else(|| anyhow!("Fork not found: {fork_id}"))?;
 
         let vm_id = fork.vm_id.clone(); // Clone before dropping
@@ -496,10 +487,12 @@ impl VmForkManager {
             runtime: Some(faas_common::Runtime::Firecracker),
             execution_mode: Some(faas_common::ExecutionMode::Branched),
             memory_limit: None,
-            timeout: Some(30000),  // 30 second timeout
+            timeout: Some(30000), // 30 second timeout
         };
 
-        executor.execute(&config).await
+        executor
+            .execute(&config)
+            .await
             .map_err(|e| anyhow!("Execution failed: {e:?}"))
     }
 
@@ -538,18 +531,12 @@ impl VmForkManager {
         let forks = self.forks.read().await;
         let tree = self.fork_tree.read().await;
 
-        let cow_forks = forks.values()
-            .filter(|f| f.metadata.cow_enabled)
-            .count();
+        let cow_forks = forks.values().filter(|f| f.metadata.cow_enabled).count();
 
-        let total_shared_pages: usize = forks.values()
-            .map(|f| f.metadata.memory_pages_shared)
-            .sum();
+        let total_shared_pages: usize =
+            forks.values().map(|f| f.metadata.memory_pages_shared).sum();
 
-        let max_depth = tree.nodes.values()
-            .map(|n| n.depth)
-            .max()
-            .unwrap_or(0);
+        let max_depth = tree.nodes.values().map(|n| n.depth).max().unwrap_or(0);
 
         ForkStats {
             total_forks: forks.len(),

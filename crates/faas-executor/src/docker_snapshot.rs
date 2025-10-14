@@ -1,10 +1,10 @@
 //! Real Docker snapshot implementation using commit and proper state management
 //! No more mocks - actual Docker operations for production use
 
-use anyhow::{anyhow, Context, Result};
 use crate::bollard::container::Config as ContainerConfig;
 use crate::bollard::image::CommitContainerOptions;
 use crate::bollard::Docker;
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -51,7 +51,10 @@ impl DockerSnapshotManager {
         let snapshot_id = Uuid::new_v4().to_string();
         let image_name = format!("{}-{}:latest", self.snapshot_prefix, snapshot_id);
 
-        info!("Creating Docker snapshot from container {} -> {}", container_id, image_name);
+        info!(
+            "Creating Docker snapshot from container {} -> {}",
+            container_id, image_name
+        );
 
         // Actually commit the container to create an image
         let options = CommitContainerOptions {
@@ -65,17 +68,18 @@ impl DockerSnapshotManager {
         };
 
         // Perform the actual Docker commit
-        let commit_result = self.docker
+        let commit_result = self
+            .docker
             .commit_container(options, ContainerConfig::<String>::default())
             .await
             .context("Failed to commit container")?;
 
         // Use the commit result ID if available, otherwise use the image name we specified
-        let image_id = commit_result.id
-            .unwrap_or_else(|| image_name.clone());
+        let image_id = commit_result.id.unwrap_or_else(|| image_name.clone());
 
         // Get image size - use the image name to inspect since that's what we created
-        let image_info = self.docker
+        let image_info = self
+            .docker
             .inspect_image(&image_name)
             .await
             .context("Failed to inspect committed image")?;
@@ -94,10 +98,15 @@ impl DockerSnapshotManager {
         };
 
         // Store snapshot metadata
-        self.snapshots.write().await.insert(snapshot_id.clone(), snapshot.clone());
+        self.snapshots
+            .write()
+            .await
+            .insert(snapshot_id.clone(), snapshot.clone());
 
-        info!("Created Docker snapshot {} (image: {}, size: {} bytes)",
-              snapshot_id, image_id, size_bytes);
+        info!(
+            "Created Docker snapshot {} (image: {}, size: {} bytes)",
+            snapshot_id, image_id, size_bytes
+        );
 
         Ok(snapshot)
     }
@@ -105,12 +114,16 @@ impl DockerSnapshotManager {
     /// Restore a container from snapshot (real Docker run from committed image)
     pub async fn restore_snapshot(&self, snapshot_id: &str) -> Result<String> {
         let snapshots = self.snapshots.read().await;
-        let snapshot = snapshots.get(snapshot_id)
+        let snapshot = snapshots
+            .get(snapshot_id)
             .ok_or_else(|| anyhow!("Snapshot {snapshot_id} not found"))?;
 
         let container_name = format!("restored-{}-{}", snapshot_id, Uuid::new_v4());
 
-        info!("Restoring snapshot {} from image {}", snapshot_id, snapshot.image_id);
+        info!(
+            "Restoring snapshot {} from image {}",
+            snapshot_id, snapshot.image_id
+        );
 
         // Create container from snapshot image
         let create_options = crate::bollard::container::CreateContainerOptions {
@@ -127,12 +140,16 @@ impl DockerSnapshotManager {
             ..Default::default()
         };
 
-        let container = self.docker
+        let container = self
+            .docker
             .create_container(Some(create_options), config)
             .await
             .context("Failed to create container from snapshot")?;
 
-        info!("Restored container {} from snapshot {}", container.id, snapshot_id);
+        info!(
+            "Restored container {} from snapshot {}",
+            container.id, snapshot_id
+        );
 
         Ok(container.id)
     }
@@ -154,14 +171,18 @@ impl DockerSnapshotManager {
 
         // Create a new snapshot from the restored container
         let mut metadata = HashMap::new();
-        metadata.insert("parent_snapshot".to_string(), parent_snapshot_id.to_string());
+        metadata.insert(
+            "parent_snapshot".to_string(),
+            parent_snapshot_id.to_string(),
+        );
         metadata.insert("fork_type".to_string(), "branch".to_string());
 
         let mut forked = self.create_snapshot(&container_id, name, metadata).await?;
         forked.parent_snapshot = Some(parent_snapshot_id.to_string());
 
         // Clean up the temporary container
-        let _ = self.docker
+        let _ = self
+            .docker
             .remove_container(
                 &container_id,
                 Some(crate::bollard::container::RemoveContainerOptions {
@@ -197,7 +218,10 @@ impl DockerSnapshotManager {
                 .await
                 .context("Failed to remove snapshot image")?;
 
-            info!("Deleted snapshot {} and image {}", snapshot_id, snapshot.image_id);
+            info!(
+                "Deleted snapshot {} and image {}",
+                snapshot_id, snapshot.image_id
+            );
             Ok(())
         } else {
             Err(anyhow!("Snapshot {snapshot_id} not found"))
@@ -216,25 +240,33 @@ impl DockerSnapshotManager {
         parent_snapshot_id: &str,
         name: Option<String>,
     ) -> Result<DockerSnapshot> {
-        let parent = self.get_snapshot(parent_snapshot_id).await
+        let parent = self
+            .get_snapshot(parent_snapshot_id)
+            .await
             .ok_or_else(|| anyhow!("Parent snapshot {parent_snapshot_id} not found"))?;
 
         // Get container changes since parent (for logging)
-        let _changes = self.docker
+        let _changes = self
+            .docker
             .container_changes(container_id)
             .await
             .context("Failed to get container changes")?;
 
         let mut metadata = HashMap::new();
-        metadata.insert("parent_snapshot".to_string(), parent_snapshot_id.to_string());
+        metadata.insert(
+            "parent_snapshot".to_string(),
+            parent_snapshot_id.to_string(),
+        );
         metadata.insert("incremental".to_string(), "true".to_string());
 
         // Create the snapshot with parent reference
         let mut snapshot = self.create_snapshot(container_id, name, metadata).await?;
         snapshot.parent_snapshot = Some(parent_snapshot_id.to_string());
 
-        info!("Created incremental snapshot {} from parent {}",
-              snapshot.id, parent_snapshot_id);
+        info!(
+            "Created incremental snapshot {} from parent {}",
+            snapshot.id, parent_snapshot_id
+        );
 
         Ok(snapshot)
     }
@@ -261,11 +293,18 @@ mod tests {
             .await
             .unwrap();
 
-        docker.start_container::<String>(&container.id, None).await.unwrap();
+        docker
+            .start_container::<String>(&container.id, None)
+            .await
+            .unwrap();
 
         // Create snapshot
         let snapshot = manager
-            .create_snapshot(&container.id, Some("test-snapshot".to_string()), HashMap::new())
+            .create_snapshot(
+                &container.id,
+                Some("test-snapshot".to_string()),
+                HashMap::new(),
+            )
             .await
             .unwrap();
 
@@ -277,15 +316,27 @@ mod tests {
         assert!(!restored_id.is_empty());
 
         // Cleanup
-        docker.remove_container(&container.id, Some(crate::bollard::container::RemoveContainerOptions {
-            force: true,
-            ..Default::default()
-        })).await.unwrap();
+        docker
+            .remove_container(
+                &container.id,
+                Some(crate::bollard::container::RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
 
-        docker.remove_container(&restored_id, Some(crate::bollard::container::RemoveContainerOptions {
-            force: true,
-            ..Default::default()
-        })).await.unwrap();
+        docker
+            .remove_container(
+                &restored_id,
+                Some(crate::bollard::container::RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
 
         manager.delete_snapshot(&snapshot.id).await.unwrap();
     }

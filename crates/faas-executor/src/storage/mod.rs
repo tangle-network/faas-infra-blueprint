@@ -15,9 +15,9 @@ mod integration;
 mod manifest;
 mod tier;
 
-pub use adapters::{DockerSnapshotAdapter, VmSnapshotAdapter, VmSnapshotInfo};
 #[cfg(target_os = "linux")]
 pub use adapters::CriuCheckpointAdapter;
+pub use adapters::{DockerSnapshotAdapter, VmSnapshotAdapter, VmSnapshotInfo};
 pub use blob::{BlobId, BlobMeta, BlobStore};
 pub use cache::BlobCache;
 pub use integration::{StorageManager, StorageStats};

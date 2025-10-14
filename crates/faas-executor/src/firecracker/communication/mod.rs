@@ -5,9 +5,9 @@
 //! - Vsock for high-performance bidirectional communication
 //! - SSH for secure remote execution
 
+pub mod executor;
 pub mod serial;
 pub mod vsock;
-pub mod executor;
 
 pub use executor::VmCommandExecutor;
 pub use serial::SerialConsole;

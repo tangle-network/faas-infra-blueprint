@@ -167,7 +167,12 @@ impl ApiBackgroundService {
 impl blueprint_sdk::runner::BackgroundService for ApiBackgroundService {
     fn start(
         &self,
-    ) -> impl std::future::Future<Output = Result<tokio::sync::oneshot::Receiver<Result<(), blueprint_sdk::runner::error::RunnerError>>, blueprint_sdk::runner::error::RunnerError>> + Send {
+    ) -> impl std::future::Future<
+        Output = Result<
+            tokio::sync::oneshot::Receiver<Result<(), blueprint_sdk::runner::error::RunnerError>>,
+            blueprint_sdk::runner::error::RunnerError,
+        >,
+    > + Send {
         let config = self.config.clone();
         let context = self.context.clone();
 
@@ -176,9 +181,11 @@ impl blueprint_sdk::runner::BackgroundService for ApiBackgroundService {
 
             tokio::spawn(async move {
                 let service = ApiBackgroundService { config, context };
-                let result = service.run_server()
-                    .await
-                    .map_err(|e| blueprint_sdk::runner::error::RunnerError::Other(format!("API server error: {e}").into()));
+                let result = service.run_server().await.map_err(|e| {
+                    blueprint_sdk::runner::error::RunnerError::Other(
+                        format!("API server error: {e}").into(),
+                    )
+                });
                 let _ = tx.send(result);
             });
 

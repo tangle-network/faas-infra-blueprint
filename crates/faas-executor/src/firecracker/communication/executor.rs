@@ -2,9 +2,7 @@
 //!
 //! Unified interface for executing commands in VMs using the best available method
 
-use super::{
-    CommunicationConfig, CommunicationError, Result, SerialConsole, VsockConnection,
-};
+use super::{CommunicationConfig, CommunicationError, Result, SerialConsole, VsockConnection};
 use faas_common::SandboxConfig;
 use tracing::{debug, info, warn};
 
@@ -56,7 +54,9 @@ impl VmCommandExecutor {
         // Fall back to serial console
         if let Some(ref serial_device) = self.config.serial_device {
             info!("Using serial console for VM communication");
-            return self.execute_via_serial(serial_device, &command, payload).await;
+            return self
+                .execute_via_serial(serial_device, &command, payload)
+                .await;
         }
 
         Err(CommunicationError::ConnectionFailed(
@@ -75,7 +75,10 @@ impl VmCommandExecutor {
         // Retry logic
         let mut last_error = None;
         for attempt in 1..=self.config.retry_attempts {
-            debug!("Vsock execution attempt {}/{}", attempt, self.config.retry_attempts);
+            debug!(
+                "Vsock execution attempt {}/{}",
+                attempt, self.config.retry_attempts
+            );
 
             match vsock.execute_command(command, payload).await {
                 Ok(output) => return Ok(output),
@@ -161,7 +164,10 @@ impl VmCommandExecutor {
         // Retry logic for serial (it's less reliable)
         let mut last_error = None;
         for attempt in 1..=self.config.retry_attempts {
-            debug!("Serial execution attempt {}/{}", attempt, self.config.retry_attempts);
+            debug!(
+                "Serial execution attempt {}/{}",
+                attempt, self.config.retry_attempts
+            );
 
             match serial.execute_command(command, payload).await {
                 Ok(output) => return Ok(output),
@@ -190,7 +196,7 @@ impl VmCommandExecutor {
             runtime: Some(faas_common::Runtime::Firecracker),
             execution_mode: None,
             memory_limit: None,
-            timeout: Some(5000),  // 5 second timeout for test
+            timeout: Some(5000), // 5 second timeout for test
         };
 
         match self.execute(&test_config).await {

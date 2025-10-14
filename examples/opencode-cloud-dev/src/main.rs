@@ -11,9 +11,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let container_output = tokio::process::Command::new("docker")
         .args([
-            "run", "-d", "--rm",
-            "-p", "4096:4096",
-            "opencode-chat:latest"
+            "run",
+            "-d",
+            "--rm",
+            "-p",
+            "4096:4096",
+            "opencode-chat:latest",
         ])
         .output()
         .await?;
@@ -24,7 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Note: Local container may already be running or port in use");
     }
 
-    let container_id = String::from_utf8_lossy(&container_output.stdout).trim().to_string();
+    let container_id = String::from_utf8_lossy(&container_output.stdout)
+        .trim()
+        .to_string();
     if !container_id.is_empty() {
         info!("Container started with ID: {}", container_id);
     } else {
@@ -41,7 +46,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(resp) if resp.status().is_success() => {
                 let health = resp.json::<serde_json::Value>().await?;
                 // Check if OpenCode is fully initialized
-                if health.get("ready").and_then(|r| r.as_bool()).unwrap_or(false) {
+                if health
+                    .get("ready")
+                    .and_then(|r| r.as_bool())
+                    .unwrap_or(false)
+                {
                     info!("Server ready: {}", serde_json::to_string_pretty(&health)?);
                     break;
                 }
@@ -61,17 +70,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chat_url = format!("{server_url}/api/chat");
 
     // Example prompts - you can send ANYTHING
-    let prompts = ["Build a production-ready Rust GUI application for voice transcription with hotkey support",
+    let prompts = [
+        "Build a production-ready Rust GUI application for voice transcription with hotkey support",
         "Write a Python script to analyze stock market data",
         "Create a TypeScript React component for a dashboard",
         "Explain quantum computing in simple terms",
-        "Generate SQL queries for a user management system"];
+        "Generate SQL queries for a user management system",
+    ];
 
     // Randomly select a prompt to demonstrate the server accepts ANY prompt
     let prompt_idx = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs() % prompts.len() as u64) as usize;
+        .as_secs()
+        % prompts.len() as u64) as usize;
     let prompt = prompts[prompt_idx];
 
     info!("Sending prompt: {}", prompt);
@@ -129,7 +141,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if we received a proper response
     if !full_response.is_empty() {
-        info!("✅ Successfully received AI response ({} characters)", full_response.len());
+        info!(
+            "✅ Successfully received AI response ({} characters)",
+            full_response.len()
+        );
 
         // Optionally save the response if it contains code
         if prompt.contains("build") || prompt.contains("create") || prompt.contains("write") {
@@ -146,7 +161,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(resp) = save_response {
                 if resp.status().is_success() {
                     let result = resp.json::<serde_json::Value>().await?;
-                    info!("💾 Code saved: {}", result.get("path").and_then(|p| p.as_str()).unwrap_or("unknown"));
+                    info!(
+                        "💾 Code saved: {}",
+                        result
+                            .get("path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("unknown")
+                    );
                 }
             }
         }

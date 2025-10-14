@@ -1,6 +1,9 @@
-use std::sync::Arc;
 use faas_executor::bollard::Docker;
-use faas_executor::{DockerExecutor, common::{SandboxConfig, SandboxExecutor}};
+use faas_executor::{
+    common::{SandboxConfig, SandboxExecutor},
+    DockerExecutor,
+};
+use std::sync::Arc;
 
 /// Test that containers cannot escape sandbox
 #[tokio::test]
@@ -62,9 +65,9 @@ async fn test_resource_limits_enforced() {
     // Container should be cleaned up after OOM
     let containers = docker.list_containers::<String>(None).await.unwrap();
     let leaked = containers.iter().any(|c| {
-        c.names.as_ref().map_or(false, |names|
+        c.names.as_ref().map_or(false, |names| {
             names.iter().any(|n| n.contains("memory-bomb"))
-        )
+        })
     });
     assert!(!leaked, "Container leaked after memory limit test!");
 }
@@ -235,7 +238,11 @@ async fn test_container_cleanup_after_failure() {
     let executor = DockerExecutor::new(docker);
 
     // Get container count before
-    let before = docker_clone.list_containers::<String>(None).await.unwrap().len();
+    let before = docker_clone
+        .list_containers::<String>(None)
+        .await
+        .unwrap()
+        .len();
 
     // Run a command that will timeout
     let result = tokio::time::timeout(
@@ -257,7 +264,11 @@ async fn test_container_cleanup_after_failure() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Check container count after
-    let after = docker_clone.list_containers::<String>(None).await.unwrap().len();
+    let after = docker_clone
+        .list_containers::<String>(None)
+        .await
+        .unwrap()
+        .len();
 
     // No container leak
     assert!(

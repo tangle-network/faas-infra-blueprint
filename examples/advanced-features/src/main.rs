@@ -3,7 +3,7 @@
 //! This example demonstrates the advanced capabilities of the FaaS platform,
 //! including multi-language execution, caching, and parallel execution.
 
-use faas_sdk::{FaasClient, ExecuteRequest, Runtime};
+use faas_sdk::{ExecuteRequest, FaasClient, Runtime};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,49 +48,51 @@ console.log(JSON.stringify(compute(), null, 2));
     // 5. Fork execution from a base
     println!("\n4. Forked execution:");
     // First create a base execution
-    let base = client.execute(ExecuteRequest {
-        command: "echo 'Base execution established'".to_string(),
-        image: Some("alpine:latest".to_string()),
-        ..Default::default()
-    }).await?;
+    let base = client
+        .execute(ExecuteRequest {
+            command: "echo 'Base execution established'".to_string(),
+            image: Some("alpine:latest".to_string()),
+            ..Default::default()
+        })
+        .await?;
 
     // Fork from the base
-    let fork_result = client.fork_execution(
-        &base.request_id,
-        "echo 'Forked execution completed'"
-    ).await?;
+    let fork_result = client
+        .fork_execution(&base.request_id, "echo 'Forked execution completed'")
+        .await?;
     println!("   Fork result: {}", fork_result.stdout.trim());
 
     // 6. Use advanced features with explicit control
     println!("\n5. Advanced execution with full control:");
-    let advanced_result = client.execute(ExecuteRequest {
-        command: "python -c 'import sys; print(f\"Python {sys.version}\")'".to_string(),
-        image: Some("python:3.11-slim".to_string()),
-        runtime: Some(Runtime::Docker), // Explicitly choose runtime
-        env_vars: Some(vec![
-            ("ENV".to_string(), "production".to_string()),
-            ("DEBUG".to_string(), "false".to_string())
-        ]),
-        working_dir: None,
-        timeout_ms: Some(5000),
-        memory_mb: Some(512),
-        cpu_cores: Some(2),
-        cache_key: Some("python-version-check".to_string()),
-        snapshot_id: None,
-        branch_from: None,
-        mode: Some("cached".to_string()),
-        payload: None,
-    }).await?;
+    let advanced_result = client
+        .execute(ExecuteRequest {
+            command: "python -c 'import sys; print(f\"Python {sys.version}\")'".to_string(),
+            image: Some("python:3.11-slim".to_string()),
+            runtime: Some(Runtime::Docker), // Explicitly choose runtime
+            env_vars: Some(vec![
+                ("ENV".to_string(), "production".to_string()),
+                ("DEBUG".to_string(), "false".to_string()),
+            ]),
+            working_dir: None,
+            timeout_ms: Some(5000),
+            memory_mb: Some(512),
+            cpu_cores: Some(2),
+            cache_key: Some("python-version-check".to_string()),
+            snapshot_id: None,
+            branch_from: None,
+            mode: Some("cached".to_string()),
+            payload: None,
+        })
+        .await?;
 
     println!("   Duration: {}ms", advanced_result.duration_ms);
     println!("   Output: {}", advanced_result.stdout.trim());
 
     // 7. Cached execution (should be faster second time)
     println!("\n6. Cached execution (second run):");
-    let cached_result = client.run_cached(
-        "echo 'This will be cached'",
-        "alpine:latest"
-    ).await?;
+    let cached_result = client
+        .run_cached("echo 'This will be cached'", "alpine:latest")
+        .await?;
     println!("   Output: {cached_result}");
 
     // 8. Check platform health

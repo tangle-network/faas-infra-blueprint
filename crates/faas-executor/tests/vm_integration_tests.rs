@@ -1,10 +1,10 @@
 #![cfg(target_os = "linux")]
 
-use faas_executor::firecracker::{
-    FirecrackerExecutor, VmSnapshotManager, MultiLevelVmCache, VmForkManager,
-    VmPredictiveScaler, CacheConfig, ScalingConfig,
-};
 use faas_common::{SandboxConfig, SandboxExecutor};
+use faas_executor::firecracker::{
+    CacheConfig, FirecrackerExecutor, MultiLevelVmCache, ScalingConfig, VmForkManager,
+    VmPredictiveScaler, VmSnapshotManager,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,7 +26,8 @@ async fn test_vm_cold_start() {
         "/usr/bin/firecracker".to_string(),
         "/path/to/kernel".to_string(),
         "/path/to/rootfs".to_string(),
-    ).expect("Failed to create executor");
+    )
+    .expect("Failed to create executor");
 
     let config = SandboxConfig {
         function_id: "test-cold-start".to_string(),
@@ -56,9 +57,7 @@ async fn test_vm_snapshot_creation_and_restore() {
         return;
     }
 
-    let snapshot_mgr = Arc::new(VmSnapshotManager::new(
-        PathBuf::from("/tmp/test-snapshots")
-    ));
+    let snapshot_mgr = Arc::new(VmSnapshotManager::new(PathBuf::from("/tmp/test-snapshots")));
 
     // Start a VM
     let vm_id = "test-vm-1";
@@ -66,7 +65,9 @@ async fn test_vm_snapshot_creation_and_restore() {
 
     // Create snapshot (would need actual VM running)
     let snapshot_id = "test-snapshot-1";
-    let result = snapshot_mgr.create_snapshot(vm_id, snapshot_id, api_socket).await;
+    let result = snapshot_mgr
+        .create_snapshot(vm_id, snapshot_id, api_socket)
+        .await;
 
     if result.is_ok() {
         // Try to restore
@@ -125,9 +126,7 @@ async fn test_vm_forking() {
         return;
     }
 
-    let fork_mgr = Arc::new(VmForkManager::new(
-        PathBuf::from("/tmp/test-forks")
-    ));
+    let fork_mgr = Arc::new(VmForkManager::new(PathBuf::from("/tmp/test-forks")));
 
     // Would need actual parent VM running
     let parent_id = "parent-vm";
@@ -158,13 +157,9 @@ async fn test_vm_predictive_scaling() {
         return;
     }
 
-    let snapshot_mgr = Arc::new(VmSnapshotManager::new(
-        PathBuf::from("/tmp/test-snapshots")
-    ));
+    let snapshot_mgr = Arc::new(VmSnapshotManager::new(PathBuf::from("/tmp/test-snapshots")));
 
-    let fork_mgr = Arc::new(VmForkManager::new(
-        PathBuf::from("/tmp/test-forks")
-    ));
+    let fork_mgr = Arc::new(VmForkManager::new(PathBuf::from("/tmp/test-forks")));
 
     let scaling_config = ScalingConfig {
         min_warm_vms: 2,
@@ -208,7 +203,8 @@ async fn test_vm_branched_execution() {
         "/usr/bin/firecracker".to_string(),
         "/path/to/kernel".to_string(),
         "/path/to/rootfs".to_string(),
-    ).expect("Failed to create executor");
+    )
+    .expect("Failed to create executor");
 
     // First create a parent VM
     let parent_config = SandboxConfig {
@@ -216,7 +212,11 @@ async fn test_vm_branched_execution() {
         // function_name: Some("parent-function".to_string()),
         // function_version: Some("v1".to_string()),
         source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(), "echo parent".to_string()],
+        command: vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "echo parent".to_string(),
+        ],
         payload: Vec::new(),
         env_vars: None,
         // code_hash: Some("parent-hash".to_string()),
@@ -260,7 +260,8 @@ async fn test_vm_warm_pool_acquisition() {
         "/usr/bin/firecracker".to_string(),
         "/path/to/kernel".to_string(),
         "/path/to/rootfs".to_string(),
-    ).expect("Failed to create executor");
+    )
+    .expect("Failed to create executor");
 
     // Execute multiple times to test warm pool
     let config = SandboxConfig {
@@ -296,25 +297,22 @@ async fn test_vm_incremental_snapshots() {
         return;
     }
 
-    let snapshot_mgr = Arc::new(VmSnapshotManager::new(
-        PathBuf::from("/tmp/test-snapshots")
-    ));
+    let snapshot_mgr = Arc::new(VmSnapshotManager::new(PathBuf::from("/tmp/test-snapshots")));
 
     let vm_id = "test-vm";
     let api_socket = "/tmp/test.sock";
 
     // Create base snapshot
     let base_snapshot = "base-snapshot";
-    let _ = snapshot_mgr.create_snapshot(vm_id, base_snapshot, api_socket).await;
+    let _ = snapshot_mgr
+        .create_snapshot(vm_id, base_snapshot, api_socket)
+        .await;
 
     // Create incremental snapshot
     let incremental = "incremental-1";
-    let result = snapshot_mgr.create_incremental_snapshot(
-        vm_id,
-        incremental,
-        base_snapshot,
-        api_socket
-    ).await;
+    let result = snapshot_mgr
+        .create_incremental_snapshot(vm_id, incremental, base_snapshot, api_socket)
+        .await;
 
     if result.is_ok() {
         let snap = result.unwrap();
@@ -335,14 +333,19 @@ async fn test_vm_performance_optimizations() {
         "/usr/bin/firecracker".to_string(),
         "/path/to/kernel".to_string(),
         "/path/to/rootfs".to_string(),
-    ).expect("Failed to create executor");
+    )
+    .expect("Failed to create executor");
 
     let config = SandboxConfig {
         function_id: "perf-test".to_string(),
         // function_name: Some("perf-function".to_string()),
         // function_version: Some("v1".to_string()),
         source: "alpine:latest".to_string(),
-        command: vec!["sh".to_string(), "-c".to_string(), "for i in 1 2 3; do echo $i; done".to_string()],
+        command: vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "for i in 1 2 3; do echo $i; done".to_string(),
+        ],
         payload: Vec::new(),
         env_vars: None,
         // code_hash: Some("perf-hash".to_string()),
@@ -363,7 +366,10 @@ async fn test_vm_performance_optimizations() {
     assert!(result2.is_ok());
 
     // Warm should be significantly faster
-    println!("Cold start: {:?}, Warm start: {:?}", cold_duration, warm_duration);
+    println!(
+        "Cold start: {:?}, Warm start: {:?}",
+        cold_duration, warm_duration
+    );
 
     // In real scenarios, warm should be at least 10x faster
     // But for testing we can't guarantee exact ratios
