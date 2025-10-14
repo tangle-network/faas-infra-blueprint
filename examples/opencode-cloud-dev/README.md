@@ -2,6 +2,14 @@
 
 A containerized OpenCode server that accepts ANY prompt and returns AI-generated responses using the grok-code-fast-1 model (free tier).
 
+## Prerequisites
+
+- **Docker** - Required for building and running the OpenCode container
+  - Download from: https://www.docker.com/products/docker-desktop
+- **Docker Image** - The `opencode-chat:latest` image will be built automatically by build.rs
+  - First build takes ~5-10 minutes (npm install, OpenCode CLI installation)
+  - Subsequent builds are cached
+
 ## Architecture
 
 **Container Stack:**
@@ -10,7 +18,7 @@ A containerized OpenCode server that accepts ANY prompt and returns AI-generated
 
 **Technology:**
 - Uses `@opencode-ai/sdk` for OpenCode server/client
-- Debian-based Node.js 20 container
+- Node.js 20 slim container
 - grok-code-fast-1 model (free tier, no API key required)
 - Streaming SSE responses
 
@@ -20,23 +28,36 @@ A containerized OpenCode server that accepts ANY prompt and returns AI-generated
 ✅ Real AI responses from OpenCode with Grok model
 ✅ Streaming responses via Server-Sent Events
 ✅ Containerized deployment
+✅ Automatic Docker image building via build.rs
 ✅ Works with FaaS SDK
 
 ## Running
 
 ```bash
-# Build and run
-cargo run --release
+# Build (first time only - builds Docker image automatically)
+cargo build --release --package opencode-cloud-dev
 
-# Or run container directly
-docker build -t opencode-chat:latest opencode-server/
+# Run the example
+cargo run --release --package opencode-cloud-dev
+
+# Or build and run container manually
+cd opencode-server
+docker build -t opencode-chat:latest .
 docker run --rm -p 4096:4096 opencode-chat:latest
 
-# Test it
+# Test it with curl
 curl -X POST http://localhost:4096/api/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Write hello world in Python"}'
 ```
+
+## Build Process
+
+The `build.rs` script automatically:
+1. Checks if Docker is installed
+2. Checks if `opencode-chat:latest` image exists
+3. If not, builds it from `opencode-server/Dockerfile`
+4. Provides helpful error messages if Docker is unavailable
 
 ## API Endpoints
 

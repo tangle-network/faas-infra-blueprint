@@ -2,6 +2,16 @@
 
 Comprehensive demo of FaaS platform capabilities including multi-language execution, caching, forking, and snapshots.
 
+## Prerequisites
+
+- **Docker** - Required for container execution
+  - Download from: https://www.docker.com/products/docker-desktop
+- **FaaS Gateway Server** - Must be running on port 8080
+- **Docker Images** - The following images will be pulled automatically:
+  - `alpine:latest`
+  - `python:3.11-slim`
+  - `node:20-alpine`
+
 ## Features Demonstrated
 
 - ✅ Multi-language execution (Python, JavaScript, Bash)
@@ -13,13 +23,20 @@ Comprehensive demo of FaaS platform capabilities including multi-language execut
 - ✅ Client-side metrics
 - ✅ Health monitoring
 
+## Known Limitations
+
+- **Fork Execution on macOS**: CRIU (Checkpoint/Restore In Userspace) is not available on macOS. Fork execution uses a simplified implementation that runs in fresh containers instead of using checkpoints. This maintains API compatibility while working cross-platform.
+- **Firecracker**: Only available on Linux with KVM support
+
 ## Running
 
 ```bash
-# Start FaaS gateway server
+# 1. Start FaaS gateway server (in one terminal)
 cargo run --release --package faas-gateway-server
 
-# Run the example
+# 2. Wait for gateway to start (look for "listening on 0.0.0.0:8080")
+
+# 3. Run the example (in another terminal)
 cargo run --release --package advanced-features
 ```
 
