@@ -2,12 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "tnt-core/BlueprintServiceManagerBase.sol";
-
-/**
- * @title FaaSBlueprint
- * @author Tangle Network
- * @notice Comprehensive blueprint for Function-as-a-Service with multi-agent orchestration
- *
+import "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "openzeppelin-contracts/contracts/utils/Strings.sol";
  * @dev This contract manages all FaaS platform capabilities:
  * - Container execution (ephemeral, cached, checkpointed, branched, persistent)
  * - Snapshot management (CRIU-based checkpointing)
@@ -30,7 +26,11 @@ import "tnt-core/BlueprintServiceManagerBase.sol";
  * - Job 10: Expose Port
  * - Job 11: Upload Files
  */
-contract FaaSBlueprint is BlueprintServiceManagerBase {
+// Precompile address for slashing (Tangle Network specific)
+// NOTE: This should be updated to match your runtime's actual slashing precompile address
+address constant SLASHING_PRECOMPILE = 0x00000000000000000000000000000000000009a0;
+
+contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
     // ============================================================================
     // EXECUTION TRACKING
     // ============================================================================
@@ -226,10 +226,11 @@ contract FaaSBlueprint is BlueprintServiceManagerBase {
         virtual
         override
         onlyFromMaster
+        nonReentrant
     {
         address operatorAddr = operatorToAddress(operator);
 
-        // Validate operator assignment if job was assigned
+        // Validate operator assignment ALWAYS - after transition period, all jobs should be assigned
         if (jobAssignments[jobCallId].assignedOperator != address(0)) {
             require(
                 jobAssignments[jobCallId].assignedOperator == operatorAddr,
@@ -237,6 +238,24 @@ contract FaaSBlueprint is BlueprintServiceManagerBase {
             );
             require(!jobAssignments[jobCallId].executed, "Job already executed");
             jobAssignments[jobCallId].executed = true;
+        } else {
+            // During transition period: Accept first valid submission but reject subsequent ones
+            // Check if another operator already submitted this job
+            bool alreadyExecuted = false;
+            if (executions.length > 0) {
+                for (uint256 i = executions.length - 1; i >= 0 && i >= executions.length - job; i--) {
+                    if (executions[i].callId == jobCallId) {
+                        alreadyExecuted = true;
+                        break;
+                    }
+                    if (i == 0) break; // Prevent underflow
+                }
+            }
+            if (alreadyExecuted) {
+                // Slash for duplicate execution during transition period
+                _slashOperator(operatorAddr, "Duplicate execution during transition");
+                revert("Job already executed by another operator");
+            }
         }
 
         // Update operator stats
@@ -274,9 +293,9 @@ contract FaaSBlueprint is BlueprintServiceManagerBase {
         } else if (job == 11) {
             _handleUploadFiles(operatorAddr, inputs, outputs);
         } else {
-            // Accept unknown job types for future extensibility
-            // Just track in operator stats
-            emit JobResultProcessed(serviceId, job, jobCallId, operator);
+            // Malicious actors trying to submit results for non-existent jobs
+            _slashOperator(operatorAddr, "Unauthorized job result submission");
+            revert("Unknown job type");
         }
     }
 
@@ -438,6 +457,91 @@ contract FaaSBlueprint is BlueprintServiceManagerBase {
     }
 
     // ============================================================================
+    // SLASHING LOGIC
+    // ============================================================================
+
+    /// @notice Slash operator for malicious behavior
+    function _slashOperator(address operator, string memory reason) internal {
+        string memory message = string(abi.encodePacked(
+            "FaaS Blueprint: ",
+            reason,
+            " - Operator: ",
+            Strings.toHexString(uint256(uint160(operator)), 20)
+        ));
+
+        // Call slashing precompile (runtime handles stake deduction)
+        (bool success,) = SLASHING_PRECOMPILE.call(abi.encode(operator, message));
+
+        if (success) {
+            // Mark operator as inactive to prevent future jobs
+            operators[operator].active = false;
+            emit OperatorSlashed(operator, reason);
+        }
+    }
+
+    // ============================================================================
+    // LOAD BALANCING LOGIC
+    // ============================================================================
+
+    /// @notice Enhanced operator selection with load balancing
+    function selectOperatorAndAssign(uint64 jobCallId) external returns (address) {
+        require(operatorList.length > 0, "No operators available");
+
+        // Enhanced selection: least loaded + success rate weighting
+        address selectedOp = _selectBestOperator();
+
+        // Assign job
+        jobAssignments[jobCallId] = JobAssignment({
+            assignedOperator: selectedOp,
+            executed: false
+        });
+
+        // Increment operator load
+        operators[selectedOp].currentLoad += 1;
+
+        emit JobAssigned(jobCallId, selectedOp);
+        return selectedOp;
+    }
+
+    function _selectBestOperator() internal view returns (address) {
+        require(operatorList.length > 0, "No operators available");
+
+        address bestOp = operatorList[0];
+        uint256 bestScore = _calculateOperatorScore(bestOp);
+
+        for (uint256 i = 1; i < operatorList.length; i++) {
+            address op = operatorList[i];
+            if (!operators[op].active) continue;
+
+            uint256 score = _calculateOperatorScore(op);
+            if (score > bestScore) {
+                bestScore = score;
+                bestOp = op;
+            }
+        }
+
+        return bestOp;
+    }
+
+    /// @notice Calculate operator selection score (higher is better)
+    /// Combines low load preference with success rate bonus
+    function _calculateOperatorScore(address operator) internal view returns (uint256) {
+        OperatorInfo memory info = operators[operator];
+        if (!info.active) return 0;
+
+        // Base score: inverse of current load (lower load = higher base)
+        uint256 loadScore = 1000 - info.currentLoad;
+
+        // Success rate bonus (0-100 basis points)
+        uint256 successBonus = 0;
+        if (info.totalJobs > 0) {
+            successBonus = (info.successfulJobs * 100) / info.totalJobs;
+        }
+
+        return loadScore + successBonus;
+    }
+
+    // ============================================================================
     // UTILITY FUNCTIONS
     // ============================================================================
 
@@ -481,4 +585,6 @@ contract FaaSBlueprint is BlueprintServiceManagerBase {
         uint64 jobCallId,
         ServiceOperators.OperatorPreferences operator
     );
+
+    event OperatorSlashed(address indexed operator, string reason);
 }

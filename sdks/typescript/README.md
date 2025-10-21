@@ -1,20 +1,6 @@
-# FaaS Platform TypeScript/JavaScript SDK
+# FaaS Platform TypeScript SDK
 
-[![npm](https://img.shields.io/npm/v/@faas-platform/sdk.svg)](https://www.npmjs.com/package/@faas-platform/sdk)
-[![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://docs.faas-platform.com/typescript-sdk)
-
-Official TypeScript/JavaScript SDK for the FaaS Platform with full type safety and event-driven architecture.
-
-## Features
-
-- 🚀 **Dual Runtime Support**: Docker containers and Firecracker microVMs
-- 📊 **Intelligent Caching**: Automatic result caching with configurable TTL
-- 🔥 **Pre-warming**: Zero cold starts with warm container pools
-- 🌳 **Execution Forking**: Branch workflows for A/B testing
-- 📈 **Auto-scaling**: Predictive scaling based on load patterns
-- 📋 **Rich Events**: Event-driven architecture with detailed monitoring
-- 🔄 **Method Chaining**: Fluent API for easy configuration
-- ⚡ **Full TypeScript**: Complete type safety and IntelliSense support
+Official TypeScript/JavaScript SDK for the FaaS Platform. Execute code in Docker containers or Firecracker microVMs with full type safety.
 
 ## Installation
 
@@ -22,14 +8,20 @@ Official TypeScript/JavaScript SDK for the FaaS Platform with full type safety a
 npm install @faas-platform/sdk
 ```
 
-For TypeScript projects:
+TypeScript projects also need:
 ```bash
-npm install @faas-platform/sdk @types/node
+npm install -D @types/node
 ```
+
+## Prerequisites
+
+- FaaS Gateway server running (default: `http://localhost:8080`)
+- Docker available on the gateway host
+- Node.js ≥16.0.0
 
 ## Quick Start
 
-### JavaScript (Node.js)
+### JavaScript
 
 ```javascript
 const { FaaSClient } = require('@faas-platform/sdk');
@@ -37,9 +29,10 @@ const { FaaSClient } = require('@faas-platform/sdk');
 async function main() {
   const client = new FaaSClient('http://localhost:8080');
 
-  // Simple execution
   const result = await client.runJavaScript('console.log("Hello, World!")');
-  console.log(result.output); // Output: Hello, World!
+  console.log(result.output); // Hello, World!
+  console.log(result.exitCode); // 0
+  console.log(result.durationMs); // 245
 }
 
 main().catch(console.error);
@@ -48,13 +41,12 @@ main().catch(console.error);
 ### TypeScript
 
 ```typescript
-import { FaaSClient, Runtime, ExecutionMode } from '@faas-platform/sdk';
+import { FaaSClient, Runtime, ExecutionResult } from '@faas-platform/sdk';
 
 async function main(): Promise<void> {
   const client = new FaaSClient('http://localhost:8080');
 
-  // Method chaining for configuration
-  const result = await client
+  const result: ExecutionResult = await client
     .useFirecracker()
     .setCaching(true)
     .execute({
@@ -62,169 +54,346 @@ async function main(): Promise<void> {
       image: 'node:20-alpine'
     });
 
-  console.log(`Execution completed in ${result.durationMs}ms`);
+  console.log(`Completed in ${result.durationMs}ms`);
 }
 ```
 
-## API Reference
+## Core API
 
-### FaaSClient
-
-The main client class extending EventEmitter for event-driven operations.
-
-#### Constructor
+### Client Constructor
 
 ```typescript
-new FaaSClient(config: ClientConfig | string)
+// Simple configuration
+const client = new FaaSClient('http://localhost:8080');
+
+// Full configuration
+const client = new FaaSClient({
+  baseUrl: 'http://localhost:8080',
+  runtime: Runtime.Docker,
+  cacheEnabled: true,
+  maxRetries: 3,
+  timeout: 30000,
+  apiKey: process.env.FAAS_API_KEY
+});
 ```
 
-#### Methods
+### Execution Methods
 
-- `runJavaScript(code: string)` - Execute JavaScript/Node.js code
-- `runTypeScript(code: string)` - Execute TypeScript code
-- `runPython(code: string)` - Execute Python code
-- `runBash(script: string)` - Execute bash scripts
-- `execute(options: ExecuteOptions)` - General-purpose execution
-- `executeAdvanced(request: AdvancedExecuteRequest)` - Advanced execution
-- `forkExecution(parentId: string, command: string)` - Fork existing execution
-- `prewarm(image: string, count: number)` - Pre-warm containers
-- `getMetrics()` - Get server performance metrics
-- `getClientMetrics()` - Get client-side metrics
-- `healthCheck()` - Check platform health
+#### `execute(options)`
 
-#### Method Chaining
+General-purpose execution with full control.
 
 ```typescript
-const client = new FaaSClient('http://localhost:8080')
-  .useFirecracker()     // Set runtime to Firecracker
-  .setCaching(true)     // Enable caching
-  .setRetries(5)        // Set retry attempts
-  .setTimeout(60000);   // Set timeout
+const result = await client.execute({
+  command: 'python script.py',
+  image: 'python:3.11-slim',
+  runtime: Runtime.Docker,
+  envVars: { API_KEY: 'secret' },
+  workingDir: '/app',
+  timeoutMs: 60000,
+  cacheKey: 'optional-cache-key'
+});
 ```
 
-### Events
+**Returns:** `ExecutionResult`
+- `requestId: string` - Unique execution identifier
+- `output?: string` - Combined stdout/stderr output
+- `logs?: string` - Stderr only
+- `error?: string` - Error message if execution failed
+- `exitCode?: number` - Process exit code
+- `durationMs: number` - Execution time in milliseconds
+- `cacheHit: boolean` - Whether result was served from cache
+- `runtimeUsed?: Runtime` - Runtime that executed the request
 
-The client emits the following events:
+#### `runPython(code)`
+
+Execute Python code directly.
 
 ```typescript
-client.on('execution', (event) => {
-  console.log(`Execution completed in ${event.elapsedMs}ms`);
-});
-
-client.on('retry', (event) => {
-  console.log(`Retry attempt ${event.attempt}: ${event.error}`);
-});
-
-client.on('error', (error) => {
-  console.error('Client error:', error);
-});
-
-client.on('cache-hit', (event) => {
-  console.log('Cache hit for key:', event.cacheKey);
-});
+const result = await client.runPython(`
+data = [1, 2, 3, 4, 5]
+print(f"Sum: {sum(data)}")
+`);
 ```
+
+**Image:** `python:3.11-slim`
+
+#### `runJavaScript(code)`
+
+Execute JavaScript/Node.js code directly.
+
+```typescript
+const result = await client.runJavaScript(`
+const data = [1, 2, 3, 4, 5];
+const sum = data.reduce((a, b) => a + b, 0);
+console.log("Sum: " + sum);
+`);
+```
+
+**Image:** `node:20-slim`
+
+#### `runTypeScript(code)`
+
+Execute TypeScript code (transpiled via ts-node).
+
+```typescript
+const result = await client.runTypeScript(`
+const greet = (name: string): string => \`Hello, \${name}\`;
+console.log(greet("World"));
+`);
+```
+
+**Image:** `node:20-slim`
+
+#### `runBash(script)`
+
+Execute bash scripts.
+
+```typescript
+const result = await client.runBash(`
+echo "content" > /tmp/test.txt
+cat /tmp/test.txt
+wc -c /tmp/test.txt
+`);
+```
+
+**Image:** `alpine:latest`
 
 ### Runtime Selection
 
 ```typescript
 import { Runtime } from '@faas-platform/sdk';
 
-// Development with Docker
-const devClient = new FaaSClient('http://localhost:8080', {
+// Set runtime globally
+const client = new FaaSClient({
+  baseUrl: 'http://localhost:8080',
   runtime: Runtime.Docker
 });
 
-// Production with Firecracker
-const prodClient = new FaaSClient('https://api.example.com', {
+// Override per request
+await client.execute({
+  command: 'echo test',
   runtime: Runtime.Firecracker
 });
 
-// Automatic selection
-const smartClient = new FaaSClient('http://localhost:8080', {
-  runtime: Runtime.Auto
-});
+// Method chaining
+await client.useDocker().execute({ command: 'echo test' });
+await client.useFirecracker().execute({ command: 'echo test' });
 ```
 
-### Execution Modes
+**Available Runtimes:**
+- `Runtime.Docker` - Docker containers (50-200ms cold start)
+- `Runtime.Firecracker` - Firecracker microVMs (~125ms cold start, hardware isolation)
+- `Runtime.Auto` - Platform selects optimal runtime
+
+### Method Chaining
+
+Configure client behavior fluently.
 
 ```typescript
-import { ExecutionMode } from '@faas-platform/sdk';
+const result = await client
+  .useDocker()
+  .setCaching(false)
+  .execute({ command: 'echo test' });
+```
 
-// Cached execution
-const result = await client.executeAdvanced({
-  command: 'node inference.js',
-  mode: ExecutionMode.Cached,
-  image: 'node:20-alpine'
+**Available Methods:**
+- `useDocker()` - Set runtime to Docker
+- `useFirecracker()` - Set runtime to Firecracker
+- `setCaching(enabled: boolean)` - Enable/disable result caching
+
+### Events
+
+Client emits events for monitoring and debugging.
+
+```typescript
+client.on('execution', (event) => {
+  console.log(`Completed in ${event.elapsedMs}ms`);
+  console.log(`Cache hit: ${event.cacheHit}`);
+  console.log(`Result:`, event.result);
 });
 
-// Persistent service
-const service = await client.executeAdvanced({
-  command: 'node server.js',
-  mode: ExecutionMode.Persistent,
-  image: 'node:20-alpine'
+client.on('retry', (event) => {
+  console.log(`Retry ${event.attempt}: ${event.error}`);
 });
 ```
 
-## Examples
+**Event Types:**
+- `execution` - Emitted after each execution completes
+  - `result: any` - Raw API response
+  - `elapsedMs: number` - Client-side elapsed time
+  - `cacheHit: boolean` - Cache status
+- `retry` - Emitted when request is retried
+  - `attempt: number` - Retry attempt number (0-indexed)
+  - `error: Error` - Error that triggered retry
 
-See the [examples directory](../../examples/typescript/) for complete examples:
+### Utility Methods
 
-- [quickstart.ts](../../examples/typescript/quickstart.ts) - Basic usage patterns and features
+#### `healthCheck()`
 
-## Advanced Usage
+Check gateway health status.
+
+```typescript
+const health = await client.healthCheck();
+console.log(health.status); // "ok"
+```
+
+#### `getMetrics()`
+
+Get server-side performance metrics.
+
+```typescript
+const metrics = await client.getMetrics();
+console.log(metrics);
+```
+
+#### `getClientMetrics()`
+
+Get client-side metrics (synchronous).
+
+```typescript
+const metrics = client.getClientMetrics();
+console.log(`Total requests: ${metrics.totalRequests}`);
+console.log(`Cache hit rate: ${metrics.cacheHitRate}`);
+console.log(`Average latency: ${metrics.averageLatencyMs}ms`);
+console.log(`Error rate: ${metrics.errorRate}`);
+```
+
+#### `getCacheKey(content)`
+
+Generate deterministic MD5 cache key.
+
+```typescript
+const key = client.getCacheKey('print("hello")');
+console.log(key); // "5d41402abc4b2a76b9719d911017c592"
+```
+
+#### `prewarm(image, count)`
+
+Pre-warm container pool to reduce cold starts.
+
+```typescript
+await client.prewarm('python:3.11-slim', 5);
+```
+
+## Advanced Features
 
 ### Concurrent Execution
 
 ```typescript
-const tasks = Array.from({ length: 10 }, (_, i) =>
-  client.runJavaScript(`console.log('Task ${i} completed')`)
+const tasks = Array(10).fill(null).map((_, i) =>
+  client.execute({
+    command: `echo "Task ${i}"`,
+    image: 'alpine:latest'
+  })
 );
 
 const results = await Promise.all(tasks);
 console.log(`Completed ${results.length} executions`);
 ```
 
-### Error Handling with Types
+### Error Handling
 
 ```typescript
 import axios from 'axios';
 
 try {
-  const result = await client.execute({ command: 'invalid-command' });
+  const result = await client.execute({
+    command: 'exit 1',
+    image: 'alpine:latest'
+  });
+
+  if (result.exitCode !== 0) {
+    console.error('Command failed:', result.error);
+  }
 } catch (error) {
   if (axios.isAxiosError(error)) {
     console.error('Network error:', error.message);
   } else {
-    console.error('Execution error:', error);
+    console.error('Unexpected error:', error);
   }
 }
 ```
 
-### Performance Monitoring
+### Environment Variables
 
 ```typescript
-// Monitor performance metrics
-setInterval(async () => {
-  const serverMetrics = await client.getMetrics();
-  const clientMetrics = client.getClientMetrics();
-
-  console.log('Server metrics:', serverMetrics);
-  console.log('Client cache hit rate:', clientMetrics.cacheHitRate);
-}, 30000);
+const result = await client.execute({
+  command: 'python app.py',
+  image: 'python:3.11-slim',
+  envVars: {
+    DATABASE_URL: 'postgres://...',
+    API_KEY: process.env.API_KEY,
+    NODE_ENV: 'production'
+  }
+});
 ```
 
-## Performance Tips
+### Custom Images
 
-1. **Use method chaining** to avoid creating multiple instances
-2. **Enable caching** for deterministic computations
-3. **Pre-warm containers** for critical paths
-4. **Use Firecracker** for production workloads requiring isolation
-5. **Monitor events** for performance insights
-6. **Batch operations** when possible
+```typescript
+const result = await client.execute({
+  command: 'cargo run --release',
+  image: 'rust:1.75-alpine',
+  timeoutMs: 300000 // 5 minutes
+});
+```
+
+### Execution Forking
+
+Fork parent execution for A/B testing.
+
+```typescript
+const parent = await client.execute({
+  command: 'node setup.js',
+  image: 'node:20-alpine'
+});
+
+const variants = await Promise.all([
+  client.forkExecution(parent.requestId, 'node variant-a.js'),
+  client.forkExecution(parent.requestId, 'node variant-b.js')
+]);
+```
+
+### Snapshots
+
+Create execution snapshots for state management.
+
+```typescript
+const snapshot = await client.createSnapshot(
+  containerId,
+  'checkpoint-1',
+  'State after initialization'
+);
+```
+
+## Performance
+
+### Optimization Strategies
+
+1. **Enable caching** for deterministic workloads - reduces latency to <10ms
+2. **Pre-warm containers** for critical paths - eliminates cold start overhead
+3. **Use method chaining** - avoids creating multiple client instances
+4. **Batch concurrent executions** - maximizes throughput
+5. **Select appropriate runtime** - Docker for dev, Firecracker for production
+
+### Cache Behavior
+
+- Automatic cache key generation from `command` + `image`
+- Custom cache keys via `cacheKey` parameter
+- Cache detection via `cacheHit` field (<10ms responses)
+- Disable caching: `setCaching(false)`
+
+### Retry Logic
+
+- Default: 3 retries with exponential backoff
+- Configurable via `maxRetries` in constructor
+- Backoff: 100ms × 2^attempt
+- Emits `retry` event on each attempt
 
 ## TypeScript Configuration
 
-For optimal TypeScript support, configure your `tsconfig.json`:
+Recommended `tsconfig.json` for optimal type safety:
 
 ```json
 {
@@ -234,11 +403,29 @@ For optimal TypeScript support, configure your `tsconfig.json`:
     "lib": ["ES2020"],
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   }
 }
 ```
 
+## Testing
+
+Integration tests require a running gateway:
+
+```bash
+# Terminal 1: Start gateway
+cargo run --package faas-gateway-server
+
+# Terminal 2: Run tests
+npm test
+```
+
+Set custom gateway URL:
+```bash
+FAAS_GATEWAY_URL=http://localhost:9090 npm test
+```
+
 ## License
 
-This project is licensed under the MIT License.
+MIT

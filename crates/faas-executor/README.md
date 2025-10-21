@@ -125,7 +125,23 @@ FAAS_RUNTIME=docker|firecracker|hybrid
 FAAS_WARM_POOL_SIZE=10
 FAAS_COLD_START_TARGET_MS=250
 TEST_REAL_DOCKER=1  # Enable real Docker tests
+# Persistent mode host workspace (defaults to system temp dir)
+FAAS_PERSIST_ROOT=/var/lib/faas/workspaces
+# Paths required when running Firecracker/CRIU tests
+FC_KERNEL_IMAGE=/var/lib/faas/kernel
+FC_ROOTFS=/var/lib/faas/rootfs.ext4
+# Optional: Use a prebuilt Firecracker rootfs (instead of building every run)
+FC_ROOTFS_URL=https://github.com/tangle-network/faas-infra-assets/releases/latest/download/rootfs.ext4
+FC_ROOTFS_SHA256=$(curl -sL https://github.com/tangle-network/faas-infra-assets/releases/latest/download/rootfs.sha256 | awk '{print $1}')
 ```
+
+To regenerate the rootfs artifact yourself, rebuild it (e.g., with the legacy `tools/firecracker-rootfs-builder/build_rootfs.sh` on a Linux host) and then publish the refreshed files via:
+
+```bash
+scripts/publish_firecracker_rootfs.sh --tag fc-rootfs-$(date +%Y%m%d)
+```
+
+The script uploads both `rootfs.ext4` and the matching `.sha256` to the `tangle-network/faas-infra-assets` release. When those assets are available, the CI workflow automatically downloads them; if the download fails it falls back to building via Buildroot (slower, but deterministic).
 
 ## Production Deployment
 

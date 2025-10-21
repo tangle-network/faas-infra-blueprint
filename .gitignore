@@ -63,3 +63,4 @@ __pycache__/
 
 # Guest programs (built via build.rs)
 crates/faas-zk-prover/sp1-guest-examples/*/Cargo.lock
+.pytest_cache/

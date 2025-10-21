@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### TypeScript (HTTP Gateway)
 
 ```typescript
-import { FaaSClient } from '@faas-platform/sdk';
+import { FaaSClient, Runtime } from '@faas-platform/sdk';
 
 const client = new FaaSClient('http://localhost:8080');
 
@@ -121,7 +121,7 @@ console.log(pythonResult.output);
 const advanced = await client.execute({
   command: 'npm test',
   image: 'node:20-slim',
-  mode: 'cached',
+  runtime: Runtime.Docker,
   envVars: { NODE_ENV: 'test' },
   timeoutMs: 30000
 });
@@ -160,12 +160,12 @@ variant_b = await client.fork_execution(base.request_id, 'test_b.py')
 |---------|:--------:|:--------------:|:----------:|
 | Basic execution | ✓ | ✓ | ✓ |
 | Multi-language helpers | ✓ | ✓ | ✓ |
-| Execution modes | ✓ | ✓ | ✓ |
-| Caching | ✓ | ✓ | ✓ |
-| Snapshots | ✓ | Partial | Partial |
-| Instances | ✓ | ✓ | ✓ |
+| Runtime selection | ✓ | ✓ | ✓ |
+| Client-side caching | ✓ | ✓ | ✓ |
+| Snapshots | ✓ | ✓ | Partial |
 | Forking/branching | ✓ | ✓ | ✓ |
 | Pre-warming | ✓ | ✓ | ✓ |
+| Event emitters | ✓ | ✓ | ✓ |
 | Metrics | ✓ | ✓ | ✓ |
 
 ### Tangle Blockchain Features

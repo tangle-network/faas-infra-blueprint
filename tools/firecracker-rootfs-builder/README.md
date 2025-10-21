@@ -10,11 +10,23 @@ This directory contains the tools and configuration necessary to build a minimal
 
 ## Usage
 
+### Quick path (Docker, recommended)
+
+From the repository root:
+
+```bash
+scripts/build_firecracker_rootfs.sh
+```
+
+This executes the Docker-based build and mounts the resulting artifacts under `tools/firecracker-rootfs-builder/output/`.
+
+### Manual path (advanced/custom changes)
+
 1.  **Navigate:** Change directory to `tools/firecracker-rootfs-builder`.
 2.  **(Optional) Customize Configuration:**
     - If this is the first run or you need to modify the Buildroot configuration (e.g., add packages), copy `buildroot_config.base` to `.config` inside the Buildroot source directory (created by the script) and run `make menuconfig` within that directory.
     - Save the configuration and copy the resulting `.config` back to `buildroot_config.base` or a custom config file if desired.
-3.  **Run Build Script:** Execute `./build_rootfs.sh`.
+3.  **Run Build Script:** Execute `./build_rootfs.sh` (requires a Linux host with kernel headers).
     - The script will download Buildroot (if needed), build the `faas-guest-agent` (if needed), configure Buildroot using `buildroot_config.base`, apply the overlay (including the `init` script), build the `ext4` rootfs image, and place it in the `output/` directory.
 4.  **Set Environment Variables:** After a successful build, configure the environment variables for the FaaS service and tests:
     ```bash

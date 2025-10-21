@@ -1,6 +1,6 @@
 //! Basic unit tests for FaaS Rust SDK
 
-use faas_client_sdk::*;
+use faas_sdk::*;
 
 #[test]
 fn test_sdk_types() {

@@ -7,6 +7,7 @@ use faas_common::ExecuteFunctionArgs;
 use faas_executor::platform::{Mode, Request as PlatformRequest};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use tokio::time::sleep;
 use tracing::{info, instrument};
 
 // ============================================================================
@@ -45,6 +46,7 @@ pub async fn execute_function_job(
         checkpoint: None,
         branch_from: None,
         runtime: None,
+        env_vars: None,
     };
 
     let response = _ctx
@@ -59,6 +61,11 @@ pub async fn execute_function_job(
             response.exit_code
         )));
     }
+
+    // Add random jitter before result submission to avoid nonce conflicts
+    // Use truly random delay so each operator has different timing
+    let jitter_ms = 50 + (rand::random::<u64>() % 500); // 50-550ms random delay
+    sleep(Duration::from_millis(jitter_ms)).await;
 
     // Return stdout
     Ok(TangleResult(response.stdout))
@@ -157,6 +164,7 @@ pub async fn execute_advanced_job(
         checkpoint: checkpoint_id,
         branch_from: branch_from,
         runtime: None,
+        env_vars: None,
     };
 
     let response = _ctx
@@ -164,6 +172,11 @@ pub async fn execute_advanced_job(
         .run(request)
         .await
         .map_err(|e| JobError::ExecutionFailed(format!("Execution failed: {e}")))?;
+
+    // Add random jitter before result submission to avoid nonce conflicts
+    // Use truly random delay so each operator has different timing
+    let jitter_ms = 50 + (rand::random::<u64>() % 500); // 50-550ms random delay
+    sleep(Duration::from_millis(jitter_ms)).await;
 
     Ok(TangleResult(response.stdout))
 }

@@ -55,14 +55,15 @@ npm start
 | Feature | Rust | Python | TypeScript |
 |---------|:----:|:------:|:----------:|
 | Basic execution | ✅ | ✅ | ✅ |
-| Multi-language | ✅ | ✅ | ✅ |
-| Caching | ✅ | ✅ | ✅ |
+| Multi-language helpers | ✅ | ✅ | ✅ |
+| Runtime selection | ✅ | ✅ | ✅ |
+| Client-side caching | ✅ | ✅ | ✅ |
 | Pre-warming | ✅ | ✅ | ✅ |
-| Forking/Branching | ✅ | ✅ | ❌ |
-| Snapshots | ✅ | ❌ | ❌ |
-| Execution modes | ✅ | ✅ | ❌ |
-| Firecracker VMs | ❌ | ✅ | ✅ |
-| Log streaming | ❌ | ✅ | ❌ |
+| Forking/Branching | ✅ | ✅ | ✅ |
+| Snapshots | ✅ | ✅ | ✅ |
+| Event emitters | ✅ | ✅ | ✅ |
+| Log streaming | ✅ | ✅ | ✅ |
+| Metrics | ✅ | ✅ | ✅ |
 | ML workflows | ❌ | ✅ | ❌ |
 | Data pipelines | ✅ | ✅ | ❌ |
 | CI/CD | ✅ | ❌ | ❌ |
