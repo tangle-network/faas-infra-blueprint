@@ -61,11 +61,14 @@ url = "2.5"
 [features]
 default = ["object-storage"]
 object-storage = ["dep:object_store", "dep:bytes"]
+checkpoint-tests = []
+firecracker-tests = []
 
 [dev-dependencies]
 bollard = { workspace = true }
 futures = { workspace = true }
 criterion = { workspace = true }
+serial_test = "3"
 
 [[bench]]
 name = "executor_bench"

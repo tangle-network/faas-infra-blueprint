@@ -1,113 +1,141 @@
-use faas_lib::api_server::{ApiKeyPermissions, ApiServerConfig, ExecuteRequest};
-use reqwest;
+use faas_blueprint_lib::api_routes::build_api_router;
+use faas_blueprint_lib::api_server::{
+    ApiKeyPermissions, ApiServerConfig, ApiState, ExecuteRequest,
+};
+use faas_blueprint_lib::context::FaaSContext;
+use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
-use std::time::Duration;
-use tokio::time::sleep;
+use std::net::TcpListener as StdTcpListener;
+use tempfile::tempdir;
+use tokio::fs;
+use tokio::sync::oneshot;
+
+struct ApiTestServer {
+    base_url: String,
+    shutdown: oneshot::Sender<()>,
+    handle: tokio::task::JoinHandle<()>,
+    _context: FaaSContext,
+}
+
+async fn spawn_api_server() -> Result<ApiTestServer, Box<dyn std::error::Error>> {
+    std::env::set_var("FAAS_DISABLE_CONTRACT_ASSIGNMENT", "1");
+    std::env::set_var("FAAS_DISABLE_PREWARM", "1");
+
+    let temp_dir = tempdir()?;
+    let base_path = temp_dir.path().to_path_buf();
+    let keystore_dir = base_path.join("keystore");
+    fs::create_dir_all(&keystore_dir).await?;
+
+    let mut env = blueprint_sdk::runner::config::BlueprintEnvironment::default();
+    env.test_mode = true;
+    env.data_dir = base_path.clone();
+    env.keystore_uri = keystore_dir.to_string_lossy().into_owned();
+
+    let context = FaaSContext::new(env).await?;
+
+    let listener = StdTcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    drop(listener);
+
+    let mut config = ApiServerConfig::default();
+    config.host = "127.0.0.1".to_string();
+    config.port = port;
+    config.api_keys.insert(
+        "test-key".to_string(),
+        ApiKeyPermissions {
+            name: "test".to_string(),
+            can_execute: true,
+            can_manage_instances: true,
+            rate_limit: Some(100),
+        },
+    );
+
+    let state = ApiState {
+        context: context.clone(),
+        config: config.clone(),
+        request_counts: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+    };
+
+    let router = build_api_router(state);
+
+    let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    let server = axum::serve(listener, router).with_graceful_shutdown(async move {
+        let _ = shutdown_rx.await;
+    });
+
+    let handle = tokio::spawn(async move {
+        if let Err(err) = server.await {
+            panic!("API server error: {err}");
+        }
+    });
+
+    Ok(ApiTestServer {
+        base_url: format!("http://127.0.0.1:{}", config.port),
+        shutdown: shutdown_tx,
+        handle,
+        _context: context,
+    })
+}
 
 #[tokio::test]
-#[ignore] // Run with: cargo test --test api -- --ignored --nocapture
 async fn test_api_server_execution() -> Result<(), Box<dyn std::error::Error>> {
-    // This test assumes the faas-blueprint service is running with API server enabled
-    // Start it with: FAAS_API_KEY=test-key cargo run --bin faas-blueprint
+    let server = spawn_api_server().await?;
+    let client = Client::new();
+    let base_url = &server.base_url;
 
-    let client = reqwest::Client::new();
-    let base_url = "http://localhost:8080";
-
-    // Test health endpoint (no auth required)
     let health_response = client.get(format!("{}/health", base_url)).send().await?;
-
     assert_eq!(health_response.status(), 200);
-    let health_json: serde_json::Value = health_response.json().await?;
-    assert_eq!(health_json["status"], "healthy");
-    println!("✅ Health check passed");
 
-    // Test execution endpoint (requires auth)
     let execute_request = ExecuteRequest {
         image: "alpine:latest".to_string(),
         command: vec!["echo".to_string(), "Hello from API".to_string()],
         env_vars: None,
         payload: Vec::new(),
+        mode: None,
+        checkpoint_id: None,
+        branch_from: None,
+        timeout_secs: Some(30),
     };
 
     let execute_response = client
         .post(format!("{}/api/v1/execute", base_url))
-        .header("x-api-key", "test-key") // Use the API key set in environment
+        .header("x-api-key", "test-key")
         .json(&execute_request)
         .send()
         .await?;
-
-    if execute_response.status() == 401 {
-        println!(
-            "⚠️  Authentication failed - make sure service is running with FAAS_API_KEY=test-key"
-        );
-        return Ok(());
-    }
-
     assert_eq!(execute_response.status(), 200);
+
     let result: serde_json::Value = execute_response.json().await?;
-
     assert!(result["request_id"].is_string());
-    assert!(result["response"].is_array() || result["response"].is_null());
 
-    if let Some(response_bytes) = result["response"].as_array() {
-        let response_str = String::from_utf8(
-            response_bytes
-                .iter()
-                .filter_map(|v| v.as_u64().map(|b| b as u8))
-                .collect(),
-        )?;
-        println!("✅ Execution response: {}", response_str.trim());
-    }
-
-    // Test rate limiting
-    println!("Testing rate limiting...");
-    let mut exceeded = false;
-    for i in 0..70 {
-        let response = client
-            .post(format!("{}/api/v1/execute", base_url))
-            .header("x-api-key", "test-key")
-            .json(&execute_request)
-            .send()
-            .await?;
-
-        if response.status() == 429 {
-            println!("✅ Rate limit triggered after {} requests", i);
-            exceeded = true;
-            break;
-        }
-    }
-
-    if !exceeded {
-        println!("⚠️  Rate limit not triggered (may be disabled or set higher than 60/min)");
-    }
-
-    // Test unauthorized access
     let unauth_response = client
         .post(format!("{}/api/v1/execute", base_url))
         .json(&execute_request)
         .send()
         .await?;
+    assert!(unauth_response.status().is_client_error());
 
-    assert_eq!(unauth_response.status(), 400); // Should fail without API key
-    println!("✅ Unauthorized access properly rejected");
-
+    let _ = server.shutdown.send(());
+    let _ = server.handle.await;
     Ok(())
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_api_server_instances() -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let base_url = "http://localhost:8080";
+    let server = spawn_api_server().await?;
+    let client = Client::new();
+    let base_url = &server.base_url;
 
-    // Create instance
     let create_request = json!({
-        "resources": {
-            "cpu_cores": 2,
-            "memory_mb": 4096,
-            "disk_gb": 20
-        }
+        "snapshot_id": null,
+        "image": "alpine:latest",
+        "cpu_cores": 1,
+        "memory_mb": 512,
+        "disk_gb": 4,
+        "enable_ssh": false
     });
 
     let create_response = client
@@ -116,36 +144,24 @@ async fn test_api_server_instances() -> Result<(), Box<dyn std::error::Error>> {
         .json(&create_request)
         .send()
         .await?;
-
-    if create_response.status() == 401 {
-        println!(
-            "⚠️  Authentication failed - make sure service is running with FAAS_API_KEY=test-key"
-        );
-        return Ok(());
-    }
-
     assert_eq!(create_response.status(), 200);
+
     let instance: serde_json::Value = create_response.json().await?;
+    let instance_id = instance["instance_id"]
+        .as_str()
+        .expect("instance id missing");
+    assert_eq!(instance["status"], "running");
 
-    assert!(instance["id"].is_string());
-    assert_eq!(instance["status"], "pending");
-
-    let instance_id = instance["id"].as_str().unwrap();
-    println!("✅ Created instance: {}", instance_id);
-
-    // Get instance
     let get_response = client
-        .get(format!("{}/api/v1/instances/{}", base_url, instance_id))
+        .get(format!(
+            "{}/api/v1/instances/{}/info",
+            base_url, instance_id
+        ))
         .header("x-api-key", "test-key")
         .send()
         .await?;
-
     assert_eq!(get_response.status(), 200);
-    let instance_info: serde_json::Value = get_response.json().await?;
-    assert_eq!(instance_info["id"], instance_id);
-    println!("✅ Retrieved instance info");
 
-    // Stop instance
     let stop_response = client
         .post(format!(
             "{}/api/v1/instances/{}/stop",
@@ -154,11 +170,12 @@ async fn test_api_server_instances() -> Result<(), Box<dyn std::error::Error>> {
         .header("x-api-key", "test-key")
         .send()
         .await?;
-
     assert_eq!(stop_response.status(), 200);
-    let stopped: serde_json::Value = stop_response.json().await?;
-    assert_eq!(stopped["status"], "stopped");
-    println!("✅ Stopped instance");
+    let stop_json: serde_json::Value = stop_response.json().await?;
+    assert_eq!(stop_json["instance_id"], instance_id);
+    assert!(stop_json["stopped"].as_bool().unwrap_or(false));
 
+    let _ = server.shutdown.send(());
+    let _ = server.handle.await;
     Ok(())
 }

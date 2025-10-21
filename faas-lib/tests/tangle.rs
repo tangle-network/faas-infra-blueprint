@@ -1,6 +1,8 @@
+mod support;
+
 use blueprint_sdk::tangle::layers::TangleLayer;
 use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
-use blueprint_sdk::tangle::serde::BoundedVec;
+use blueprint_sdk::tangle::serde::{new_bounded_string, BoundedVec};
 use blueprint_sdk::testing::tempfile;
 use blueprint_sdk::testing::utils::setup_log;
 use blueprint_sdk::testing::utils::tangle::{InputValue, OutputValue, TangleTestHarness};
@@ -8,13 +10,55 @@ use blueprint_sdk::Job;
 use color_eyre::Result;
 use faas_blueprint_lib::context::FaaSContext;
 use faas_blueprint_lib::jobs::{execute_function_job, EXECUTE_FUNCTION_JOB_ID};
-use faas_common::ExecuteFunctionArgs;
 use std::time::Duration;
+use support::{register_jobs_through, setup_services_with_retry};
 use tokio::time::timeout;
 use tracing::info;
 
 // Number of nodes for multi-party testing
 const N: usize = 3;
+
+fn command_list(parts: &[&str]) -> InputValue {
+    InputValue::List(
+        FieldType::String,
+        BoundedVec(
+            parts
+                .iter()
+                .map(|p| InputValue::String(new_bounded_string(*p)))
+                .collect(),
+        ),
+    )
+}
+
+fn empty_env() -> InputValue {
+    InputValue::Optional(FieldType::List(Box::new(FieldType::String)), Box::new(None))
+}
+
+fn payload_bytes(bytes: &[u8]) -> InputValue {
+    InputValue::List(
+        FieldType::Uint8,
+        BoundedVec(bytes.iter().map(|b| InputValue::Uint8(*b)).collect()),
+    )
+}
+
+fn decode_stdout(value: &OutputValue) -> Option<String> {
+    if let OutputValue::List(_, data) = value {
+        let bytes = data
+            .0
+            .iter()
+            .filter_map(|field| {
+                if let OutputValue::Uint8(byte) = field {
+                    Some(*byte)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<u8>>();
+        Some(String::from_utf8_lossy(&bytes).to_string())
+    } else {
+        None
+    }
+}
 
 #[tokio::test]
 async fn faas_execution_onchain() -> Result<()> {
@@ -25,16 +69,15 @@ async fn faas_execution_onchain() -> Result<()> {
 
     // Initialize test harness with actual blockchain
     let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+    let harness: TangleTestHarness<FaaSContext> = TangleTestHarness::setup(temp_dir).await?;
 
     // Setup service with N nodes
-    let (mut test_env, service_id, blueprint_id) = harness.setup_services::<N>(false).await?;
+    let (mut test_env, service_id, _blueprint_id) =
+        setup_services_with_retry::<FaaSContext, N>(&harness, false).await?;
     test_env.initialize().await?;
 
     // Add the FaaS execution job to the node
-    test_env
-        .add_job(execute_function_job.layer(TangleLayer))
-        .await;
+    register_jobs_through(&mut test_env, EXECUTE_FUNCTION_JOB_ID).await;
 
     // Create contexts for each node
     let mut contexts = Vec::new();
@@ -51,21 +94,15 @@ async fn faas_execution_onchain() -> Result<()> {
 
     // Create job arguments - execute a simple echo command
     let job_args = vec![
-        InputValue::String("alpine:latest".to_string()),
-        InputValue::List(
-            FieldType::String,
-            BoundedVec(vec![
-                InputValue::String("echo".to_string()),
-                InputValue::String("Hello Tangle".to_string()),
-            ]),
-        ),
-        InputValue::List(FieldType::String, BoundedVec(vec![])), // No env vars
-        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),  // No payload
+        InputValue::String(new_bounded_string("alpine:latest")),
+        command_list(&["echo", "Hello Tangle"]),
+        empty_env(),
+        payload_bytes(&[]),
     ];
 
     // Submit job on-chain
     let job = harness
-        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID, job_args)
+        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
         .await?;
 
     let call_id = job.call_id;
@@ -81,28 +118,18 @@ async fn faas_execution_onchain() -> Result<()> {
 
     // Verify on-chain results
     assert_eq!(results.service_id, service_id);
-    assert_eq!(results.job_id, EXECUTE_FUNCTION_JOB_ID);
+    assert_eq!(results.job as u64, EXECUTE_FUNCTION_JOB_ID);
 
     // Verify the output contains our echo message
-    if let Some(OutputValue::List(outputs)) = results.result.first() {
-        let output_str = outputs
-            .0
-            .iter()
-            .filter_map(|v| {
-                if let OutputValue::Uint8(byte) = v {
-                    Some(*byte)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<u8>>();
-
-        let output = String::from_utf8_lossy(&output_str);
-        assert!(
-            output.contains("Hello Tangle"),
-            "On-chain result should contain echoed message"
-        );
-    }
+    let stdout = results
+        .result
+        .first()
+        .and_then(decode_stdout)
+        .expect("execution should produce stdout");
+    assert!(
+        stdout.contains("Hello Tangle"),
+        "On-chain result should contain echoed message"
+    );
 
     info!("✅ FaaS execution verified on-chain");
     Ok(())
@@ -116,14 +143,13 @@ async fn faas_compilation_onchain() -> Result<()> {
     info!("=== FAAS COMPILATION ON-CHAIN TEST ===");
 
     let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+    let harness: TangleTestHarness<FaaSContext> = TangleTestHarness::setup(temp_dir).await?;
 
-    let (mut test_env, service_id, _blueprint_id) = harness.setup_services::<1>(false).await?;
+    let (mut test_env, service_id, _blueprint_id) =
+        setup_services_with_retry::<FaaSContext, 1>(&harness, false).await?;
     test_env.initialize().await?;
 
-    test_env
-        .add_job(execute_function_job.layer(TangleLayer))
-        .await;
+    register_jobs_through(&mut test_env, EXECUTE_FUNCTION_JOB_ID).await;
 
     // Single node context
     let handle = test_env.node_handles().await.into_iter().next().unwrap();
@@ -142,24 +168,18 @@ async fn faas_compilation_onchain() -> Result<()> {
     "#;
 
     let job_args = vec![
-        InputValue::String("rust:latest".to_string()),
-        InputValue::List(
-            FieldType::String,
-            BoundedVec(vec![
-                InputValue::String("sh".to_string()),
-                InputValue::String("-c".to_string()),
-                InputValue::String(format!(
-                    "echo '{}' > main.rs && rustc main.rs && ./main",
-                    rust_code
-                )),
-            ]),
-        ),
-        InputValue::List(FieldType::String, BoundedVec(vec![])),
-        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),
+        InputValue::String(new_bounded_string("rust:latest")),
+        command_list(&[
+            "sh",
+            "-c",
+            &format!("echo '{}' > main.rs && rustc main.rs && ./main", rust_code),
+        ]),
+        empty_env(),
+        payload_bytes(&[]),
     ];
 
     let job = harness
-        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID, job_args)
+        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
         .await?;
 
     info!("Submitted compilation job with call ID {}", job.call_id);
@@ -175,25 +195,15 @@ async fn faas_compilation_onchain() -> Result<()> {
     assert_eq!(results.service_id, service_id);
 
     // Verify compilation succeeded
-    if let Some(OutputValue::List(outputs)) = results.result.first() {
-        let output_bytes: Vec<u8> = outputs
-            .0
-            .iter()
-            .filter_map(|v| {
-                if let OutputValue::Uint8(byte) = v {
-                    Some(*byte)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let output = String::from_utf8_lossy(&output_bytes);
-        assert!(
-            output.contains("Compiled on Tangle"),
-            "Compilation should produce expected output"
-        );
-    }
+    let output = results
+        .result
+        .first()
+        .and_then(decode_stdout)
+        .expect("compilation job should emit stdout");
+    assert!(
+        output.contains("Compiled on Tangle"),
+        "Compilation should produce expected output"
+    );
 
     info!("✅ Rust compilation verified on-chain");
     Ok(())
@@ -207,15 +217,14 @@ async fn faas_concurrent_jobs_onchain() -> Result<()> {
     info!("=== FAAS CONCURRENT JOBS ON-CHAIN TEST ===");
 
     let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+    let harness: TangleTestHarness<FaaSContext> = TangleTestHarness::setup(temp_dir).await?;
 
     // Setup multi-node service for concurrent testing
-    let (mut test_env, service_id, _) = harness.setup_services::<N>(false).await?;
+    let (mut test_env, service_id, _) =
+        setup_services_with_retry::<FaaSContext, N>(&harness, false).await?;
     test_env.initialize().await?;
 
-    test_env
-        .add_job(execute_function_job.layer(TangleLayer))
-        .await;
+    register_jobs_through(&mut test_env, EXECUTE_FUNCTION_JOB_ID).await;
 
     // Create contexts for all nodes
     let mut contexts = Vec::new();
@@ -233,21 +242,14 @@ async fn faas_concurrent_jobs_onchain() -> Result<()> {
 
     for i in 0..5 {
         let job_args = vec![
-            InputValue::String("alpine:latest".to_string()),
-            InputValue::List(
-                FieldType::String,
-                BoundedVec(vec![
-                    InputValue::String("sh".to_string()),
-                    InputValue::String("-c".to_string()),
-                    InputValue::String(format!("echo 'Job {}' && sleep 0.1", i)),
-                ]),
-            ),
-            InputValue::List(FieldType::String, BoundedVec(vec![])),
-            InputValue::List(FieldType::Uint8, BoundedVec(vec![])),
+            InputValue::String(new_bounded_string("alpine:latest")),
+            command_list(&["sh", "-c", &format!("echo 'Job {i}' && sleep 0.1")]),
+            empty_env(),
+            payload_bytes(&[]),
         ];
 
         let job = harness
-            .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID, job_args)
+            .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
             .await?;
 
         info!("Submitted job {} with call ID {}", i, job.call_id);
@@ -267,26 +269,15 @@ async fn faas_concurrent_jobs_onchain() -> Result<()> {
         assert_eq!(results.service_id, service_id);
 
         // Verify each job output
-        if let Some(OutputValue::List(outputs)) = results.result.first() {
-            let output_bytes: Vec<u8> = outputs
-                .0
-                .iter()
-                .filter_map(|v| {
-                    if let OutputValue::Uint8(byte) = v {
-                        Some(*byte)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            let output = String::from_utf8_lossy(&output_bytes);
-            assert!(
-                output.contains(&format!("Job {}", i)),
-                "Job {} output should be recorded on-chain",
-                i
-            );
-        }
+        let output = results
+            .result
+            .first()
+            .and_then(decode_stdout)
+            .expect("concurrent job should emit stdout");
+        assert!(
+            output.contains(&format!("Job {i}")),
+            "Job {i} output should be recorded on-chain"
+        );
 
         info!("✅ Job {} verified on-chain", i);
     }
@@ -303,14 +294,13 @@ async fn faas_payload_processing_onchain() -> Result<()> {
     info!("=== FAAS PAYLOAD PROCESSING ON-CHAIN TEST ===");
 
     let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+    let harness: TangleTestHarness<FaaSContext> = TangleTestHarness::setup(temp_dir).await?;
 
-    let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
+    let (mut test_env, service_id, _) =
+        setup_services_with_retry::<FaaSContext, 1>(&harness, false).await?;
     test_env.initialize().await?;
 
-    test_env
-        .add_job(execute_function_job.layer(TangleLayer))
-        .await;
+    register_jobs_through(&mut test_env, EXECUTE_FUNCTION_JOB_ID).await;
 
     let handle = test_env.node_handles().await.into_iter().next().unwrap();
     let config = handle.blueprint_config().await;
@@ -322,21 +312,15 @@ async fn faas_payload_processing_onchain() -> Result<()> {
 
     // Create payload data
     let payload_data = b"Data processed on Tangle blockchain";
-    let payload_input: Vec<InputValue> =
-        payload_data.iter().map(|&b| InputValue::Uint8(b)).collect();
-
     let job_args = vec![
-        InputValue::String("alpine:latest".to_string()),
-        InputValue::List(
-            FieldType::String,
-            BoundedVec(vec![InputValue::String("cat".to_string())]), // Read from stdin
-        ),
-        InputValue::List(FieldType::String, BoundedVec(vec![])),
-        InputValue::List(FieldType::Uint8, BoundedVec(payload_input)),
+        InputValue::String(new_bounded_string("alpine:latest")),
+        command_list(&["cat"]),
+        empty_env(),
+        payload_bytes(payload_data),
     ];
 
     let job = harness
-        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID, job_args)
+        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
         .await?;
 
     info!("Submitted payload job with call ID {}", job.call_id);
@@ -351,24 +335,17 @@ async fn faas_payload_processing_onchain() -> Result<()> {
     assert_eq!(results.service_id, service_id);
 
     // Verify payload was processed correctly
-    if let Some(OutputValue::List(outputs)) = results.result.first() {
-        let output_bytes: Vec<u8> = outputs
-            .0
-            .iter()
-            .filter_map(|v| {
-                if let OutputValue::Uint8(byte) = v {
-                    Some(*byte)
-                } else {
-                    None
-                }
-            })
-            .collect();
+    let echoed = results
+        .result
+        .first()
+        .and_then(decode_stdout)
+        .map(|s| s.into_bytes())
+        .expect("payload job should echo back data");
 
-        assert_eq!(
-            output_bytes, payload_data,
-            "Payload should be echoed back correctly on-chain"
-        );
-    }
+    assert_eq!(
+        echoed, payload_data,
+        "Payload should be echoed back correctly on-chain"
+    );
 
     info!("✅ Payload processing verified on-chain");
     Ok(())
@@ -384,12 +361,11 @@ async fn faas_state_verification() -> Result<()> {
     let temp_dir = tempfile::TempDir::new()?;
     let harness = TangleTestHarness::setup(temp_dir).await?;
 
-    let (mut test_env, service_id, blueprint_id) = harness.setup_services::<1>(false).await?;
+    let (mut test_env, service_id, blueprint_id) =
+        setup_services_with_retry::<FaaSContext, 1>(&harness, false).await?;
     test_env.initialize().await?;
 
-    test_env
-        .add_job(execute_function_job.layer(TangleLayer))
-        .await;
+    register_jobs_through(&mut test_env, EXECUTE_FUNCTION_JOB_ID).await;
 
     let handle = test_env.node_handles().await.into_iter().next().unwrap();
     let config = handle.blueprint_config().await;
@@ -402,20 +378,14 @@ async fn faas_state_verification() -> Result<()> {
 
     for i in 0..3 {
         let job_args = vec![
-            InputValue::String("alpine:latest".to_string()),
-            InputValue::List(
-                FieldType::String,
-                BoundedVec(vec![
-                    InputValue::String("echo".to_string()),
-                    InputValue::String(format!("State {}", i)),
-                ]),
-            ),
-            InputValue::List(FieldType::String, BoundedVec(vec![])),
-            InputValue::List(FieldType::Uint8, BoundedVec(vec![])),
+            InputValue::String(new_bounded_string("alpine:latest")),
+            command_list(&["echo", &format!("State {i}")]),
+            empty_env(),
+            payload_bytes(&[]),
         ];
 
         let job = harness
-            .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID, job_args)
+            .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
             .await?;
 
         call_ids.push(job.call_id);

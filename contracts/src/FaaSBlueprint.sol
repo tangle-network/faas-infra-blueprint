@@ -4,13 +4,23 @@ pragma solidity ^0.8.20;
 import "tnt-core/BlueprintServiceManagerBase.sol";
 import "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import "openzeppelin-contracts/contracts/utils/Strings.sol";
+
+// Precompile address for slashing (Tangle Network specific)
+// NOTE: This should be updated to match your runtime's actual slashing precompile address
+address constant SLASHING_PRECOMPILE = 0x00000000000000000000000000000000000009a0;
+
+/**
+ * @title FaaSBlueprint
+ * @author Tangle Network
+ * @notice Comprehensive blueprint for Function-as-a-Service with multi-agent orchestration
  * @dev This contract manages all FaaS platform capabilities:
  * - Container execution (ephemeral, cached, checkpointed, branched, persistent)
  * - Snapshot management (CRIU-based checkpointing)
  * - Instance lifecycle (start, stop, pause, resume)
  * - Port exposure and networking
  * - File operations
- * - Optional: ZK proof generation showcase
+ * - Load balancing and operator selection
+ * - Malicious behavior slashing
  *
  * Jobs:
  * - Job 0: Execute Function (basic)
@@ -26,10 +36,6 @@ import "openzeppelin-contracts/contracts/utils/Strings.sol";
  * - Job 10: Expose Port
  * - Job 11: Upload Files
  */
-// Precompile address for slashing (Tangle Network specific)
-// NOTE: This should be updated to match your runtime's actual slashing precompile address
-address constant SLASHING_PRECOMPILE = 0x00000000000000000000000000000000000009a0;
-
 contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
     // ============================================================================
     // EXECUTION TRACKING
@@ -86,6 +92,7 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
         uint256 totalJobs;
         uint256 successfulJobs;
         uint256 currentLoad;
+        uint256 maxConcurrentJobs;
         bool active;
     }
 
@@ -103,6 +110,9 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
 
     /// @notice List of all registered operators
     address[] public operatorList;
+
+    /// @notice Default maximum number of concurrent jobs for an operator when none is provided
+    uint256 internal constant DEFAULT_MAX_CONCURRENT_JOBS = 4;
 
     // ============================================================================
     // EVENTS
@@ -153,6 +163,12 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
     );
 
     event JobAssigned(uint64 indexed jobCallId, address indexed operator);
+    event JobCallDispatched(
+        uint64 indexed serviceId,
+        uint8 indexed job,
+        uint64 jobCallId,
+        address indexed operator
+    );
 
     /// @notice Constructor
     constructor() BlueprintServiceManagerBase() {}
@@ -162,7 +178,7 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
      */
     function onRegister(
         ServiceOperators.OperatorPreferences calldata operator,
-        bytes calldata
+        bytes calldata registrationInputs
     )
         external
         payable
@@ -171,18 +187,51 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
         onlyFromMaster
     {
         address operatorAddr = operatorToAddress(operator);
-        if (!operators[operatorAddr].active) {
-            operatorList.push(operatorAddr);
-            operators[operatorAddr] = OperatorInfo({
-                addr: operatorAddr,
-                totalJobs: 0,
-                successfulJobs: 0,
-                currentLoad: 0,
-                active: true
-            });
+        OperatorInfo storage info = operators[operatorAddr];
+
+        // Extract optional maxConcurrentJobs from registration payload (first 32 bytes)
+        uint256 providedMaxJobs = DEFAULT_MAX_CONCURRENT_JOBS;
+        if (registrationInputs.length >= 32) {
+            // Use assembly to avoid reverting on malformed input while reading first word
+            assembly {
+                providedMaxJobs := calldataload(add(registrationInputs.offset, 32))
+            }
+        }
+        if (providedMaxJobs == 0) {
+            providedMaxJobs = DEFAULT_MAX_CONCURRENT_JOBS;
         }
 
+        if (info.addr == address(0)) {
+            operatorList.push(operatorAddr);
+            info.addr = operatorAddr;
+            info.totalJobs = 0;
+            info.successfulJobs = 0;
+        }
+
+        info.active = true;
+        info.maxConcurrentJobs = providedMaxJobs;
+        info.currentLoad = 0;
+
         emit OperatorRegistered(operator, bytes32(0), "");
+    }
+
+    /**
+     * @dev Hook for operator unregistering from the service
+     */
+    function onUnregister(
+        ServiceOperators.OperatorPreferences calldata operator
+    )
+        external
+        virtual
+        override
+        onlyFromMaster
+    {
+        address operatorAddr = operatorToAddress(operator);
+        OperatorInfo storage info = operators[operatorAddr];
+        if (info.addr != address(0)) {
+            info.active = false;
+            info.currentLoad = 0;
+        }
     }
 
     /**
@@ -198,6 +247,25 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
         onlyFromMaster
     {
         emit ServiceRequested(params.requestId, params.requester);
+    }
+
+    /**
+     * @dev Hook invoked when a job call is dispatched. Selects and records the operator.
+     */
+    function onJobCall(
+        uint64 serviceId,
+        uint8 job,
+        uint64 jobCallId,
+        bytes calldata /* inputs */
+    )
+        external
+        payable
+        virtual
+        override
+        onlyFromMaster
+    {
+        address assignedOperator = _selectAndAssignOperator(jobCallId);
+        emit JobCallDispatched(serviceId, job, jobCallId, assignedOperator);
     }
 
     // ============================================================================
@@ -259,11 +327,12 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
         }
 
         // Update operator stats
-        if (operators[operatorAddr].active) {
-            operators[operatorAddr].totalJobs += 1;
-            operators[operatorAddr].successfulJobs += 1;
-            if (operators[operatorAddr].currentLoad > 0) {
-                operators[operatorAddr].currentLoad -= 1;
+        OperatorInfo storage info = operators[operatorAddr];
+        if (info.addr != address(0)) {
+            info.totalJobs += 1;
+            info.successfulJobs += 1;
+            if (info.currentLoad > 0) {
+                info.currentLoad -= 1;
             }
         }
 
@@ -420,31 +489,22 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
 
     /// @notice Select operator for a job using load balancing
     function selectOperator(uint64 jobCallId) public returns (address) {
-        require(operatorList.length > 0, "No operators available");
-
-        address bestOp = operatorList[0];
-        uint256 lowestLoad = operators[bestOp].currentLoad;
-
-        for (uint256 i = 1; i < operatorList.length; i++) {
-            address op = operatorList[i];
-            if (!operators[op].active) continue;
-
-            if (operators[op].currentLoad < lowestLoad) {
-                lowestLoad = operators[op].currentLoad;
-                bestOp = op;
-            }
-        }
-
-        _assignJob(jobCallId, bestOp);
-        return bestOp;
+        return _selectAndAssignOperator(jobCallId);
     }
 
     function _assignJob(uint64 jobCallId, address operator) internal {
-        jobAssignments[jobCallId] = JobAssignment({
-            assignedOperator: operator,
-            executed: false
-        });
-        operators[operator].currentLoad += 1;
+        require(operator != address(0), "Invalid operator");
+        OperatorInfo storage info = operators[operator];
+        require(info.active, "Operator inactive");
+        require(info.maxConcurrentJobs > 0, "Operator capacity not set");
+        require(info.currentLoad < info.maxConcurrentJobs, "Operator at capacity");
+
+        JobAssignment storage assignment = jobAssignments[jobCallId];
+        require(assignment.assignedOperator == address(0), "Job already assigned");
+
+        assignment.assignedOperator = operator;
+        assignment.executed = false;
+        info.currentLoad += 1;
         emit JobAssigned(jobCallId, operator);
     }
 
@@ -485,41 +545,34 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
 
     /// @notice Enhanced operator selection with load balancing
     function selectOperatorAndAssign(uint64 jobCallId) external returns (address) {
-        require(operatorList.length > 0, "No operators available");
+        return _selectAndAssignOperator(jobCallId);
+    }
 
-        // Enhanced selection: least loaded + success rate weighting
+    function _selectAndAssignOperator(uint64 jobCallId) internal returns (address) {
         address selectedOp = _selectBestOperator();
-
-        // Assign job
-        jobAssignments[jobCallId] = JobAssignment({
-            assignedOperator: selectedOp,
-            executed: false
-        });
-
-        // Increment operator load
-        operators[selectedOp].currentLoad += 1;
-
-        emit JobAssigned(jobCallId, selectedOp);
+        _assignJob(jobCallId, selectedOp);
         return selectedOp;
     }
 
     function _selectBestOperator() internal view returns (address) {
-        require(operatorList.length > 0, "No operators available");
+        address bestOp = address(0);
+        uint256 bestScore = 0;
 
-        address bestOp = operatorList[0];
-        uint256 bestScore = _calculateOperatorScore(bestOp);
-
-        for (uint256 i = 1; i < operatorList.length; i++) {
+        for (uint256 i = 0; i < operatorList.length; i++) {
             address op = operatorList[i];
-            if (!operators[op].active) continue;
+            OperatorInfo memory info = operators[op];
+            if (!info.active) continue;
+            if (info.maxConcurrentJobs == 0) continue;
+            if (info.currentLoad >= info.maxConcurrentJobs) continue;
 
             uint256 score = _calculateOperatorScore(op);
-            if (score > bestScore) {
+            if (score > bestScore || bestOp == address(0)) {
                 bestScore = score;
                 bestOp = op;
             }
         }
 
+        require(bestOp != address(0), "No operators available");
         return bestOp;
     }
 
@@ -528,14 +581,19 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
     function _calculateOperatorScore(address operator) internal view returns (uint256) {
         OperatorInfo memory info = operators[operator];
         if (!info.active) return 0;
+        if (info.maxConcurrentJobs == 0) return 0;
+        if (info.currentLoad >= info.maxConcurrentJobs) return 0;
 
-        // Base score: inverse of current load (lower load = higher base)
-        uint256 loadScore = 1000 - info.currentLoad;
+        uint256 remainingCapacity = info.maxConcurrentJobs - info.currentLoad;
+        // Weight available capacity higher than historical success
+        uint256 loadScore = remainingCapacity * 1_000_000;
 
-        // Success rate bonus (0-100 basis points)
+        // Success rate bonus (0-1000 basis points)
         uint256 successBonus = 0;
         if (info.totalJobs > 0) {
-            successBonus = (info.successfulJobs * 100) / info.totalJobs;
+            successBonus = (info.successfulJobs * 1000) / info.totalJobs;
+        } else {
+            successBonus = 1000; // treat new operators optimistically
         }
 
         return loadScore + successBonus;
@@ -561,10 +619,45 @@ contract FaaSBlueprint is BlueprintServiceManagerBase, ReentrancyGuard {
         uint256 totalJobs,
         uint256 successfulJobs,
         uint256 currentLoad,
+        uint256 maxConcurrentJobs,
         bool active
     ) {
         OperatorInfo memory info = operators[operator];
-        return (info.totalJobs, info.successfulJobs, info.currentLoad, info.active);
+        return (
+            info.totalJobs,
+            info.successfulJobs,
+            info.currentLoad,
+            info.maxConcurrentJobs,
+            info.active
+        );
+    }
+
+    function getJobAssignment(uint64 jobCallId) external view returns (address assignedOperator, bool executed) {
+        JobAssignment memory assignment = jobAssignments[jobCallId];
+        return (assignment.assignedOperator, assignment.executed);
+    }
+
+    function getAssignedOperatorForJob(uint64 jobCallId) external view returns (address) {
+        return jobAssignments[jobCallId].assignedOperator;
+    }
+
+    function getActiveOperators() external view returns (address[] memory activeOperators) {
+        uint256 count;
+        for (uint256 i = 0; i < operatorList.length; i++) {
+            if (operators[operatorList[i]].active) {
+                count += 1;
+            }
+        }
+
+        activeOperators = new address[](count);
+        uint256 idx;
+        for (uint256 i = 0; i < operatorList.length; i++) {
+            address op = operatorList[i];
+            if (operators[op].active) {
+                activeOperators[idx] = op;
+                idx += 1;
+            }
+        }
     }
 
     // ============================================================================

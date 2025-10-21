@@ -1,357 +1,334 @@
-use blueprint_sdk::tangle::layers::TangleLayer;
+mod support;
+
+use blueprint_sdk::tangle::metadata::macros::ext::FieldType;
+use blueprint_sdk::tangle::serde::{from_field, new_bounded_string, BoundedVec};
 use blueprint_sdk::testing::tempfile;
-use blueprint_sdk::testing::utils::tangle::{InputValue, OutputValue, TangleTestHarness};
+use blueprint_sdk::testing::utils::setup_log;
+use blueprint_sdk::testing::utils::tangle::{
+    multi_node::MultiNodeTestEnv, runner::MockHeartbeatConsumer, InputValue, OutputValue,
+    TangleTestHarness,
+};
+use color_eyre::eyre::eyre;
+use color_eyre::Result;
 use faas_blueprint_lib::context::FaaSContext;
-use faas_blueprint_lib::jobs::*;
+use faas_blueprint_lib::jobs::{
+    CreateBranchArgs, CreateSnapshotArgs, CREATE_BRANCH_JOB_ID, CREATE_SNAPSHOT_JOB_ID,
+    EXECUTE_ADVANCED_JOB_ID, EXECUTE_FUNCTION_JOB_ID, RESTORE_SNAPSHOT_JOB_ID,
+};
 use std::time::Duration;
+use support::{register_jobs_through, setup_services_with_retry};
 use tokio::time::timeout;
+use tracing::info;
 
-/// Test basic function execution job
-#[tokio::test]
-async fn test_execute_function_job() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+trait ToEyreResult<T> {
+    fn to_eyre(self) -> Result<T>;
+}
 
-    let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
-    test_env.initialize().await?;
-
-    // Add the execute function job
-    test_env
-        .add_job(execute_function_job.layer(TangleLayer))
-        .await;
-
-    test_env.start(()).await?;
-
-    // Submit job with basic execution args
-    let job_args = vec![
-        InputValue::String("alpine:latest".into()), // image
-        InputValue::List(vec![
-            InputValue::String("echo".into()),
-            InputValue::String("hello".into()),
-        ]), // command
-        InputValue::None,                           // env_vars
-        InputValue::Bytes(vec![]),                  // payload
-    ];
-
-    let test_timeout = Duration::from_secs(30);
-    let job = harness
-        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID, job_args)
-        .await?;
-
-    let results = timeout(
-        test_timeout,
-        harness.wait_for_job_execution(service_id, job),
-    )
-    .await??;
-
-    // Verify job executed successfully
-    assert_eq!(results.service_id, service_id);
-    assert!(results.call_id > 0);
-
-    // The output should contain "hello"
-    if let Some(OutputValue::Bytes(output)) = results.result.first() {
-        let output_str = String::from_utf8_lossy(output);
-        assert!(output_str.contains("hello"));
-    } else {
-        panic!("Expected bytes output");
+impl<T, E: std::fmt::Display> ToEyreResult<T> for std::result::Result<T, E> {
+    fn to_eyre(self) -> Result<T> {
+        self.map_err(|e| eyre!("{}", e))
     }
-
-    Ok(())
 }
 
-/// Test advanced execution with modes
+fn execute_args(image: &str, command: &[&str]) -> Vec<InputValue> {
+    vec![
+        InputValue::String(new_bounded_string(image)),
+        InputValue::List(
+            FieldType::String,
+            BoundedVec(
+                command
+                    .iter()
+                    .map(|s| InputValue::String(new_bounded_string(*s)))
+                    .collect(),
+            ),
+        ),
+        InputValue::Optional(FieldType::List(Box::new(FieldType::String)), Box::new(None)),
+        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),
+    ]
+}
+
+fn advanced_args(
+    image: &str,
+    command: &[&str],
+    mode: &str,
+    timeout_secs: Option<u64>,
+) -> Vec<InputValue> {
+    vec![
+        InputValue::String(new_bounded_string(image)),
+        InputValue::List(
+            FieldType::String,
+            BoundedVec(
+                command
+                    .iter()
+                    .map(|s| InputValue::String(new_bounded_string(*s)))
+                    .collect(),
+            ),
+        ),
+        InputValue::Optional(FieldType::List(Box::new(FieldType::String)), Box::new(None)),
+        InputValue::List(FieldType::Uint8, BoundedVec(vec![])),
+        InputValue::String(new_bounded_string(mode)),
+        InputValue::Optional(FieldType::String, Box::new(None)),
+        InputValue::Optional(FieldType::String, Box::new(None)),
+        InputValue::Optional(
+            FieldType::Uint64,
+            Box::new(timeout_secs.map(InputValue::Uint64)),
+        ),
+    ]
+}
+
+fn expect_string(output: Option<&OutputValue>) -> Result<String> {
+    match output {
+        Some(value) => from_field(value.clone()).map_err(|e| eyre!(e)),
+        None => Err(eyre!("expected string output, got None")),
+    }
+}
+
+fn decode_stdout(value: &OutputValue) -> Option<String> {
+    if let OutputValue::List(_, list) = value {
+        let bytes = list
+            .0
+            .iter()
+            .filter_map(|field| {
+                if let OutputValue::Uint8(byte) = field {
+                    Some(*byte)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<u8>>();
+        Some(String::from_utf8_lossy(&bytes).to_string())
+    } else {
+        None
+    }
+}
+
+async fn start_with_faas_contexts(
+    env: &mut MultiNodeTestEnv<FaaSContext, MockHeartbeatConsumer>,
+) -> Result<()> {
+    let mut contexts = Vec::new();
+    for handle in env.node_handles().await {
+        let config = handle.blueprint_config().await;
+        contexts.push(FaaSContext::new(config).await.to_eyre()?);
+    }
+    env.start_with_contexts(contexts).await.to_eyre()
+}
+
 #[tokio::test]
-async fn test_execute_advanced_job() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+async fn test_execute_function_job() -> Result<()> {
+    let _ = color_eyre::install();
+    setup_log();
 
-    let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
-    test_env.initialize().await?;
+    let temp_dir = tempfile::TempDir::new().to_eyre()?;
+    let harness: TangleTestHarness<FaaSContext> =
+        TangleTestHarness::setup(temp_dir).await.to_eyre()?;
 
-    test_env
-        .add_job(execute_advanced_job.layer(TangleLayer))
-        .await;
+    let (mut test_env, service_id, _) =
+        setup_services_with_retry::<FaaSContext, 1>(&harness, false).await?;
+    test_env.initialize().await.to_eyre()?;
 
-    test_env.start(()).await?;
+    register_jobs_through(&mut test_env, EXECUTE_FUNCTION_JOB_ID).await;
 
-    // Test cached mode execution
-    let job_args = vec![
-        InputValue::String("alpine:latest".into()), // image
-        InputValue::List(vec![
-            InputValue::String("echo".into()),
-            InputValue::String("cached test".into()),
-        ]), // command
-        InputValue::None,                           // env_vars
-        InputValue::Bytes(vec![]),                  // payload
-        InputValue::String("cached".into()),        // mode
-        InputValue::None,                           // checkpoint_id
-        InputValue::None,                           // branch_from
-        InputValue::Uint64(30),                     // timeout_secs
-    ];
+    start_with_faas_contexts(&mut test_env).await?;
 
-    let test_timeout = Duration::from_secs(30);
+    let job_args = execute_args("alpine:latest", &["echo", "hello"]);
     let job = harness
-        .submit_job(service_id, EXECUTE_ADVANCED_JOB_ID, job_args)
-        .await?;
+        .submit_job(service_id, EXECUTE_FUNCTION_JOB_ID as u8, job_args)
+        .await
+        .to_eyre()?;
+    info!(
+        service_id,
+        call_id = job.call_id,
+        "Submitted execute_function job"
+    );
 
     let results = timeout(
-        test_timeout,
+        Duration::from_secs(60),
         harness.wait_for_job_execution(service_id, job),
     )
-    .await??;
+    .await
+    .to_eyre()??;
 
-    assert_eq!(results.service_id, service_id);
+    let output = results
+        .result
+        .first()
+        .and_then(decode_stdout)
+        .ok_or_else(|| eyre!("expected byte list output from execution"))?;
+    assert!(
+        output.contains("hello"),
+        "expected container output to include greeting, got {output}"
+    );
 
     Ok(())
 }
 
-/// Test snapshot creation and restoration
 #[tokio::test]
-async fn test_snapshot_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+async fn test_execute_advanced_job() -> Result<()> {
+    let _ = color_eyre::install();
+    setup_log();
 
-    let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
-    test_env.initialize().await?;
+    let temp_dir = tempfile::TempDir::new().to_eyre()?;
+    let harness: TangleTestHarness<FaaSContext> =
+        TangleTestHarness::setup(temp_dir).await.to_eyre()?;
 
-    // Add snapshot jobs
-    test_env
-        .add_job(create_snapshot_job.layer(TangleLayer))
-        .await;
-    test_env
-        .add_job(restore_snapshot_job.layer(TangleLayer))
-        .await;
+    let (mut test_env, service_id, _) =
+        setup_services_with_retry::<FaaSContext, 1>(&harness, false).await?;
+    test_env.initialize().await.to_eyre()?;
 
-    test_env.start(()).await?;
+    register_jobs_through(&mut test_env, EXECUTE_ADVANCED_JOB_ID).await;
 
-    // Create a snapshot
-    let create_args = vec![
-        InputValue::String("container_123".into()), // container_id
-        InputValue::String("test_snapshot".into()), // name
-        InputValue::String("Test snapshot for testing".into()), // description
+    start_with_faas_contexts(&mut test_env).await?;
+
+    let job_args = advanced_args("alpine:latest", &["echo", "cached run"], "cached", Some(30));
+
+    let job = harness
+        .submit_job(service_id, EXECUTE_ADVANCED_JOB_ID as u8, job_args)
+        .await
+        .to_eyre()?;
+    info!(
+        service_id,
+        call_id = job.call_id,
+        "Submitted execute_advanced job"
+    );
+
+    let results = timeout(
+        Duration::from_secs(60),
+        harness.wait_for_job_execution(service_id, job),
+    )
+    .await
+    .to_eyre()??;
+
+    let output = results
+        .result
+        .first()
+        .and_then(decode_stdout)
+        .ok_or_else(|| eyre!("expected byte list output from advanced execution"))?;
+    assert!(
+        output.contains("cached run"),
+        "expected cached execution output, got {output}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_snapshot_lifecycle() -> Result<()> {
+    let _ = color_eyre::install();
+    setup_log();
+
+    let temp_dir = tempfile::TempDir::new().to_eyre()?;
+    let harness: TangleTestHarness<FaaSContext> =
+        TangleTestHarness::setup(temp_dir).await.to_eyre()?;
+    let (mut test_env, service_id, _) =
+        setup_services_with_retry::<FaaSContext, 1>(&harness, false).await?;
+    test_env.initialize().await.to_eyre()?;
+    register_jobs_through(&mut test_env, RESTORE_SNAPSHOT_JOB_ID).await;
+
+    start_with_faas_contexts(&mut test_env).await?;
+
+    let create_inputs = vec![
+        InputValue::String(new_bounded_string("container_123")),
+        InputValue::String(new_bounded_string("test_snapshot")),
+        InputValue::Optional(
+            FieldType::String,
+            Box::new(Some(InputValue::String(new_bounded_string(
+                "snapshot for testing",
+            )))),
+        ),
     ];
 
-    let test_timeout = Duration::from_secs(30);
     let create_job = harness
-        .submit_job(service_id, CREATE_SNAPSHOT_JOB_ID, create_args)
-        .await?;
+        .submit_job(service_id, CREATE_SNAPSHOT_JOB_ID as u8, create_inputs)
+        .await
+        .to_eyre()?;
+    info!(
+        service_id,
+        call_id = create_job.call_id,
+        "Submitted create_snapshot job"
+    );
 
     let create_results = timeout(
-        test_timeout,
+        Duration::from_secs(60),
         harness.wait_for_job_execution(service_id, create_job),
     )
-    .await??;
+    .await
+    .to_eyre()??;
 
-    // Extract snapshot ID
-    let snapshot_id = if let Some(OutputValue::String(id)) = create_results.result.first() {
-        id.clone()
-    } else {
-        panic!("Expected string snapshot ID");
-    };
+    let snapshot_id = expect_string(create_results.result.first())?;
 
-    // Restore from snapshot
-    let restore_args = vec![InputValue::String(snapshot_id.clone())];
-
+    let restore_input = InputValue::String(new_bounded_string(&snapshot_id));
     let restore_job = harness
-        .submit_job(service_id, RESTORE_SNAPSHOT_JOB_ID, restore_args)
-        .await?;
+        .submit_job(
+            service_id,
+            RESTORE_SNAPSHOT_JOB_ID as u8,
+            vec![restore_input],
+        )
+        .await
+        .to_eyre()?;
+    info!(
+        service_id,
+        call_id = restore_job.call_id,
+        "Submitted restore_snapshot job"
+    );
 
     let restore_results = timeout(
-        test_timeout,
+        Duration::from_secs(60),
         harness.wait_for_job_execution(service_id, restore_job),
     )
-    .await??;
+    .await
+    .to_eyre()??;
 
-    // Verify restoration created a new container
-    if let Some(OutputValue::String(container_id)) = restore_results.result.first() {
-        assert!(container_id.contains("restored"));
-    } else {
-        panic!("Expected container ID from restore");
-    }
+    let container_id = expect_string(restore_results.result.first())?;
+    assert!(
+        container_id.contains("restored"),
+        "restored container id should be namespaced, got {container_id}"
+    );
 
     Ok(())
 }
 
-/// Test branch creation
 #[tokio::test]
-async fn test_branch_creation() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
+async fn test_branch_creation() -> Result<()> {
+    let _ = color_eyre::install();
+    setup_log();
 
-    let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
-    test_env.initialize().await?;
+    let temp_dir = tempfile::TempDir::new().to_eyre()?;
+    let harness: TangleTestHarness<FaaSContext> =
+        TangleTestHarness::setup(temp_dir).await.to_eyre()?;
 
-    test_env.add_job(create_branch_job.layer(TangleLayer)).await;
+    let (mut test_env, service_id, _) =
+        setup_services_with_retry::<FaaSContext, 1>(&harness, false).await?;
+    test_env.initialize().await.to_eyre()?;
+    register_jobs_through(&mut test_env, CREATE_BRANCH_JOB_ID).await;
 
-    test_env.start(()).await?;
+    start_with_faas_contexts(&mut test_env).await?;
 
-    let branch_args = vec![
-        InputValue::String("snap_parent_123".into()), // parent_snapshot_id
-        InputValue::String("feature_branch".into()),  // branch_name
+    let branch_inputs = vec![
+        InputValue::String(new_bounded_string("snap_parent_123")),
+        InputValue::String(new_bounded_string("feature_branch")),
     ];
 
-    let test_timeout = Duration::from_secs(30);
     let job = harness
-        .submit_job(service_id, CREATE_BRANCH_JOB_ID, branch_args)
-        .await?;
+        .submit_job(service_id, CREATE_BRANCH_JOB_ID as u8, branch_inputs)
+        .await
+        .to_eyre()?;
+    info!(
+        service_id,
+        call_id = job.call_id,
+        "Submitted create_branch job"
+    );
 
     let results = timeout(
-        test_timeout,
+        Duration::from_secs(60),
         harness.wait_for_job_execution(service_id, job),
     )
-    .await??;
+    .await
+    .to_eyre()??;
 
-    // Verify branch was created
-    if let Some(OutputValue::String(branch_id)) = results.result.first() {
-        assert!(branch_id.contains("branch_feature_branch"));
-    } else {
-        panic!("Expected branch ID");
-    }
-
-    Ok(())
-}
-
-/// Test instance management
-#[tokio::test]
-async fn test_instance_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
-
-    let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
-    test_env.initialize().await?;
-
-    // Add instance jobs
-    test_env
-        .add_job(start_instance_job.layer(TangleLayer))
-        .await;
-    test_env
-        .add_job(pause_instance_job.layer(TangleLayer))
-        .await;
-    test_env
-        .add_job(resume_instance_job.layer(TangleLayer))
-        .await;
-    test_env.add_job(stop_instance_job.layer(TangleLayer)).await;
-
-    test_env.start(()).await?;
-
-    // Start an instance
-    let start_args = vec![
-        InputValue::None,                           // snapshot_id
-        InputValue::String("ubuntu:latest".into()), // image
-        InputValue::Uint32(2),                      // cpu_cores
-        InputValue::Uint32(4096),                   // memory_mb
-        InputValue::Uint32(20),                     // disk_gb
-        InputValue::Bool(true),                     // enable_ssh
-    ];
-
-    let test_timeout = Duration::from_secs(30);
-    let start_job = harness
-        .submit_job(service_id, START_INSTANCE_JOB_ID, start_args)
-        .await?;
-
-    let start_results = timeout(
-        test_timeout,
-        harness.wait_for_job_execution(service_id, start_job),
-    )
-    .await??;
-
-    let instance_id = if let Some(OutputValue::String(id)) = start_results.result.first() {
-        id.clone()
-    } else {
-        panic!("Expected instance ID");
-    };
-
-    // Pause the instance
-    let pause_args = vec![InputValue::String(instance_id.clone())];
-    let pause_job = harness
-        .submit_job(service_id, PAUSE_INSTANCE_JOB_ID, pause_args)
-        .await?;
-
-    let pause_results = timeout(
-        test_timeout,
-        harness.wait_for_job_execution(service_id, pause_job),
-    )
-    .await??;
-
-    let checkpoint_id = if let Some(OutputValue::String(id)) = pause_results.result.first() {
-        id.clone()
-    } else {
-        panic!("Expected checkpoint ID from pause");
-    };
-
-    // Resume the instance
-    let resume_args = vec![InputValue::String(checkpoint_id)];
-    let resume_job = harness
-        .submit_job(service_id, RESUME_INSTANCE_JOB_ID, resume_args)
-        .await?;
-
-    let resume_results = timeout(
-        test_timeout,
-        harness.wait_for_job_execution(service_id, resume_job),
-    )
-    .await??;
-
-    assert!(resume_results.result.first().is_some());
-
-    // Stop the instance
-    let stop_args = vec![InputValue::String(instance_id)];
-    let stop_job = harness
-        .submit_job(service_id, STOP_INSTANCE_JOB_ID, stop_args)
-        .await?;
-
-    let stop_results = timeout(
-        test_timeout,
-        harness.wait_for_job_execution(service_id, stop_job),
-    )
-    .await??;
-
-    if let Some(OutputValue::Bool(stopped)) = stop_results.result.first() {
-        assert!(stopped);
-    } else {
-        panic!("Expected boolean stop result");
-    }
-
-    Ok(())
-}
-
-/// Test port exposure
-#[tokio::test]
-async fn test_expose_port() -> Result<(), Box<dyn std::error::Error>> {
-    let temp_dir = tempfile::TempDir::new()?;
-    let harness = TangleTestHarness::setup(temp_dir).await?;
-
-    let (mut test_env, service_id, _) = harness.setup_services::<1>(false).await?;
-    test_env.initialize().await?;
-
-    test_env.add_job(expose_port_job.layer(TangleLayer)).await;
-
-    test_env.start(()).await?;
-
-    let port_args = vec![
-        InputValue::String("inst_123".into()), // instance_id
-        InputValue::Uint16(8080),              // internal_port
-        InputValue::String("http".into()),     // protocol
-        InputValue::String("myapp".into()),    // subdomain
-    ];
-
-    let test_timeout = Duration::from_secs(30);
-    let job = harness
-        .submit_job(service_id, EXPOSE_PORT_JOB_ID, port_args)
-        .await?;
-
-    let results = timeout(
-        test_timeout,
-        harness.wait_for_job_execution(service_id, job),
-    )
-    .await??;
-
-    // Verify URL was generated
-    if let Some(OutputValue::String(url)) = results.result.first() {
-        assert!(url.contains("myapp.faas.local"));
-        assert!(url.contains("8080"));
-    } else {
-        panic!("Expected URL string");
-    }
+    let branch_id = expect_string(results.result.first())?;
+    assert!(
+        branch_id.contains("branch_feature_branch"),
+        "branch identifier should include name, got {branch_id}"
+    );
 
     Ok(())
 }

@@ -16,6 +16,7 @@ use crate::performance::{
     SnapshotOptimizer,
 };
 use crate::storage::StorageManager;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Mode {
@@ -225,11 +226,7 @@ impl Executor {
         let start = Instant::now();
 
         // Check cache for pre-computed result
-        let cache_key = format!(
-            "{}:{}",
-            req.env,
-            &req.code[..std::cmp::min(req.code.len(), 100)]
-        );
+        let cache_key = Self::cache_key_for(&req);
         if let Ok(Some(cached_result)) = self.cache_manager.get(&cache_key).await {
             info!("Cache hit for request {}", req.id);
             return Ok(Response {
@@ -272,25 +269,8 @@ impl Executor {
             timeout: Some(req.timeout.as_millis() as u64),
         };
 
-        // Try to get optimized container from stratified pool
-        let result = match self.container_pool.acquire(&req.env).await {
-            Ok(_container) => {
-                info!("Using pooled container for optimized execution");
-                // Use container-based execution with optimizations
-                self.container.execute(config).await?
-            }
-            Err(_) => {
-                // Fallback to VM with snapshot optimization
-                if cfg!(target_os = "linux") {
-                    match self.vm.execute(config.clone()).await {
-                        Ok(res) => res,
-                        Err(_) => self.container.execute(config).await?,
-                    }
-                } else {
-                    self.container.execute(config).await?
-                }
-            }
-        };
+        // Execute in container (we can add VM fallback in the future if needed)
+        let result = self.container.execute(config).await?;
 
         // Store result in cache for future use
         if result.error.is_none() {
@@ -312,6 +292,25 @@ impl Executor {
             duration: start.elapsed(),
             snapshot: None,
         })
+    }
+
+    fn cache_key_for(req: &Request) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(req.env.as_bytes());
+        hasher.update(req.code.as_bytes());
+        if let Some(runtime) = &req.runtime {
+            hasher.update(format!("{:?}", runtime));
+        }
+        if let Some(env_vars) = &req.env_vars {
+            let mut pairs: Vec<_> = env_vars.iter().collect();
+            pairs.sort_by(|a, b| a.0.cmp(b.0));
+            for (key, value) in pairs {
+                hasher.update(key.as_bytes());
+                hasher.update(b"=");
+                hasher.update(value.as_bytes());
+            }
+        }
+        format!("cache:{:x}", hasher.finalize())
     }
 
     async fn run_checkpointed(&self, req: Request) -> Result<Response> {

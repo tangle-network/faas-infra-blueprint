@@ -4,7 +4,7 @@ use axum::{
     response::IntoResponse,
     routing::post,
 };
-use faas_common::{ExecuteFunctionArgs, InvocationResult};
+use faas_common::ExecuteFunctionArgs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use tracing::{error, info, instrument};
 use crate::context::FaaSContext;
 use crate::jobs::execute_function_job;
 use blueprint_sdk::extract::Context;
-use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleArgs4};
+use blueprint_sdk::tangle::extract::{CallId, TangleArgs4};
 
 /// API server configuration
 #[derive(Clone, Debug)]
@@ -54,7 +54,7 @@ pub struct ApiState {
 
 /// API error response
 #[derive(Serialize)]
-pub(crate) struct ApiError {
+pub struct ApiError {
     pub(crate) error: String,
     pub(crate) code: String,
 }

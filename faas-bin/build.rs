@@ -1,6 +1,18 @@
-use blueprint_sdk::build;
-use blueprint_sdk::tangle::blueprint;
-use faas_blueprint_lib::jobs::{execute_advanced_job, execute_function_job};
+use blueprint_sdk::{build, tangle::blueprint};
+use faas_blueprint_lib::jobs::{
+    blueprint_job_definitions::CreateBranchJobDefinition as create_branch_job_metadata,
+    blueprint_job_definitions::CreateSnapshotJobDefinition as create_snapshot_job_metadata,
+    blueprint_job_definitions::ExecuteAdvancedJobDefinition as execute_advanced_job_metadata,
+    blueprint_job_definitions::ExecuteFunctionJobDefinition as execute_function_job_metadata,
+    blueprint_job_definitions::ExposePortJobDefinition as expose_port_job_metadata,
+    blueprint_job_definitions::MergeBranchesJobDefinition as merge_branches_job_metadata,
+    blueprint_job_definitions::PauseInstanceJobDefinition as pause_instance_job_metadata,
+    blueprint_job_definitions::RestoreSnapshotJobDefinition as restore_snapshot_job_metadata,
+    blueprint_job_definitions::ResumeInstanceJobDefinition as resume_instance_job_metadata,
+    blueprint_job_definitions::StartInstanceJobDefinition as start_instance_job_metadata,
+    blueprint_job_definitions::StopInstanceJobDefinition as stop_instance_job_metadata,
+    blueprint_job_definitions::UploadFilesJobDefinition as upload_files_job_metadata,
+};
 use std::path::Path;
 use std::process;
 
@@ -27,7 +39,20 @@ fn main() {
         name: "zk-faas",
         master_manager_revision: "Latest",
         manager: { Evm = "FaaSBlueprint" },
-        jobs: [execute_function_job, execute_advanced_job]
+        jobs: [
+            execute_function_job_metadata,
+            execute_advanced_job_metadata,
+            create_snapshot_job_metadata,
+            restore_snapshot_job_metadata,
+            create_branch_job_metadata,
+            merge_branches_job_metadata,
+            start_instance_job_metadata,
+            stop_instance_job_metadata,
+            pause_instance_job_metadata,
+            resume_instance_job_metadata,
+            expose_port_job_metadata,
+            upload_files_job_metadata
+        ]
     };
 
     match blueprint {

@@ -72,6 +72,8 @@ blueprint-sdk = { git = "https://github.com/tangle-network/blueprint", default-f
     "build",
     "tangle",
 ] }
+blueprint-client-tangle = { git = "https://github.com/tangle-network/blueprint" }
+tangle-subxt = "0.24.0"
 color-eyre = "0.6"
 tower = { version = "0.5", default-features = false }
 

@@ -64,33 +64,30 @@ jobs:
         run: cargo fmt --all -- --check
 
   firecracker:
-    name: Firecracker Tests
-    runs-on: ubuntu-latest
-    continue-on-error: true
+    name: Firecracker & Checkpoint Tests
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
+      - name: Install base dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler cpu-checker
+          sudo apt-get install -y protobuf-compiler cpu-checker jq wget
           protoc --version
 
-      - name: Check KVM support
-        id: kvm
+      - name: Enable KVM access
         run: |
-          if kvm-ok; then
-            echo "available=true" >> $GITHUB_OUTPUT
-          else
-            echo "available=false" >> $GITHUB_OUTPUT
-            echo "KVM not available, skipping Firecracker tests"
-          fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo adduser $USER kvm
+          kvm-ok
+          ls -l /dev/kvm
 
       - name: Install Firecracker
-        if: steps.kvm.outputs.available == 'true'
         run: |
           release_url="https://github.com/firecracker-microvm/firecracker/releases"
           latest=$(basename $(curl -fsSLI -o /dev/null -w  %{url_effective} ${release_url}/latest))
@@ -100,8 +97,14 @@ jobs:
           sudo chmod +x /usr/local/bin/firecracker
           firecracker --version
 
+      - name: Prepare Firecracker assets
+        env:
+          FC_ROOTFS_URL: ${{ vars.FC_ROOTFS_URL || '' }}
+          FC_ROOTFS_SHA256: ${{ vars.FC_ROOTFS_SHA256 || '' }}
+        run: |
+          scripts/prepare_firecracker_assets.sh
+
       - name: Install CRIU
-        if: steps.kvm.outputs.available == 'true'
         run: |
           sudo add-apt-repository -y ppa:criu/ppa
           sudo apt-get update
@@ -109,9 +112,8 @@ jobs:
           criu --version || echo "CRIU not available"
 
       - name: Run Firecracker tests
-        if: steps.kvm.outputs.available == 'true'
         run: |
-          sudo -E env "PATH=$PATH" cargo test --package faas-executor -- --ignored --test-threads=1
+          sudo -E env "PATH=$PATH" cargo test -p faas-executor --features "firecracker-tests checkpoint-tests" --test execution_modes -- --test-threads=1
 
   integration:
     name: Integration Tests

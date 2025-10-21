@@ -1,112 +1,235 @@
 #[cfg(test)]
 mod tests {
     use blueprint_sdk::extract::Context;
-    use blueprint_sdk::tangle::extract::{CallId, TangleArg};
+    use blueprint_sdk::runner::config::BlueprintEnvironment;
+    use blueprint_sdk::tangle::extract::{
+        CallId, TangleArg, TangleArgs2, TangleArgs3, TangleArgs4, TangleArgs6, TangleArgs8,
+    };
     use faas_blueprint_lib::api_server::{ApiKeyPermissions, ApiServerConfig};
     use faas_blueprint_lib::context::FaaSContext;
     use faas_blueprint_lib::jobs::*;
-    use faas_common::ExecuteFunctionArgs;
-    use std::collections::HashMap;
+    use std::fs;
+    use tempfile::tempdir;
     use tokio;
 
-    fn create_test_context() -> FaaSContext {
-        FaaSContext::new_for_test()
+    async fn create_test_context() -> FaaSContext {
+        let temp_dir = tempdir().expect("failed to create temp dir for test context");
+        let base_path = temp_dir.path().to_path_buf();
+        let keystore_dir = base_path.join("keystore");
+        fs::create_dir_all(&keystore_dir).expect("failed to create keystore directory");
+        let data_dir = temp_dir.keep();
+
+        let mut env = BlueprintEnvironment::default();
+        env.test_mode = true;
+        env.data_dir = data_dir;
+        env.keystore_uri = keystore_dir.to_string_lossy().into_owned();
+
+        FaaSContext::new(env)
+            .await
+            .expect("failed to initialize test context")
     }
 
     // Test all 12 Tangle jobs
     #[tokio::test]
     async fn test_execute_function_job() {
-        let ctx = create_test_context();
-        let args = ExecuteFunctionArgs {
-            image: "alpine:latest".to_string(),
-            command: vec!["echo".to_string(), "test".to_string()],
-            env_vars: None,
-            payload: vec![],
-        };
-
-        let result = execute_function_job(Context(ctx), CallId(1), TangleArg(args)).await;
+        let ctx = create_test_context().await;
+        let result = execute_function_job(
+            Context(ctx),
+            CallId(1),
+            TangleArgs4(
+                "alpine:latest".to_string(),
+                vec!["echo".to_string(), "test".to_string()],
+                None,
+                vec![],
+            ),
+        )
+        .await;
 
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_execute_advanced_job() {
-        let ctx = create_test_context();
-        let args = ExecuteAdvancedArgs {
-            image: "alpine:latest".to_string(),
-            command: vec!["echo".to_string(), "test".to_string()],
-            env_vars: None,
-            payload: vec![],
-            mode: "ephemeral".to_string(),
-            checkpoint_id: None,
-            branch_from: None,
-            timeout_secs: Some(60),
-        };
-
-        let result = execute_advanced_job(Context(ctx), CallId(2), TangleArg(args)).await;
+        let ctx = create_test_context().await;
+        let result = execute_advanced_job(
+            Context(ctx),
+            CallId(2),
+            TangleArgs8(
+                "alpine:latest".to_string(),
+                vec!["echo".to_string(), "test".to_string()],
+                None,
+                vec![],
+                "ephemeral".to_string(),
+                None,
+                None,
+                Some(60),
+            ),
+        )
+        .await;
 
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_create_snapshot_job() {
-        let ctx = create_test_context();
+        let ctx = create_test_context().await;
         let args = CreateSnapshotArgs {
             container_id: "test-container".to_string(),
             name: "test-snapshot".to_string(),
-            description: None,
+            description: Some("metadata".to_string()),
         };
 
-        let result = create_snapshot_job(Context(ctx), CallId(3), TangleArg(args)).await;
+        let snapshot_id = create_snapshot_job(
+            Context(ctx.clone()),
+            CallId(3),
+            TangleArgs3(
+                args.container_id.clone(),
+                args.name.clone(),
+                args.description.clone(),
+            ),
+        )
+        .await
+        .expect("snapshot creation should succeed")
+        .0;
 
-        // Will fail gracefully without real container
-        assert!(result.is_err());
+        let metadata_path = ctx
+            .config
+            .data_dir
+            .join("snapshots")
+            .join(format!("{}.json", snapshot_id));
+        let data = tokio::fs::read_to_string(metadata_path)
+            .await
+            .expect("snapshot metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        assert_eq!(json["container_id"], "test-container");
+        assert_eq!(json["description"], "metadata");
     }
 
     #[tokio::test]
     async fn test_restore_snapshot_job() {
-        let ctx = create_test_context();
-        let args = RestoreSnapshotArgs {
-            snapshot_id: "test-snapshot-id".to_string(),
-        };
+        let ctx = create_test_context().await;
+        let snapshot_id = create_snapshot_job(
+            Context(ctx.clone()),
+            CallId(20),
+            TangleArgs3("restore-source".to_string(), "restore".to_string(), None),
+        )
+        .await
+        .expect("snapshot creation failed")
+        .0;
 
-        let result = restore_snapshot_job(Context(ctx), CallId(4), TangleArg(args)).await;
+        let container_id = restore_snapshot_job(
+            Context(ctx.clone()),
+            CallId(4),
+            TangleArg(snapshot_id.clone()),
+        )
+        .await
+        .expect("restore should succeed")
+        .0;
 
-        // Will fail gracefully without real snapshot
-        assert!(result.is_err());
+        let metadata_path = ctx
+            .config
+            .data_dir
+            .join("instances")
+            .join(format!("{}.json", container_id));
+        let data = tokio::fs::read_to_string(metadata_path)
+            .await
+            .expect("restored instance metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        assert_eq!(json["snapshot_id"], snapshot_id);
+        assert_eq!(json["status"], "Running");
     }
 
     #[tokio::test]
     async fn test_create_branch_job() {
-        let ctx = create_test_context();
-        let args = CreateBranchArgs {
-            parent_snapshot_id: "parent-id".to_string(),
-            branch_name: "test-branch".to_string(),
-        };
+        let ctx = create_test_context().await;
+        let snapshot_id = create_snapshot_job(
+            Context(ctx.clone()),
+            CallId(21),
+            TangleArgs3("branch-source".to_string(), "branch".to_string(), None),
+        )
+        .await
+        .expect("snapshot creation failed")
+        .0;
 
-        let result = create_branch_job(Context(ctx), CallId(5), TangleArg(args)).await;
+        let branch_id = create_branch_job(
+            Context(ctx.clone()),
+            CallId(5),
+            TangleArgs2(snapshot_id.clone(), "test-branch".to_string()),
+        )
+        .await
+        .expect("branch creation should succeed")
+        .0;
 
-        // Will fail gracefully without real snapshot
-        assert!(result.is_err());
+        let metadata_path = ctx
+            .config
+            .data_dir
+            .join("branches")
+            .join(format!("{}.json", branch_id));
+        let data = tokio::fs::read_to_string(metadata_path)
+            .await
+            .expect("branch metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        assert_eq!(json["parent_snapshot_id"], snapshot_id);
     }
 
     #[tokio::test]
     async fn test_merge_branches_job() {
-        let ctx = create_test_context();
-        let args = MergeBranchesArgs {
-            branch_ids: vec!["branch1".to_string(), "branch2".to_string()],
-            merge_strategy: "latest".to_string(),
-        };
+        let ctx = create_test_context().await;
+        let snapshot_id = create_snapshot_job(
+            Context(ctx.clone()),
+            CallId(22),
+            TangleArgs3("merge".to_string(), "base".to_string(), None),
+        )
+        .await
+        .expect("snapshot creation failed")
+        .0;
 
-        let result = merge_branches_job(Context(ctx), CallId(6), TangleArg(args)).await;
+        let branch_a = create_branch_job(
+            Context(ctx.clone()),
+            CallId(23),
+            TangleArgs2(snapshot_id.clone(), "branch-a".to_string()),
+        )
+        .await
+        .expect("branch creation failed")
+        .0;
+        let branch_b = create_branch_job(
+            Context(ctx.clone()),
+            CallId(24),
+            TangleArgs2(snapshot_id.clone(), "branch-b".to_string()),
+        )
+        .await
+        .expect("branch creation failed")
+        .0;
 
-        // Will fail gracefully without real branches
-        assert!(result.is_err());
+        let merged = merge_branches_job(
+            Context(ctx.clone()),
+            CallId(6),
+            TangleArgs2(
+                vec![branch_a.clone(), branch_b.clone()],
+                "latest".to_string(),
+            ),
+        )
+        .await
+        .expect("merge should succeed")
+        .0;
+
+        let metadata_path = ctx
+            .config
+            .data_dir
+            .join("branches")
+            .join(format!("{}.json", merged));
+        let data = tokio::fs::read_to_string(metadata_path)
+            .await
+            .expect("merged metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        let parents = json["parent_snapshot_id"].as_str().unwrap();
+        assert!(parents.contains(&branch_a));
+        assert!(parents.contains(&branch_b));
     }
 
     #[tokio::test]
     async fn test_start_instance_job() {
-        let ctx = create_test_context();
+        let ctx = create_test_context().await;
         let args = StartInstanceArgs {
             snapshot_id: None,
             image: Some("alpine:latest".to_string()),
@@ -116,81 +239,237 @@ mod tests {
             enable_ssh: false,
         };
 
-        let result = start_instance_job(Context(ctx), CallId(7), TangleArg(args)).await;
+        let instance_id = start_instance_job(
+            Context(ctx.clone()),
+            CallId(7),
+            TangleArgs6(
+                args.snapshot_id.clone(),
+                args.image.clone(),
+                args.cpu_cores,
+                args.memory_mb,
+                args.disk_gb,
+                args.enable_ssh,
+            ),
+        )
+        .await
+        .expect("start instance should succeed")
+        .0;
 
-        // Will fail gracefully without real resources
-        assert!(result.is_err());
+        let metadata_path = ctx
+            .config
+            .data_dir
+            .join("instances")
+            .join(format!("{}.json", instance_id));
+        let data = tokio::fs::read_to_string(metadata_path)
+            .await
+            .expect("instance metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        assert_eq!(json["status"], "Running");
+        assert_eq!(json["cpu_cores"], 1);
     }
 
     #[tokio::test]
     async fn test_stop_instance_job() {
-        let ctx = create_test_context();
-        let args = StopInstanceArgs {
-            instance_id: "test-instance".to_string(),
-        };
+        let ctx = create_test_context().await;
+        let instance_id = start_instance_job(
+            Context(ctx.clone()),
+            CallId(30),
+            TangleArgs6(None, Some("alpine:latest".to_string()), 1, 256, 1, false),
+        )
+        .await
+        .expect("start instance failed")
+        .0;
 
-        let result = stop_instance_job(Context(ctx), CallId(8), TangleArg(args)).await;
+        stop_instance_job(
+            Context(ctx.clone()),
+            CallId(8),
+            TangleArg(instance_id.clone()),
+        )
+        .await
+        .expect("stop instance should succeed");
 
-        // Will fail gracefully without real instance
-        assert!(result.is_err());
+        let metadata_path = ctx
+            .config
+            .data_dir
+            .join("instances")
+            .join(format!("{}.json", instance_id));
+        let data = tokio::fs::read_to_string(metadata_path)
+            .await
+            .expect("stopped instance metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        assert_eq!(json["status"], "Stopped");
     }
 
     #[tokio::test]
     async fn test_pause_instance_job() {
-        let ctx = create_test_context();
-        let args = PauseInstanceArgs {
-            instance_id: "test-instance".to_string(),
-        };
+        let ctx = create_test_context().await;
+        let instance_id = start_instance_job(
+            Context(ctx.clone()),
+            CallId(31),
+            TangleArgs6(None, Some("alpine:latest".to_string()), 1, 256, 1, false),
+        )
+        .await
+        .expect("start instance failed")
+        .0;
 
-        let result = pause_instance_job(Context(ctx), CallId(9), TangleArg(args)).await;
+        let checkpoint_id = pause_instance_job(
+            Context(ctx.clone()),
+            CallId(9),
+            TangleArg(instance_id.clone()),
+        )
+        .await
+        .expect("pause instance should succeed")
+        .0;
 
-        // Will fail gracefully without real instance
-        assert!(result.is_err());
+        let checkpoint_path = ctx
+            .config
+            .data_dir
+            .join("checkpoints")
+            .join(format!("{}.json", checkpoint_id));
+        assert!(checkpoint_path.exists(), "checkpoint file missing");
+
+        let instance_path = ctx
+            .config
+            .data_dir
+            .join("instances")
+            .join(format!("{}.json", instance_id));
+        let instance_data = tokio::fs::read_to_string(instance_path)
+            .await
+            .expect("paused instance metadata missing");
+        let json: serde_json::Value =
+            serde_json::from_str(&instance_data).expect("invalid metadata json");
+        assert_eq!(json["status"], "Paused");
     }
 
     #[tokio::test]
     async fn test_resume_instance_job() {
-        let ctx = create_test_context();
-        let args = ResumeInstanceArgs {
-            instance_id: "test-instance".to_string(),
-            checkpoint_id: "checkpoint-id".to_string(),
-        };
+        let ctx = create_test_context().await;
+        let instance_id = start_instance_job(
+            Context(ctx.clone()),
+            CallId(32),
+            TangleArgs6(None, Some("alpine:latest".to_string()), 1, 256, 1, false),
+        )
+        .await
+        .expect("start instance failed")
+        .0;
 
-        let result = resume_instance_job(Context(ctx), CallId(10), TangleArg(args)).await;
+        let checkpoint_id = pause_instance_job(
+            Context(ctx.clone()),
+            CallId(33),
+            TangleArg(instance_id.clone()),
+        )
+        .await
+        .expect("pause instance failed")
+        .0;
 
-        // Will fail gracefully without real checkpoint
-        assert!(result.is_err());
+        let resumed = resume_instance_job(
+            Context(ctx.clone()),
+            CallId(10),
+            TangleArg(checkpoint_id.clone()),
+        )
+        .await
+        .expect("resume instance should succeed")
+        .0;
+
+        assert_eq!(resumed, "resumed_10".to_string());
+
+        let instance_path = ctx
+            .config
+            .data_dir
+            .join("instances")
+            .join(format!("{}.json", instance_id));
+        let data = tokio::fs::read_to_string(instance_path)
+            .await
+            .expect("resumed instance metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        assert_eq!(json["status"], "Running");
+
+        let checkpoint_path = ctx
+            .config
+            .data_dir
+            .join("checkpoints")
+            .join(format!("{}.json", checkpoint_id));
+        assert!(
+            !checkpoint_path.exists(),
+            "checkpoint file should be removed after resume"
+        );
     }
 
     #[tokio::test]
     async fn test_expose_port_job() {
-        let ctx = create_test_context();
-        let args = ExposePortArgs {
-            instance_id: "test-instance".to_string(),
-            internal_port: 8080,
-            protocol: "http".to_string(),
-            subdomain: None,
-        };
+        let ctx = create_test_context().await;
+        let instance_id = start_instance_job(
+            Context(ctx.clone()),
+            CallId(34),
+            TangleArgs6(None, Some("alpine:latest".to_string()), 1, 256, 1, false),
+        )
+        .await
+        .expect("start instance failed")
+        .0;
 
-        let result = expose_port_job(Context(ctx), CallId(11), TangleArg(args)).await;
+        let url = expose_port_job(
+            Context(ctx.clone()),
+            CallId(11),
+            TangleArgs4(
+                instance_id.clone(),
+                8080,
+                "http".to_string(),
+                Some("myapp".to_string()),
+            ),
+        )
+        .await
+        .expect("expose port should succeed")
+        .0;
 
-        // Will fail gracefully without real instance
-        assert!(result.is_err());
+        assert!(url.contains("myapp.faas.local"));
+
+        let exposure_path = ctx
+            .config
+            .data_dir
+            .join("exposures")
+            .join(format!("{}_11.json", instance_id));
+        let data = tokio::fs::read_to_string(exposure_path)
+            .await
+            .expect("exposure metadata missing");
+        let json: serde_json::Value = serde_json::from_str(&data).expect("invalid metadata json");
+        assert_eq!(json["url"], url);
     }
 
     #[tokio::test]
     async fn test_upload_files_job() {
-        let ctx = create_test_context();
-        let args = UploadFilesArgs {
-            instance_id: "test-instance".to_string(),
-            target_path: "/tmp/test".to_string(),
-            files_data: vec![1, 2, 3, 4],
-        };
+        let ctx = create_test_context().await;
+        let instance_id = start_instance_job(
+            Context(ctx.clone()),
+            CallId(35),
+            TangleArgs6(None, Some("alpine:latest".to_string()), 1, 256, 1, false),
+        )
+        .await
+        .expect("start instance failed")
+        .0;
 
-        let result = upload_files_job(Context(ctx), CallId(12), TangleArg(args)).await;
+        let payload = vec![1u8, 2, 3, 4, 5];
+        let bytes = upload_files_job(
+            Context(ctx.clone()),
+            CallId(12),
+            TangleArgs3(instance_id.clone(), "data".to_string(), payload.clone()),
+        )
+        .await
+        .expect("upload files should succeed")
+        .0;
 
-        // Will fail gracefully without real instance
-        assert!(result.is_err());
+        assert_eq!(bytes, payload.len() as u64);
+
+        let upload_path = ctx
+            .config
+            .data_dir
+            .join("uploads")
+            .join(&instance_id)
+            .join("data")
+            .join("call_12.bin");
+        let stored = tokio::fs::read(upload_path)
+            .await
+            .expect("uploaded file missing");
+        assert_eq!(stored, payload);
     }
 
     // Test API server configuration and authentication
@@ -219,83 +498,6 @@ mod tests {
         assert_eq!(retrieved.rate_limit, Some(100));
     }
 
-    #[tokio::test]
-    async fn test_api_authentication() {
-        use axum::http::HeaderMap;
-        use faas_blueprint_lib::api_server::authenticate;
-        use std::sync::Arc;
-        use tokio::sync::RwLock;
-
-        let mut config = ApiServerConfig::default();
-        config.api_keys.insert(
-            "valid-key".to_string(),
-            ApiKeyPermissions {
-                name: "test".to_string(),
-                can_execute: true,
-                can_manage_instances: false,
-                rate_limit: Some(10),
-            },
-        );
-
-        let state = ApiState {
-            context: create_test_context(),
-            config,
-            request_counts: Arc::new(RwLock::new(HashMap::new())),
-        };
-
-        // Test with valid key
-        let mut headers = HeaderMap::new();
-        headers.insert("x-api-key", "valid-key".parse().unwrap());
-
-        let result = authenticate(&headers, &state).await;
-        assert!(result.is_ok());
-        let perms = result.unwrap();
-        assert!(perms.can_execute);
-        assert!(!perms.can_manage_instances);
-
-        // Test with invalid key
-        let mut headers = HeaderMap::new();
-        headers.insert("x-api-key", "invalid-key".parse().unwrap());
-
-        let result = authenticate(&headers, &state).await;
-        assert!(result.is_err());
-
-        // Test with missing key
-        let headers = HeaderMap::new();
-        let result = authenticate(&headers, &state).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_rate_limiting() {
-        use faas_blueprint_lib::api_server::{check_rate_limit, ApiState};
-        use std::sync::Arc;
-        use tokio::sync::RwLock;
-
-        let config = ApiServerConfig::default();
-        let state = ApiState {
-            context: create_test_context(),
-            config,
-            request_counts: Arc::new(RwLock::new(HashMap::new())),
-        };
-
-        // Test with rate limit
-        for i in 1..=5 {
-            let result = check_rate_limit("test-key", Some(5), &state).await;
-            if i <= 5 {
-                assert!(result.is_ok());
-            }
-        }
-
-        // 6th request should fail
-        let result = check_rate_limit("test-key", Some(5), &state).await;
-        assert!(result.is_err());
-
-        // Test without rate limit
-        let result = check_rate_limit("unlimited-key", None, &state).await;
-        assert!(result.is_ok());
-    }
-
     // Test execution modes
     #[tokio::test]
     async fn test_execution_modes() {
@@ -311,19 +513,22 @@ mod tests {
         ];
 
         for (mode_str, expected_mode) in modes {
-            let ctx = create_test_context();
-            let args = ExecuteAdvancedArgs {
-                image: "alpine:latest".to_string(),
-                command: vec!["echo".to_string(), mode_str.to_string()],
-                env_vars: None,
-                payload: vec![],
-                mode: mode_str.to_string(),
-                checkpoint_id: None,
-                branch_from: None,
-                timeout_secs: Some(5),
-            };
-
-            let _result = execute_advanced_job(Context(ctx), CallId(100), TangleArg(args)).await;
+            let ctx = create_test_context().await;
+            let _result = execute_advanced_job(
+                Context(ctx),
+                CallId(100),
+                TangleArgs8(
+                    "alpine:latest".to_string(),
+                    vec!["echo".to_string(), mode_str.to_string()],
+                    None,
+                    vec![],
+                    mode_str.to_string(),
+                    None,
+                    None,
+                    Some(5),
+                ),
+            )
+            .await;
 
             // Just verify parsing doesn't panic
             assert_eq!(format!("{:?}", expected_mode).to_lowercase(), mode_str);

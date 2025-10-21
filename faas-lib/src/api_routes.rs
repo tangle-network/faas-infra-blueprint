@@ -4,6 +4,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use faas_common::ExecuteFunctionArgs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::instrument;
@@ -11,7 +12,9 @@ use tracing::instrument;
 use crate::api_server::{authenticate, check_rate_limit, ApiError, ApiState};
 use crate::jobs::*;
 use blueprint_sdk::extract::Context;
-use blueprint_sdk::tangle::extract::{CallId, TangleArg, TangleArgs4, TangleArgs8};
+use blueprint_sdk::tangle::extract::{
+    CallId, TangleArg, TangleArgs2, TangleArgs3, TangleArgs4, TangleArgs6, TangleArgs8,
+};
 
 // ============================================================================
 // READ-ONLY ENDPOINTS (API Server only - no Tangle jobs needed)
@@ -225,6 +228,49 @@ pub async fn execute_advanced_handler(
     }
 }
 
+#[instrument(skip(state, headers))]
+pub async fn execute_function_handler(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Json(request): Json<ExecuteFunctionArgs>,
+) -> Result<Json<ExecuteResponse>, ApiError> {
+    let permissions = authenticate(&headers, &state).await?;
+    if !permissions.can_execute {
+        return Err(ApiError {
+            error: "Permission denied".to_string(),
+            code: "FORBIDDEN".to_string(),
+        });
+    }
+
+    let call_id = rand::random::<u64>();
+
+    match execute_function_job(
+        Context(state.context.clone()),
+        CallId(call_id),
+        TangleArgs4(
+            request.image,
+            request.command,
+            request.env_vars,
+            request.payload,
+        ),
+    )
+    .await
+    {
+        Ok(result) => Ok(Json(ExecuteResponse {
+            request_id: format!("api-{call_id}"),
+            response: Some(result.0),
+            logs: None,
+            error: None,
+        })),
+        Err(e) => Ok(Json(ExecuteResponse {
+            request_id: format!("api-{call_id}"),
+            response: None,
+            logs: None,
+            error: Some(e.to_string()),
+        })),
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ExecuteResponse {
     pub request_id: String,
@@ -250,10 +296,16 @@ pub async fn create_snapshot_handler(
 
     let call_id = rand::random::<u64>();
 
+    let CreateSnapshotArgs {
+        container_id,
+        name,
+        description,
+    } = request;
+
     match create_snapshot_job(
         Context(state.context.clone()),
         CallId(call_id),
-        TangleArg(request),
+        TangleArgs3(container_id, name, description),
     )
     .await
     {
@@ -291,10 +343,15 @@ pub async fn create_branch_handler(
 
     let call_id = rand::random::<u64>();
 
+    let CreateBranchArgs {
+        parent_snapshot_id,
+        branch_name,
+    } = request;
+
     match create_branch_job(
         Context(state.context.clone()),
         CallId(call_id),
-        TangleArg(request),
+        TangleArgs2(parent_snapshot_id, branch_name),
     )
     .await
     {
@@ -332,16 +389,32 @@ pub async fn start_instance_handler(
 
     let call_id = rand::random::<u64>();
 
+    let StartInstanceArgs {
+        snapshot_id,
+        image,
+        cpu_cores,
+        memory_mb,
+        disk_gb,
+        enable_ssh,
+    } = request;
+
     match start_instance_job(
         Context(state.context.clone()),
         CallId(call_id),
-        TangleArg(request),
+        TangleArgs6(
+            snapshot_id,
+            image,
+            cpu_cores,
+            memory_mb,
+            disk_gb,
+            enable_ssh,
+        ),
     )
     .await
     {
         Ok(result) => Ok(Json(InstanceResponse {
             instance_id: result.0,
-            status: "starting".to_string(),
+            status: "running".to_string(),
             error: None,
         })),
         Err(e) => Ok(Json(InstanceResponse {
@@ -352,10 +425,53 @@ pub async fn start_instance_handler(
     }
 }
 
+#[instrument(skip(state, headers))]
+pub async fn stop_instance_handler(
+    State(state): State<ApiState>,
+    headers: HeaderMap,
+    Path(instance_id): Path<String>,
+) -> Result<Json<InstanceStopResponse>, ApiError> {
+    let permissions = authenticate(&headers, &state).await?;
+    if !permissions.can_manage_instances {
+        return Err(ApiError {
+            error: "Permission denied".to_string(),
+            code: "FORBIDDEN".to_string(),
+        });
+    }
+
+    let call_id = rand::random::<u64>();
+
+    match stop_instance_job(
+        Context(state.context.clone()),
+        CallId(call_id),
+        TangleArg(instance_id.clone()),
+    )
+    .await
+    {
+        Ok(result) => Ok(Json(InstanceStopResponse {
+            instance_id,
+            stopped: result.0,
+            error: None,
+        })),
+        Err(e) => Ok(Json(InstanceStopResponse {
+            instance_id,
+            stopped: false,
+            error: Some(e.to_string()),
+        })),
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct InstanceResponse {
     pub instance_id: String,
     pub status: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InstanceStopResponse {
+    pub instance_id: String,
+    pub stopped: bool,
     pub error: Option<String>,
 }
 
@@ -376,10 +492,17 @@ pub async fn expose_port_handler(
 
     let call_id = rand::random::<u64>();
 
+    let ExposePortArgs {
+        instance_id,
+        internal_port,
+        protocol,
+        subdomain,
+    } = request;
+
     match expose_port_job(
         Context(state.context.clone()),
         CallId(call_id),
-        TangleArg(request),
+        TangleArgs4(instance_id, internal_port, protocol, subdomain),
     )
     .await
     {
@@ -411,6 +534,7 @@ pub fn build_api_router(state: ApiState) -> Router {
         .route("/api/v1/usage", get(get_usage_handler))
         // === State-changing endpoints (call Tangle jobs) ===
         // Execution
+        .route("/api/v1/execute", post(execute_function_handler))
         .route("/api/v1/execute/advanced", post(execute_advanced_handler))
         // Snapshots
         .route("/api/v1/snapshots", post(create_snapshot_handler))
@@ -418,6 +542,7 @@ pub fn build_api_router(state: ApiState) -> Router {
         .route("/api/v1/branches", post(create_branch_handler))
         // Instances
         .route("/api/v1/instances", post(start_instance_handler))
+        .route("/api/v1/instances/:id/stop", post(stop_instance_handler))
         // Ports
         .route("/api/v1/ports/expose", post(expose_port_handler))
         // Health check

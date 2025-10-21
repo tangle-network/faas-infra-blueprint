@@ -6,12 +6,14 @@ use docktopus::bollard::container::{
 use docktopus::bollard::errors::Error as BollardError;
 use docktopus::bollard::Docker;
 use faas_common::{
-    FaasError, InvocationResult, Result as CommonResult, SandboxConfig, SandboxExecutor,
+    ExecutionMode, FaasError, InvocationResult, Result as CommonResult, SandboxConfig,
+    SandboxExecutor,
 };
 use futures::{StreamExt, TryStreamExt};
+use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::io::AsyncWriteExt;
+use tokio::{fs, io::AsyncWriteExt};
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
@@ -79,6 +81,7 @@ pub struct InternalDockerConfig {
     pub command: Vec<String>,
     pub env_vars: Option<Vec<String>>,
     pub payload: Vec<u8>,
+    pub execution_mode: Option<ExecutionMode>,
 }
 
 // --- DockerExecutor Implementation ---
@@ -112,6 +115,7 @@ impl SandboxExecutor for DockerExecutor {
             command: config.command,
             env_vars: config.env_vars,
             payload: config.payload,
+            execution_mode: config.execution_mode,
         };
         // Call the actual container running logic
         run_container_inner(self.docker_client.clone(), internal_config)
@@ -132,11 +136,40 @@ async fn run_container_inner(
     info!(%request_id, function_id=%config.function_id, "Preparing container...");
 
     // Configure container options, including stdin
+    let mut host_config = None;
+    if matches!(config.execution_mode, Some(ExecutionMode::Persistent)) {
+        let base_path = std::env::var("FAAS_PERSIST_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir().join("faas-persistent"));
+        let workspace_path = base_path.join(&config.function_id);
+        fs::create_dir_all(&workspace_path).await.map_err(|e| {
+            ExecutorError::Internal(format!(
+                "Failed to create persistent workspace {}: {}",
+                workspace_path.display(),
+                e
+            ))
+        })?;
+
+        let bind = format!(
+            "{}:/workspace:rw",
+            workspace_path
+                .canonicalize()
+                .unwrap_or(workspace_path)
+                .to_string_lossy()
+        );
+
+        host_config = Some(docktopus::bollard::models::HostConfig {
+            binds: Some(vec![bind]),
+            ..Default::default()
+        });
+    }
+
     let bollard_config_override = docktopus::bollard::container::Config {
         attach_stdin: Some(true),
         open_stdin: Some(true),
         stdin_once: Some(true), // Close stdin after attach disconnects
         tty: Some(false),       // Ensure TTY is false if using separate streams
+        host_config: host_config.clone(),
         ..Default::default()
     };
 
@@ -158,6 +191,7 @@ async fn run_container_inner(
                 open_stdin: Some(true),
                 stdin_once: Some(true),
                 tty: Some(false),
+                host_config,
                 ..bollard_config_override // Apply other overrides if needed
             },
         )

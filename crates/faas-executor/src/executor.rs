@@ -318,6 +318,11 @@ impl Executor {
     async fn initialize_from_registry(&self) -> Result<()> {
         info!("Initializing environments from registry...");
 
+        if std::env::var("FAAS_DISABLE_PREWARM").is_ok() {
+            info!("FAAS_DISABLE_PREWARM set; skipping environment pre-warm");
+            return Ok(());
+        }
+
         if let ExecutionStrategy::Container(container_strategy) = &self.strategy {
             let registry = self.registry.read().await;
 
