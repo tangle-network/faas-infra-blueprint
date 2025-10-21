@@ -51,6 +51,11 @@ jobs:
           brew install protobuf
           protoc --version
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
       - name: Build
         run: cargo build --all --verbose
 
