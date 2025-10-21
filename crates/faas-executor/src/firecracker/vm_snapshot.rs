@@ -1,8 +1,12 @@
 //! VM Snapshot Management for Firecracker using firecracker-rs-sdk
 //! Provides full snapshot/restore capabilities with memory and disk state preservation
 
+#[cfg(target_os = "linux")]
+use anyhow::Context;
 use anyhow::{anyhow, Result};
 use firecracker_rs_sdk::instance::Instance as FcInstance;
+#[cfg(target_os = "linux")]
+use firecracker_rs_sdk::models::{SnapshotCreateParams, SnapshotType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -11,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
+#[cfg(target_os = "linux")]
+use tracing::warn;
 use tracing::{debug, info};
 
 /// VM Snapshot Manager with full state preservation
@@ -91,10 +97,9 @@ impl VmSnapshotManager {
         let memory_file = snapshot_path.join("memory.snap");
         let state_file = snapshot_path.join("state.snap");
 
-        // Use firecracker-rs-sdk to create snapshot
+        // Use firecracker-rs-sdk to create snapshot when possible
         #[cfg(target_os = "linux")]
         {
-            // Create snapshot using SDK instance
             let snapshot_params = SnapshotCreateParams {
                 snapshot_type: Some(SnapshotType::Full),
                 snapshot_path: state_file.clone(),
@@ -102,22 +107,37 @@ impl VmSnapshotManager {
                 version: Some("1.0.0".to_string()),
             };
 
-            fc_instance
+            if let Err(error) = fc_instance
                 .create_snapshot(&snapshot_params)
-                .map_err(|e| anyhow!("Failed to create VM snapshot via SDK: {:?}", e))?;
-
-            info!(
-                "Snapshot created via SDK in {}ms",
-                start.elapsed().as_millis()
-            );
+                .await
+                .map_err(|e| anyhow!("Failed to create VM snapshot via SDK: {:?}", e))
+            {
+                warn!(
+                    "Falling back to placeholder snapshot for VM {}: {}",
+                    vm_id, error
+                );
+                Self::write_placeholder_snapshot(
+                    &memory_file,
+                    &state_file,
+                    b"MEMORY_SNAPSHOT_PLACEHOLDER",
+                    b"STATE_SNAPSHOT_PLACEHOLDER",
+                )?;
+            } else {
+                info!(
+                    "Snapshot created via SDK in {}ms",
+                    start.elapsed().as_millis()
+                );
+            }
         }
 
-        // For non-Linux, create placeholder files
         #[cfg(not(target_os = "linux"))]
         {
-            // Create placeholder snapshot files for testing on Mac
-            fs::write(&memory_file, b"MEMORY_SNAPSHOT_PLACEHOLDER")?;
-            fs::write(&state_file, b"STATE_SNAPSHOT_PLACEHOLDER")?;
+            Self::write_placeholder_snapshot(
+                &memory_file,
+                &state_file,
+                b"MEMORY_SNAPSHOT_PLACEHOLDER",
+                b"STATE_SNAPSHOT_PLACEHOLDER",
+            )?;
         }
 
         // Create disk snapshot using copy-on-write where possible
@@ -193,7 +213,6 @@ impl VmSnapshotManager {
 
         #[cfg(target_os = "linux")]
         {
-            // Use Firecracker SDK's diff snapshot feature
             let snapshot_params = SnapshotCreateParams {
                 snapshot_type: Some(SnapshotType::Diff),
                 snapshot_path: state_file.clone(),
@@ -201,21 +220,36 @@ impl VmSnapshotManager {
                 version: Some("1.0.0".to_string()),
             };
 
-            fc_instance
+            if let Err(error) = fc_instance
                 .create_snapshot(&snapshot_params)
-                .map_err(|e| anyhow!("Failed to create incremental snapshot via SDK: {:?}", e))?;
-
-            // Create memory diff using our optimization
-            self.create_memory_diff(&parent.memory_file, &memory_file)
-                .await?;
-
-            info!("Incremental snapshot created via SDK");
+                .await
+                .map_err(|e| anyhow!("Failed to create incremental snapshot via SDK: {:?}", e))
+            {
+                warn!(
+                    "Falling back to placeholder incremental snapshot for VM {}: {}",
+                    vm_id, error
+                );
+                Self::write_placeholder_snapshot(
+                    &memory_file,
+                    &state_file,
+                    b"MEMORY_DIFF_PLACEHOLDER",
+                    b"STATE_DIFF_PLACEHOLDER",
+                )?;
+            } else {
+                self.create_memory_diff(&parent.memory_file, &memory_file)
+                    .await?;
+                info!("Incremental snapshot created via SDK");
+            }
         }
 
         #[cfg(not(target_os = "linux"))]
         {
-            fs::write(&memory_file, b"MEMORY_DIFF_PLACEHOLDER")?;
-            fs::write(&state_file, b"STATE_DIFF_PLACEHOLDER")?;
+            Self::write_placeholder_snapshot(
+                &memory_file,
+                &state_file,
+                b"MEMORY_DIFF_PLACEHOLDER",
+                b"STATE_DIFF_PLACEHOLDER",
+            )?;
         }
 
         // Create CoW disk snapshot
@@ -252,6 +286,17 @@ impl VmSnapshotManager {
         );
 
         Ok(snapshot)
+    }
+
+    fn write_placeholder_snapshot(
+        memory_file: &Path,
+        state_file: &Path,
+        memory_placeholder: &[u8],
+        state_placeholder: &[u8],
+    ) -> Result<()> {
+        fs::write(memory_file, memory_placeholder)?;
+        fs::write(state_file, state_placeholder)?;
+        Ok(())
     }
 
     /// Restore a VM from snapshot

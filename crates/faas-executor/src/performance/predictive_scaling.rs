@@ -120,6 +120,11 @@ impl PredictiveScaler {
         }
     }
 
+    /// Backwards-compatible helper to record a single request event.
+    pub async fn record_request(&self, environment: &str) -> Result<()> {
+        self.record_usage(environment, 1.0).await
+    }
+
     /// Record usage data for pattern learning
     pub async fn record_usage(&self, environment: &str, load: f64) -> Result<()> {
         let mut patterns = self.patterns.write().await;

@@ -3,6 +3,8 @@
 //! Uses virtio-vsock for high-performance VM communication
 
 use super::{CommunicationError, Result};
+#[cfg(target_os = "linux")]
+use std::io::{Read, Write};
 use std::time::Duration;
 use tracing::info;
 

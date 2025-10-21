@@ -330,8 +330,7 @@ impl Executor {
             })
         } else {
             // Run with checkpoint capability
-            let snapshot_id = format!("snap-{}", req.id);
-            self.snapshots.create(&req.id).await?;
+            let snapshot_id = self.snapshots.create(&req.id).await?;
 
             Ok(Response {
                 id: req.id,
