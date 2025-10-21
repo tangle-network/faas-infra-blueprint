@@ -8,6 +8,12 @@ set -eo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 PROJECT_ROOT=$(realpath "$SCRIPT_DIR/../..")
 
+# Source cargo environment if previously installed (e.g., via rustup).
+if [ -f "${HOME}/.cargo/env" ]; then
+    # shellcheck disable=SC1090
+    source "${HOME}/.cargo/env"
+fi
+
 # Buildroot configuration
 BUILDROOT_VERSION="2024.02.3"
 BUILDROOT_SRC_DIR="${SCRIPT_DIR}/buildroot-${BUILDROOT_VERSION}"
@@ -46,6 +52,39 @@ DOCKERFILE_PATH="${SCRIPT_DIR}/Dockerfile"
 info() { echo "[INFO] $*" ; }
 error() { echo "[ERROR] $*" >&2; exit 1; }
 
+# Ensure Rust toolchain with musl target is available.
+ensure_rust_toolchain() {
+    if ! command -v rustup &>/dev/null; then
+        info "Rustup not found; installing minimal Rust toolchain..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path || \
+            error "Failed to install rustup"
+        if [ -f "${HOME}/.cargo/env" ]; then
+            # shellcheck disable=SC1090
+            source "${HOME}/.cargo/env"
+        else
+            export PATH="${HOME}/.cargo/bin:${PATH}"
+        fi
+    fi
+
+    # rustup is now guaranteed; ensure PATH includes cargo.
+    if [ -f "${HOME}/.cargo/env" ]; then
+        # shellcheck disable=SC1090
+        source "${HOME}/.cargo/env"
+    else
+        export PATH="${HOME}/.cargo/bin:${PATH}"
+    fi
+
+    if ! command -v cargo &>/dev/null; then
+        info "Cargo not found; installing stable toolchain..."
+        rustup toolchain install stable --profile minimal || error "Failed to install Rust toolchain"
+    fi
+
+    if ! rustup target list --installed | grep -q "${AGENT_TARGET_TRIPLE}"; then
+        info "Installing Rust target ${AGENT_TARGET_TRIPLE}..."
+        rustup target add "${AGENT_TARGET_TRIPLE}" || error "Failed to install Rust target"
+    fi
+}
+
 # --- Build Steps --- (Host-side preparations)
 
 # 1. Build FaaS Guest Agent (Host)
@@ -60,11 +99,7 @@ build_guest_agent() {
         fi
     fi
     info "Building FaaS Guest Agent (target: ${AGENT_TARGET_TRIPLE}) on host..."
-    if ! command -v cargo &>/dev/null; then error "Cargo not found. Please install Rust."; fi
-    if ! rustup target list --installed | grep -q "${AGENT_TARGET_TRIPLE}"; then
-        info "Rust target ${AGENT_TARGET_TRIPLE} not found. Installing..."
-        rustup target add "${AGENT_TARGET_TRIPLE}" || error "Failed to install Rust target"
-    fi
+    ensure_rust_toolchain
     (cd "$PROJECT_ROOT" && cargo build --profile "${AGENT_BUILD_PROFILE}" --package "${AGENT_PKG_NAME}" --target "${AGENT_TARGET_TRIPLE}") || error "Failed to build FaaS Guest Agent"
     if [ ! -f "$AGENT_HOST_BINARY_PATH" ]; then
         error "Agent binary not found after build: ${AGENT_HOST_BINARY_PATH}"

@@ -59,8 +59,6 @@ if [[ "${downloaded}" != "true" ]]; then
     echo "::endgroup::"
   else
     echo "::group::Prebuilt rootfs not available; building via Buildroot (this may take a while)"
-    # Ensure the musl target for the guest agent is available.
-    rustup target add x86_64-unknown-linux-musl
     (
       cd "${PROJECT_ROOT}/tools/firecracker-rootfs-builder"
       sudo ./build_rootfs.sh
