@@ -1,4 +1,4 @@
-# FaaS Platform
+# FaaS + Dev Environment Caching Platform
 
 High-performance serverless execution platform with Docker containers and Firecracker microVMs. Supports both HTTP gateway and Tangle blockchain integration for decentralized operation.
 
