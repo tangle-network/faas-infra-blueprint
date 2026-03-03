@@ -1,6 +1,7 @@
-# FaaS Platform
+> [!WARNING]
+> **Deprecated.** This codebase is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../MIGRATION.md).
 
-Production-ready serverless execution platform with sub-50ms warm starts.
+# FaaS Platform (Legacy Reference)
 
 **Platform Support:**
 - macOS: Docker executor with container pooling
@@ -180,6 +181,3 @@ GitHub Actions configured for:
 
 Apache License, Version 2.0
 
----
-
-**🚀 Production Status: READY FOR DEPLOYMENT**

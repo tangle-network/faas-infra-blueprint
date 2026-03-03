@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This tooling is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # Firecracker RootFS Builder
 
 This directory contains the tools and configuration necessary to build a minimal Linux root filesystem (ext4) compatible with Firecracker, specifically for running the `faas-guest-agent`.

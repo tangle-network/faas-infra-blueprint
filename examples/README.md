@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** These examples are part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../MIGRATION.md).
+
 # FaaS Platform Examples
 
 Complete collection of examples demonstrating FaaS capabilities across multiple SDKs and use cases.
@@ -178,16 +181,6 @@ pkill -f faas-gateway-server
 # Or use different port
 FAAS_PORT=8081 cargo run --release --package faas-gateway-server
 ```
-
-## Contributing
-
-When adding new examples:
-
-1. ✅ Ensure example builds successfully
-2. ✅ Add README.md with features and usage
-3. ✅ Add to workspace Cargo.toml
-4. ✅ Update this README with the new example
-5. ✅ Test end-to-end functionality
 
 ## License
 

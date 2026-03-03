@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This design document is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](MIGRATION.md).
+
 # Operator Selection & Load Balancing Design
 
 ## Core Insight

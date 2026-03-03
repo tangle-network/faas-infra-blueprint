@@ -20,7 +20,7 @@ Snapshot date: March 2, 2026
 ## Immediate Steps (Safe Migration Track)
 
 1. Freeze net-new features in this repo and treat all changes as compatibility or critical-fix only.
-2. Establish canonical target repos for `sandbox-runtime` and each product blueprint, then link them from `README.md` and `MIGRATION.md`.
+2. Establish canonical target repos for `sandbox-runtime` and each product blueprint, then link them from `README.md` and `MIGRATION.md`. *(Placeholder rows added to [MIGRATION.md](../MIGRATION.md#target-repositories) — update with real URLs when repos are public.)*
 3. Pin git dependencies to explicit revisions during the transition window to improve reproducibility.
 4. Align CI/dev toolchains with target-stack versions (Rust toolchain policy, Foundry config path, Node baseline).
 5. Migrate one capability slice at a time (runtime core, gateway/API, SDK, contracts, telemetry), marking each row in `MIGRATION.md` as `Migrated` when complete.

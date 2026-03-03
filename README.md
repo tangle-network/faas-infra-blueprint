@@ -1,12 +1,17 @@
 > [!WARNING]
-> **Deprecation notice (March 2, 2026):** `faas-infra-blueprint` is deprecated and in maintenance-only mode.
-> Runtime and orchestration features are migrating to the `sandbox-runtime` layer and product blueprint repositories.
-> New development should target `sandbox-runtime` + product blueprints.
-> See [MIGRATION.md](MIGRATION.md) and [docs/STATUS.md](docs/STATUS.md) for transition guidance.
+> **This repository is deprecated (March 2, 2026).**
+> `faas-infra-blueprint` is in **maintenance-only mode** — no new features will be accepted.
+> All runtime and orchestration capabilities are migrating to the **`sandbox-runtime`** layer and product-specific blueprint repositories.
+>
+> **If you are starting new work**, do not build on this repo.
+> See **[MIGRATION.md](MIGRATION.md)** for the capability mapping and **[docs/STATUS.md](docs/STATUS.md)** for current transition status.
 
-# FaaS + Dev Environment Caching Platform
+---
 
-High-performance serverless execution platform with Docker containers and Firecracker microVMs. Supports both HTTP gateway and Tangle blockchain integration for decentralized operation.
+# FaaS + Dev Environment Caching Platform (Legacy Reference)
+
+> The documentation below is preserved as a **historical reference** for the feature set that existed at deprecation time.
+> It does not reflect active development. For the current implementation, see `sandbox-runtime` and the relevant product blueprint repositories.
 
 ## Architecture
 

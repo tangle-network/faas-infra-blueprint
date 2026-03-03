@@ -1,6 +1,25 @@
 # Migration Guide
 
-This repository is deprecated and is being phased out in favor of the `sandbox-runtime` layer plus product-specific blueprints.
+> [!WARNING]
+> This repository is **deprecated**. Do not start new work here.
+
+This repository is being phased out in favor of the `sandbox-runtime` layer plus product-specific blueprints.
+
+## What To Do Right Now
+
+- **New runtime/executor features** → contribute to `sandbox-runtime` (see target repos below).
+- **New product/business logic** → contribute to the relevant product blueprint repository.
+- **Bug fixes for existing deployments** → critical fixes only; open a PR here and tag it `maintenance`.
+- **Everything else** → do not send to this repo.
+
+## Target Repositories
+
+| Repository | Purpose | URL |
+| --- | --- | --- |
+| `sandbox-runtime` | Runtime core, execution primitives, storage/cache, guest agent, telemetry | *Link TBD — will be added once the repo is public* |
+| Product blueprint repos | Gateway/API adapters, on-chain operator logic, contracts, SDKs, integration tests | *Links TBD — will be added per-product as repos are created* |
+
+> When the target repo URLs are available, update this table and the corresponding entries in [README.md](README.md) and [docs/STATUS.md](docs/STATUS.md).
 
 ## Capability Mapping
 

@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This SDK is part of `faas-infra-blueprint` which is in maintenance-only mode. New SDK work targets product blueprint SDK repos. See [MIGRATION.md](../../MIGRATION.md).
+
 # FaaS Tangle SDK (TypeScript)
 
 TypeScript client for submitting jobs to the FaaS Blueprint on Tangle Network.

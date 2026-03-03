@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This document is part of `faas-infra-blueprint` which is in maintenance-only mode. New contract work targets product blueprint repos. See [MIGRATION.md](MIGRATION.md).
+
 # Comprehensive FaaS Blueprint - Implementation Summary
 
 ## Overview
