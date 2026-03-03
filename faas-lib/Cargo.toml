@@ -30,7 +30,7 @@ thiserror = { workspace = true }
 parity-scale-codec = { workspace = true, optional = true }
 axum = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
-rand = "0.8"
+rand = "0.9"
 async-trait = { workspace = true }
 shell-words = "1.1"
 k256 = "0.13"
