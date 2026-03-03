@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This document describes the architecture of `faas-infra-blueprint` which is in maintenance-only mode. This content is preserved as historical reference. See [MIGRATION.md](MIGRATION.md).
+
 # FaaS Platform Architecture
 
 ## Overview
@@ -452,7 +455,10 @@ cargo run --release --package faas-gateway-server
 3. Update SDK types
 4. Document event format
 
-## Implementation Status
+## Implementation Status (at time of deprecation)
+
+The items below reflect the state of this repo when it entered maintenance-only mode.
+Any "In Progress" or "Planned" work will be delivered in `sandbox-runtime` and product blueprint repos, not here.
 
 ✅ **Completed**:
 - Dual runtime (Docker + Firecracker)
@@ -463,12 +469,12 @@ cargo run --release --package faas-gateway-server
 - WebSocket streaming API
 - SDK support (TypeScript, Python, Rust)
 
-🚧 **In Progress**:
+🚧 **Was In Progress** (now targets `sandbox-runtime`):
 - Container lifecycle management (create, stop, resume)
 - Actual stdout/stderr streaming (currently stubbed)
 - Stdin forwarding to containers
 
-📋 **Planned**:
+📋 **Was Planned** (now targets `sandbox-runtime` / product blueprints):
 - Multi-node coordination (Tangle Blueprint)
 - Advanced resource quotas
 - Geographic distribution
@@ -477,8 +483,6 @@ cargo run --release --package faas-gateway-server
 
 ## References
 
-- **Storage Quick Start**: `docs/QUICKSTART_STORAGE.md`
-- **Storage Configuration**: `docs/STORAGE_CONFIGURATION.md`
 - **Example - Basic Usage**: `examples/quickstart/`
 - **Example - Advanced Features**: `examples/advanced-features/`
 - **Example - WebSocket Streaming**: `examples/streaming-demo/`

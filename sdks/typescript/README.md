@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This SDK is part of `faas-infra-blueprint` which is in maintenance-only mode. New SDK work targets product blueprint SDK repos. See [MIGRATION.md](../../MIGRATION.md).
+
 # FaaS Platform TypeScript SDK
 
 Official TypeScript/JavaScript SDK for the FaaS Platform. Execute code in Docker containers or Firecracker microVMs with full type safety.

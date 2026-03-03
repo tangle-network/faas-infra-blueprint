@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This example is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # Data Pipeline Example
 
 ETL (Extract, Transform, Load) workflow demonstrating data processing capabilities.

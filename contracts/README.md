@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** These contracts are part of `faas-infra-blueprint` which is in maintenance-only mode. New contract work targets product blueprint repos. See [MIGRATION.md](../MIGRATION.md).
+
 ## Foundry
 
 **Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**

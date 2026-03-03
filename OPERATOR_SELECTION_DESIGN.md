@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This design document is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](MIGRATION.md).
+
 # Operator Selection & Load Balancing Design
 
 ## Core Insight
@@ -499,27 +502,29 @@ async fn query_smart_contract_assignment(
 
 ---
 
-## Implementation Plan
+## Implementation Plan (Frozen)
 
-### Phase 1: Smart Contract Updates (1 week)
+> **This plan was never executed in this repository.** Any implementation should target `sandbox-runtime` and/or product blueprint repos. See [MIGRATION.md](MIGRATION.md).
+
+### Phase 1: Smart Contract Updates
 1. Add operator tracking storage
 2. Implement `onJobCall` hook with operator selection
 3. Add job assignment validation in `onJobResult`
 4. Implement sticky routing for containers
 5. Add slashing for unauthorized execution
 
-### Phase 2: Job Handler Filtering (1 week)
+### Phase 2: Job Handler Filtering
 1. Add contract query helper functions
 2. Update each job handler with assignment check
 3. Add early return for unassigned jobs
 4. Test with multiple operators
 
-### Phase 3: Operator Registration (3 days)
+### Phase 3: Operator Registration
 1. Update `onRegister` to collect operator metadata
 2. Add operator endpoint (gateway URL) to registration
 3. Update operator stats on job completion
 
-### Phase 4: Testing & Validation (1 week)
+### Phase 4: Testing & Validation
 1. Deploy 3+ operators
 2. Submit 100+ jobs, verify load distribution
 3. Test sticky routing with persistent containers
@@ -550,7 +555,9 @@ A: NO. Everything done via smart contract hooks and job handler logic.
 
 ---
 
-## Next Steps
+## Next Steps (Frozen)
+
+> **This repository is deprecated.** The items below are preserved for context but will not be implemented here. See [MIGRATION.md](MIGRATION.md).
 
 1. Implement `onJobCall` hook in smart contract
 2. Add operator selection logic (load balancing)

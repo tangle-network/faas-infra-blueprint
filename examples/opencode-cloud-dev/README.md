@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This example is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # OpenCode Cloud Development Environment
 
 A containerized OpenCode server that accepts ANY prompt and returns AI-generated responses using the grok-code-fast-1 model (free tier).

@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This crate is part of `faas-infra-blueprint` which is in maintenance-only mode. New SDK work targets product blueprint SDK repos. See [MIGRATION.md](../../MIGRATION.md).
+
 # FaaS Platform Rust SDK
 
 [![Crate](https://img.shields.io/crates/v/faas-sdk.svg)](https://crates.io/crates/faas-sdk)

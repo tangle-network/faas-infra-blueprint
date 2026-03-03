@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This SDK is part of `faas-infra-blueprint` which is in maintenance-only mode. New SDK work targets product blueprint SDK repos. See [MIGRATION.md](../../MIGRATION.md).
+
 # FaaS Platform Python SDK
 
 [![PyPI](https://img.shields.io/pypi/v/faas-sdk.svg)](https://pypi.org/project/faas-sdk/)

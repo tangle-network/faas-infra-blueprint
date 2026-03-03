@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This document is part of `faas-infra-blueprint` which is in maintenance-only mode. New contract work targets product blueprint repos. See [MIGRATION.md](MIGRATION.md).
+
 # Comprehensive FaaS Blueprint - Implementation Summary
 
 ## Overview
@@ -190,31 +193,21 @@ contracts/src/FaaSBlueprint.sol    (NEW - 485 lines)
 faas-bin/build.rs                  (manager: FaaSBlueprint)
 ```
 
-## Next Steps
+## Status at Deprecation
 
-### **Immediate - Ready for Production**
+### **Completed Before Deprecation**
 - ✅ All core functionality working
 - ✅ Tests passing
 - ✅ Blockchain integration complete
 
-### **Future Enhancements**
+### **Not Implemented Here (Targets `sandbox-runtime` / Product Blueprints)**
+
+The following enhancements were planned but will **not** land in this repository. They should be pursued in `sandbox-runtime` and/or the relevant product blueprint repos. See [MIGRATION.md](MIGRATION.md).
+
 1. **Add remaining jobs 2-11** to Rust implementation
-   - Currently only Job 0 & 1 are implemented
-   - Placeholders exist in jobs.rs
-
-2. **Enhanced metadata parsing**
-   - Parse inputs/outputs in contract handlers
-   - Store detailed execution records
-
-3. **Metrics & analytics**
-   - Track execution times on-chain
-   - Operator performance metrics
-   - Resource usage statistics
-
-4. **ZK Integration (Optional)**
-   - Add Job 12-15 for ZK proving
-   - Integrate SP1/RISC Zero SDKs
-   - Showcase capability without being exclusive
+2. **Enhanced metadata parsing** in contract handlers
+3. **Metrics & analytics** (on-chain execution times, operator performance)
+4. **ZK Integration** (Job 12-15, SP1/RISC Zero SDKs)
 
 ## Summary
 

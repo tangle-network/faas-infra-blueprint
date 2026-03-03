@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This repository is in maintenance-only mode. See [MIGRATION.md](MIGRATION.md).
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization

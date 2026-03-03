@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This crate is part of `faas-infra-blueprint` which is in maintenance-only mode. New runtime work targets `sandbox-runtime`. See [MIGRATION.md](../../MIGRATION.md).
+
 # FaaS Executor
 
 Serverless execution engine with Docker support and Linux-specific optimizations.

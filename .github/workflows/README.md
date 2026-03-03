@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** These workflows are part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # GitHub Actions Workflows
 
 ## CI Workflow (`ci.yml`)

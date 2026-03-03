@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This crate is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # faas-zk-prover
 
 Production ZK proof generation microservice with SP1 zkVM.
