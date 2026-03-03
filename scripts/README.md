@@ -171,11 +171,10 @@ GitHub Actions configured for:
 
 ## Documentation
 
-- 📚 [Production Report](./PRODUCTION_READY_REPORT.md)
-- 🏗️ [Architecture](./docs/ARCHITECTURE.md)
-- 🐍 [Python SDK](./sdk/python/README.md)
-- 📘 [TypeScript SDK](./sdk/typescript/README.md)
-- 💡 [Examples](./examples/)
+- 🏗️ [Architecture](../ARCHITECTURE.md)
+- 🐍 [Python SDK](../sdks/python/README.md)
+- 📘 [TypeScript SDK](../sdks/typescript/README.md)
+- 💡 [Examples](../examples/)
 
 ## License
 

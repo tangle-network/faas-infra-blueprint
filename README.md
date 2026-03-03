@@ -435,7 +435,6 @@ cargo test --workspace
 - Complete feature documentation: `ARCHITECTURE.md`
 - Tangle integration details: `COMPREHENSIVE_FAAS_BLUEPRINT.md`
 - Operator selection design: `OPERATOR_SELECTION_DESIGN.md`
-- Storage configuration: `docs/QUICKSTART_STORAGE.md`
 - SDK documentation:
   - Rust: `crates/faas-sdk/src/lib.rs`
   - TypeScript: `sdks/typescript/README.md`

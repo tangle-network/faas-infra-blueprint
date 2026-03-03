@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This example is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # CI/CD Pipeline Example
 
 Production-ready CI/CD pipeline implementation using FaaS execution modes and parallel testing.

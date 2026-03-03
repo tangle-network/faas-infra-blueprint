@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This example is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # Advanced Features Example
 
 Comprehensive demo of FaaS platform capabilities including multi-language execution, caching, forking, and snapshots.

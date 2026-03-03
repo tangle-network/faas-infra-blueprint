@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Deprecated.** This example is part of `faas-infra-blueprint` which is in maintenance-only mode. See [MIGRATION.md](../../MIGRATION.md).
+
 # Quickstart Example
 
 Minimal working demo showing basic FaaS SDK usage.

@@ -16,10 +16,10 @@ This repository is being phased out in favor of the `sandbox-runtime` layer plus
 
 | Repository | Purpose | URL |
 | --- | --- | --- |
-| `sandbox-runtime` | Runtime core, execution primitives, storage/cache, guest agent, telemetry | *Link TBD — will be added once the repo is public* |
-| Product blueprint repos | Gateway/API adapters, on-chain operator logic, contracts, SDKs, integration tests | *Links TBD — will be added per-product as repos are created* |
+| `sandbox-runtime` | Runtime core, execution primitives, storage/cache, guest agent, telemetry | *(Not yet public — URL will be added here when the repo is published)* |
+| Product blueprint repos | Gateway/API adapters, on-chain operator logic, contracts, SDKs, integration tests | *(Not yet created — URLs will be added here as each product repo is established)* |
 
-> When the target repo URLs are available, update this table and the corresponding entries in [README.md](README.md) and [docs/STATUS.md](docs/STATUS.md).
+> **Maintainer note:** when target repo URLs become available, update this table and the corresponding entries in [README.md](README.md) and [docs/STATUS.md](docs/STATUS.md).
 
 ## Capability Mapping
 

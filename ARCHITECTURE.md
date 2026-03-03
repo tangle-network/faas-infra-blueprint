@@ -483,8 +483,6 @@ Any "In Progress" or "Planned" work will be delivered in `sandbox-runtime` and p
 
 ## References
 
-- **Storage Quick Start**: `docs/QUICKSTART_STORAGE.md`
-- **Storage Configuration**: `docs/STORAGE_CONFIGURATION.md`
 - **Example - Basic Usage**: `examples/quickstart/`
 - **Example - Advanced Features**: `examples/advanced-features/`
 - **Example - WebSocket Streaming**: `examples/streaming-demo/`
